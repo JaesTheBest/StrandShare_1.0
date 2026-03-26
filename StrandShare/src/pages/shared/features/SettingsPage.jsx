@@ -268,7 +268,7 @@ function Toggle({ checked, onChange, activeColor }) {
 }
 
 export default function SettingsPage() {
-  const { theme, updateTheme, saveThemeGlobally } = useTheme();
+  const { theme, saveThemeGlobally } = useTheme();
 
   const readCachedProfile = () => {
     let settingsParsed = null;
@@ -411,6 +411,8 @@ export default function SettingsPage() {
       activeSessions: uniqueSessions,
       loginSessions: loginRows,
     }));
+  // Run once on mount; bootstrap flow is intentionally not re-triggered by helper identity changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const passwordRuleChecks = useMemo(() => {
@@ -710,6 +712,8 @@ export default function SettingsPage() {
       isMounted = false;
       subscription.unsubscribe();
     };
+    // Bootstrap should run once on mount for this page lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleProfileImage = async (event) => {
@@ -1111,6 +1115,8 @@ export default function SettingsPage() {
     }
 
     handleVerifyPasswordOtpAndUpdate(security.passwordOtp.trim());
+  // Intentionally trigger only on OTP field/state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [security.passwordOtp, isOtpSent]);
 
   useEffect(() => {
@@ -1119,6 +1125,8 @@ export default function SettingsPage() {
     }
 
     handleVerifyPasswordMfaAndRetry(passwordMfaCode.trim());
+  // Intentionally trigger only on MFA input/state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passwordMfaCode, passwordMfaRequired]);
 
   const persistMfaPreference = async (enabled) => {
@@ -1211,6 +1219,8 @@ export default function SettingsPage() {
     }
 
     verifyMfaEnrollment(mfaSetup.code.trim());
+  // Intentionally trigger only on enrollment code/state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mfaSetup.code, mfaSetup.enrolling]);
 
   const handleToggleTwoFactor = async () => {

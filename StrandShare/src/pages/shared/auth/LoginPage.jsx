@@ -477,26 +477,6 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     setIsSubmitting(false);
   };
 
-  const handleOAuthSignIn = async (provider) => {
-    clearMessages();
-
-    if (!isSupabaseConfigured || !supabase) {
-      setErrorMessage('Supabase is not configured yet. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
-      return;
-    }
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-
-    if (error) {
-      setErrorMessage(error.message);
-    }
-  };
-
   return (
     <div className="flex min-h-screen bg-white dark:bg-gray-900">
       {/* Left Pane - Branding */}
