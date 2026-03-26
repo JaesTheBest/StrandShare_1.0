@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #0275d8;
+  --color-primary-dark: #025aa3;
+  --color-primary-light: #0a8ef5;
+  --color-secondary: #6B7280;
+  --color-secondary-dark: #4B5563;
+  --color-secondary-light: #9CA3AF;
+  --color-tertiary: #10b981;
+  --color-tertiary-dark: #059669;
+  --color-tertiary-light: #34d399;
+  --font-family: sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #0a8ef5;
+    --color-primary-dark: #0275d8;
+    --color-primary-light: #3da5f8;
+    --color-secondary: #9CA3AF;
+    --color-secondary-dark: #6B7280;
+    --color-secondary-light: #D1D5DB;
+    --color-tertiary: #34d399;
+    --color-tertiary-dark: #10b981;
+    --color-tertiary-light: #6EE7B7;
+  }
+}
+
+* {
+  @apply transition-colors;
+}
+
+body {
+  @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+a {
+  @apply hover:opacity-80 transition-opacity;
+}
+
+input, textarea, select {
+  @apply focus:outline-none;
+}
+
+button {
+  @apply transition-all duration-200;
+}
+
+.pulsing-dot {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

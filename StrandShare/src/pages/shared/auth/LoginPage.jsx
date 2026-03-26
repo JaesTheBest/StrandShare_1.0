@@ -1,0 +1,896 @@
+import React, { useEffect, useState } from 'react';
+import { useTheme } from '../../../context/ThemeContext';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Heart, Coins, ShieldCheck, QrCode } from 'lucide-react';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
+import { logAuditAction } from '../../../lib/auditLogger';
+
+const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
+const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
+const EMAIL_OTP_COOLDOWN_SECONDS = 60;
+
+export default function LoginPage({ authNotice, onClearNotice }) {
+  const { theme } = useTheme();
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [mfaMode, setMfaMode] = useState(null);
+  const [mfaMethod, setMfaMethod] = useState('authenticator');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaFactorId, setMfaFactorId] = useState(null);
+  const [mfaQrSvg, setMfaQrSvg] = useState('');
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaPendingProfile, setMfaPendingProfile] = useState(null);
+  const [mfaPendingAuthUserId, setMfaPendingAuthUserId] = useState(null);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpTarget, setEmailOtpTarget] = useState('');
+  const [emailOtpRequested, setEmailOtpRequested] = useState(false);
+  const [emailOtpCooldown, setEmailOtpCooldown] = useState(0);
+  const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
+
+  useEffect(() => {
+    if (emailOtpCooldown <= 0) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setEmailOtpCooldown((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [emailOtpCooldown]);
+
+  const clearMessages = () => {
+    if (errorMessage) {
+      setErrorMessage('');
+    }
+    if (successMessage) {
+      setSuccessMessage('');
+    }
+    if (authNotice && onClearNotice) {
+      onClearNotice();
+    }
+  };
+
+  const clearMfaState = () => {
+    setMfaMode(null);
+    setMfaMethod('authenticator');
+    setMfaCode('');
+    setMfaFactorId(null);
+    setMfaQrSvg('');
+    setMfaSecret('');
+    setMfaPendingProfile(null);
+    setMfaPendingAuthUserId(null);
+    setEmailOtpCode('');
+    setEmailOtpTarget('');
+    setEmailOtpRequested(false);
+    setEmailOtpCooldown(0);
+  };
+
+  const getValidatedProfileByAuthUserId = async (authUserId) => {
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('user_id, auth_user_id, email, role, is_active, access_start, access_end')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle();
+
+    if (profileError || !profile?.role) {
+      throw new Error('Your account does not have a role yet. Please contact an administrator.');
+    }
+
+    const now = new Date();
+    const withinStart = !profile.access_start || new Date(profile.access_start) <= now;
+    const withinEnd = !profile.access_end || new Date(profile.access_end) >= now;
+
+    if (profile.is_active === false) {
+      throw new Error('Your account is currently inactive. Please contact an administrator.');
+    }
+
+    if (!withinStart || !withinEnd) {
+      throw new Error('Your account is outside the allowed access schedule. Please contact an administrator.');
+    }
+
+    return enrichProfileWithDetails(profile);
+  };
+
+  const finalizeLoginProfile = (profile, authUserId, fallbackEmail) => {
+    const userAgent = navigator.userAgent || 'Unknown browser';
+    const platform = navigator.platform || 'Unknown platform';
+    const deviceSource = `${userAgent} on ${platform}`;
+
+    const validatedProfile = {
+      ...profile,
+      auth_user_id: authUserId,
+      email: profile?.email || fallbackEmail,
+    };
+
+    localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(validatedProfile));
+
+    window.dispatchEvent(
+      new CustomEvent(USER_PROFILE_READY_EVENT, {
+        detail: {
+          authUserId,
+          profile: validatedProfile,
+        },
+      }),
+    );
+
+    void logAuditAction({
+      action: 'auth.sign_in',
+      description: `User completed login flow from ${deviceSource}.`,
+      resource: `auth/session:${platform}`,
+      status: 'success',
+      userProfile: validatedProfile,
+    });
+  };
+
+  const enrichProfileWithDetails = async (baseProfile) => {
+    if (!baseProfile?.user_id) {
+      return baseProfile;
+    }
+
+    const { data: detailsRow, error: detailsError } = await supabase
+      .from('user_details')
+      .select('first_name, middle_name, last_name, suffix, gender, photo_path')
+      .eq('user_id', baseProfile.user_id)
+      .maybeSingle();
+
+    if (detailsError) {
+      return baseProfile;
+    }
+
+    if (!detailsRow) {
+      return baseProfile;
+    }
+
+    return {
+      ...baseProfile,
+      first_name: detailsRow.first_name || '',
+      middle_name: detailsRow.middle_name || '',
+      last_name: detailsRow.last_name || '',
+      suffix: detailsRow.suffix || '',
+      gender: detailsRow.gender || '',
+      photo_path: detailsRow.photo_path || '',
+    };
+  };
+
+  const beginMfaStep = async (profile, authUserId, fallbackEmail) => {
+    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+
+    if (factorsError) {
+      throw factorsError;
+    }
+
+    const verifiedTotpFactor = (factorsData?.totp || []).find((factor) => factor.status === 'verified');
+
+    if (verifiedTotpFactor) {
+      const { error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: verifiedTotpFactor.id,
+      });
+
+      if (challengeError) {
+        throw challengeError;
+      }
+
+      setMfaPendingProfile(profile);
+      setMfaPendingAuthUserId(authUserId);
+      setMfaFactorId(verifiedTotpFactor.id);
+      setMfaMode('verify');
+      setMfaMethod('authenticator');
+      setSuccessMessage('Enter your Google Authenticator code to continue.');
+      return;
+    }
+
+    // Remove stale unverified factors from interrupted enroll attempts.
+    const unverifiedTotpFactors = (factorsData?.totp || []).filter((factor) => factor.status !== 'verified');
+    for (const factor of unverifiedTotpFactors) {
+      await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    }
+
+    let enrollData = null;
+    let enrollError = null;
+
+    const firstEnroll = await supabase.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: 'Google Authenticator',
+      issuer: 'StrandShare',
+    });
+
+    enrollData = firstEnroll.data;
+    enrollError = firstEnroll.error;
+
+    // If provider still reports duplicate friendly name, retry with a unique display name.
+    if (enrollError?.message?.includes('friendly name')) {
+      const secondEnroll = await supabase.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: `Google Authenticator ${new Date().toISOString().slice(0, 10)}`,
+        issuer: 'StrandShare',
+      });
+      enrollData = secondEnroll.data;
+      enrollError = secondEnroll.error;
+    }
+
+    if (enrollError || !enrollData?.id) {
+      throw enrollError || new Error('Unable to create MFA factor. Please try again.');
+    }
+
+    setMfaPendingProfile(profile);
+    setMfaPendingAuthUserId(authUserId);
+    setMfaFactorId(enrollData.id);
+    setMfaQrSvg(enrollData?.totp?.qr_code || '');
+    setMfaSecret(enrollData?.totp?.secret || '');
+    setMfaMode('enroll');
+    setMfaMethod('authenticator');
+    setSuccessMessage('Scan the QR code with Google Authenticator, then enter the 6-digit code.');
+  };
+
+  const handleRequestEmailOtp = async () => {
+    clearMessages();
+
+    if (emailOtpCooldown > 0) {
+      setErrorMessage(`Please wait ${emailOtpCooldown}s before requesting a new code.`);
+      return;
+    }
+
+    const targetEmail = mfaPendingProfile?.email || email;
+    if (!targetEmail) {
+      setErrorMessage('No email address found for OTP delivery.');
+      return;
+    }
+
+    setIsSendingEmailOtp(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: targetEmail,
+        options: {
+          shouldCreateUser: false,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setEmailOtpTarget(targetEmail);
+      setEmailOtpRequested(true);
+      setEmailOtpCooldown(EMAIL_OTP_COOLDOWN_SECONDS);
+      setMfaMethod('email-otp');
+      setSuccessMessage('Sign-in code sent to your email. Enter the 6-digit code to continue.');
+    } catch (otpError) {
+      setErrorMessage(otpError.message || 'Unable to send email OTP. Please try again.');
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (e) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!emailOtpTarget) {
+      setErrorMessage('Request an email OTP first.');
+      return;
+    }
+
+    if (!emailOtpCode.trim()) {
+      setErrorMessage('Enter the OTP code from your email.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: emailOtpTarget,
+        token: emailOtpCode.trim(),
+        type: 'email',
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const authUserId = data?.user?.id || data?.session?.user?.id || mfaPendingAuthUserId;
+
+      if (!authUserId) {
+        throw new Error('Could not verify your account profile. Please contact an administrator.');
+      }
+
+      const verifiedProfile = await getValidatedProfileByAuthUserId(authUserId);
+      finalizeLoginProfile(verifiedProfile, authUserId, emailOtpTarget);
+
+      clearMfaState();
+      setSuccessMessage('Email OTP verified. Redirecting to your dashboard...');
+    } catch (otpError) {
+      setErrorMessage(otpError.message || 'Email OTP verification failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMfaVerify = async (e) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!mfaFactorId || !mfaPendingAuthUserId || !mfaPendingProfile) {
+      setErrorMessage('MFA session expired. Please log in again.');
+      clearMfaState();
+      return;
+    }
+
+    if (!mfaCode.trim()) {
+      setErrorMessage('Enter the 6-digit code from Google Authenticator.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      });
+
+      if (challengeError) {
+        throw challengeError;
+      }
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challengeData.id,
+        code: mfaCode.trim(),
+      });
+
+      if (verifyError) {
+        throw verifyError;
+      }
+
+      finalizeLoginProfile(
+        mfaPendingProfile,
+        mfaPendingAuthUserId,
+        mfaPendingProfile.email || email,
+      );
+
+      clearMfaState();
+      setSuccessMessage('MFA verified. Redirecting to your dashboard...');
+    } catch (error) {
+      setErrorMessage(error.message || 'MFA verification failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!isSupabaseConfigured || !supabase) {
+      setErrorMessage('Supabase is not configured yet. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    if (mode === 'login') {
+      const { data: loginData, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        localStorage.removeItem(USER_PROFILE_STORAGE_KEY);
+        setErrorMessage(error.message);
+      } else {
+        const authUserId = loginData?.user?.id || loginData?.session?.user?.id;
+
+        if (!authUserId) {
+          await supabase.auth.signOut();
+          setErrorMessage('Could not verify your account profile. Please contact an administrator.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        let enrichedProfile;
+
+        try {
+          enrichedProfile = await getValidatedProfileByAuthUserId(authUserId);
+        } catch (profileValidationError) {
+          await supabase.auth.signOut();
+          localStorage.removeItem(USER_PROFILE_STORAGE_KEY);
+          setErrorMessage(profileValidationError.message || 'Unable to validate account profile.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const isMfaEnabled = loginData?.user?.user_metadata?.mfaEnabled !== false;
+
+        if (!isMfaEnabled) {
+          finalizeLoginProfile(enrichedProfile, authUserId, loginData?.user?.email || email);
+          clearMfaState();
+          setSuccessMessage('Login successful. Redirecting to your dashboard...');
+        } else {
+          try {
+            await beginMfaStep(enrichedProfile, authUserId, loginData?.user?.email || email);
+          } catch (mfaError) {
+            await supabase.auth.signOut();
+            localStorage.removeItem(USER_PROFILE_STORAGE_KEY);
+            setErrorMessage(mfaError.message || 'Unable to start MFA verification.');
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+    }
+
+    if (mode === 'signup') {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/complete-account`,
+        },
+      });
+
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setSuccessMessage('Signup successful. Check your inbox to confirm your email, then log in.');
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+      }
+    }
+
+    setIsSubmitting(false);
+  };
+
+  const handleForgotPassword = async () => {
+    clearMessages();
+
+    if (!email) {
+      setErrorMessage('Enter your email first, then click Forgot password.');
+      return;
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      setErrorMessage('Supabase is not configured yet. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+    } else {
+      setSuccessMessage('Password reset link sent. Please check your email.');
+    }
+
+    setIsSubmitting(false);
+  };
+
+  const handleOAuthSignIn = async (provider) => {
+    clearMessages();
+
+    if (!isSupabaseConfigured || !supabase) {
+      setErrorMessage('Supabase is not configured yet. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen bg-white dark:bg-gray-900">
+      {/* Left Pane - Branding */}
+      <div
+        className="hidden lg:flex w-1/2 items-center justify-center p-12"
+        style={{
+          background: `linear-gradient(135deg, ${theme.primaryColorLight}15 0%, ${theme.primaryColor}10 50%, ${theme.primaryColorDark}15 100%)`,
+          backdropFilter: 'blur(10px)',
+        }}
+      >
+        <div className="max-w-md">
+          {/* Main Image Card */}
+          <div className="rounded-2xl shadow-2xl overflow-hidden mb-8 hover:shadow-3xl transition-shadow">
+            <img
+              src={theme.loginBackgroundImage || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1080&q=80'}
+              alt="Professional hairstylist at work"
+              className="w-full h-80 object-cover"
+            />
+          </div>
+
+          {/* Headline */}
+          <h2 className="text-4xl font-bold text-center mb-4" style={{ color: theme.primaryColor }}>
+            Every Strand Counts
+          </h2>
+
+          {/* Subtext */}
+          <p className="text-center text-gray-600 dark:text-gray-400 mb-8 text-sm leading-relaxed">
+            Join our community of donors and recipients. Your contribution brings confidence and joy to those battling hair loss.
+          </p>
+
+          {/* Badges */}
+          <div className="flex gap-4 justify-center">
+            <div className="bg-white dark:bg-gray-700 rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
+              <Coins size={18} style={{ color: theme.primaryColor }} />
+              <span className="text-sm font-medium text-gray-800 dark:text-white">10K+ Donors</span>
+            </div>
+            <div className="bg-white dark:bg-gray-700 rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
+              <Heart size={18} style={{ color: theme.primaryColor }} />
+              <span className="text-sm font-medium text-gray-800 dark:text-white">Empathetic Care</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Pane - Login Form */}
+      <div className="w-full lg:w-1/2 bg-white dark:bg-gray-900 flex flex-col items-center justify-center px-6 py-12 lg:py-0">
+        <div className="w-full max-w-sm">
+          {/* Logo */}
+          <div className="flex items-center gap-2 mb-12">
+            {theme.logoImage ? (
+              <img
+                src={theme.logoImage}
+                alt={`${theme.brandName || 'StrandShare'} logo`}
+                className="w-8 h-8 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+              />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+                style={{ backgroundColor: theme.primaryColor }}
+              >
+                A
+              </div>
+            )}
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">{theme.brandName}</span>
+          </div>
+
+          {/* Header */}
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            {mode === 'login' ? 'Welcome Back' : 'Create Your Account'}
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-8 text-sm">
+            {mode === 'login'
+              ? 'Login to continue supporting our beautiful community and making a difference.'
+              : 'Sign up to start your StrandShare journey and access your dashboard.'}
+          </p>
+
+          {authNotice && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              {authNotice}
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
+              {errorMessage}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
+              {successMessage}
+            </div>
+          )}
+
+          {/* Form */}
+          {!mfaMode && (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Email Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                  style={{ '--tw-ring-color': theme.primaryColor }}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-sm font-medium transition-opacity hover:opacity-80"
+                  style={{ color: theme.primaryColor }}
+                  disabled={isSubmitting}
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="........"
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                  style={{ '--tw-ring-color': theme.primaryColor }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                    disabled={isSubmitting}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      clearMessages();
+                      setConfirmPassword(e.target.value);
+                    }}
+                    placeholder="........"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                    style={{ '--tw-ring-color': theme.primaryColor }}
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Remember Me */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="remember"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 cursor-pointer"
+                style={{
+                  accentColor: theme.primaryColor,
+                }}
+              />
+              <label htmlFor="remember" className="ml-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                Remember me for 30 days
+              </label>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-lg text-white font-medium flex items-center justify-center gap-2 group hover:opacity-90 transition-all"
+              style={{ backgroundColor: theme.primaryColor }}
+              disabled={isSubmitting}
+            >
+              {isSubmitting
+                ? 'Please wait...'
+                : mode === 'login'
+                  ? 'Login to Account'
+                  : 'Create Account'}
+              <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          </form>
+          )}
+
+          {mfaMode && (
+            <div className="space-y-5 rounded-xl border border-gray-200 dark:border-gray-700 p-5 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} style={{ color: theme.primaryColor }} />
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Two-Factor Authentication</h3>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Sign in another way</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMfaMethod('authenticator')}
+                    className="px-3 py-2 rounded-md border text-sm font-medium"
+                    style={{
+                      borderColor: mfaMethod === 'authenticator' ? theme.primaryColor : '',
+                      color: mfaMethod === 'authenticator' ? theme.primaryColor : '',
+                    }}
+                    disabled={isSubmitting || isSendingEmailOtp}
+                  >
+                    Authenticator App
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMfaMethod('email-otp')}
+                    className="px-3 py-2 rounded-md border text-sm font-medium"
+                    style={{
+                      borderColor: mfaMethod === 'email-otp' ? theme.primaryColor : '',
+                      color: mfaMethod === 'email-otp' ? theme.primaryColor : '',
+                    }}
+                    disabled={isSubmitting || isSendingEmailOtp}
+                  >
+                    Email OTP
+                  </button>
+                </div>
+              </div>
+
+              {mfaMethod === 'authenticator' && mfaMode === 'enroll' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Scan this QR code in Google Authenticator, then enter the generated 6-digit code.
+                  </p>
+
+                  {mfaQrSvg ? (
+                    <div
+                      className="bg-white w-fit p-3 rounded-lg border border-gray-200"
+                      dangerouslySetInnerHTML={{ __html: mfaQrSvg }}
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                      <QrCode size={16} /> QR code unavailable. Use the secret below.
+                    </div>
+                  )}
+
+                  {mfaSecret && (
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Manual setup secret</p>
+                      <p className="font-mono text-sm text-gray-800 dark:text-gray-100 break-all">{mfaSecret}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mfaMethod === 'authenticator' && mfaMode === 'verify' && (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Enter the 6-digit code from your Google Authenticator app.
+                </p>
+              )}
+
+              {mfaMethod === 'authenticator' && (
+                <form onSubmit={handleMfaVerify} className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Authenticator Code
+                    </label>
+                    <input
+                      value={mfaCode}
+                      onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456"
+                      className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-lg text-white font-medium"
+                    style={{ backgroundColor: theme.primaryColor }}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Verifying...' : 'Verify And Continue'}
+                  </button>
+                </form>
+              )}
+
+              {mfaMethod === 'email-otp' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Receive a one-time sign-in code in your email and use it to complete sign in.
+                  </p>
+
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">OTP will be sent to</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{mfaPendingProfile?.email || email}</p>
+                  </div>
+
+                  {!emailOtpRequested ? (
+                    <button
+                      type="button"
+                      onClick={handleRequestEmailOtp}
+                      className="w-full py-2.5 rounded-lg text-white font-medium"
+                      style={{ backgroundColor: theme.primaryColor }}
+                      disabled={isSendingEmailOtp || isSubmitting}
+                    >
+                      {isSendingEmailOtp ? 'Sending OTP...' : 'Send Email OTP'}
+                    </button>
+                  ) : (
+                    <form onSubmit={handleVerifyEmailOtp} className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Email OTP Code
+                        </label>
+                        <input
+                          value={emailOtpCode}
+                          onChange={(event) => setEmailOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="123456"
+                          className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 rounded-lg text-white font-medium"
+                        style={{ backgroundColor: theme.primaryColor }}
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? 'Verifying OTP...' : 'Verify Email OTP'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRequestEmailOtp}
+                        className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                        disabled={isSendingEmailOtp || isSubmitting || emailOtpCooldown > 0}
+                      >
+                        {isSendingEmailOtp
+                          ? 'Resending...'
+                          : emailOtpCooldown > 0
+                            ? `Resend in ${emailOtpCooldown}s`
+                            : 'Resend code'}
+                      </button>
+
+                      {emailOtpCooldown > 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                          You can request a new code in {emailOtpCooldown}s.
+                        </p>
+                      )}
+                    </form>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  clearMfaState();
+                  await supabase.auth.signOut();
+                }}
+                className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                disabled={isSubmitting || isSendingEmailOtp}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Disclaimer */}
+          <p className="text-center text-gray-400 dark:text-gray-500 mt-8 text-xs">
+            © 2026 {theme.brandName}. Built with love for the hair donation community.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
