@@ -17,7 +17,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400">Admin quick access overview. Keep key donation, appointment, inventory, and reporting data here for immediate action.</p>
+        <p className="text-gray-600 dark:text-gray-400">H-Staff quick access overview. Keep key donation, appointment, inventory, and reporting data here for immediate action.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -123,7 +123,7 @@ export default function SuperAdminOverviewPage() {
         <section className="xl:col-span-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={17} style={{ color: theme.primaryColor }} />
-            <h3 className="font-bold text-gray-900 dark:text-white">90-Day Admin Capacity Forecast</h3>
+            <h3 className="font-bold text-gray-900 dark:text-white">90-Day H-Staff Capacity Forecast</h3>
           </div>
           <div className="h-40 flex items-end gap-2">
             {mockForecast.map((value, index) => (

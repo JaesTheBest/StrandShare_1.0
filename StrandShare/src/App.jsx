@@ -5,7 +5,7 @@ import CompleteAccountPage from './pages/shared/auth/CompleteAccountPage';
 import ResetPasswordPage from './pages/shared/auth/ResetPasswordPage';
 import ChangeSettingsPage from './pages/shared/auth/ChangeSettingsPage';
 import SuperAdminRole from './pages/roles/super-admin/SuperAdminRole';
-import AdminRole from './pages/roles/admin/AdminRole';
+import HospitalRole from './pages/roles/hospital/HospitalRole';
 import PartnerRole from './pages/roles/partner/PartnerRole';
 import StaffRole from './pages/roles/staff/StaffRole';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
@@ -29,8 +29,8 @@ function resolveDashboardByRole(roleValue) {
     return SuperAdminRole;
   }
 
-  if (normalizedRole === 'admin') {
-    return AdminRole;
+  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
+    return HospitalRole;
   }
 
   if (normalizedRole === 'partner' || normalizedRole === 'partners') {

@@ -19,7 +19,33 @@ import {
   isSupabaseConfigured,
 } from '../../../lib/supabaseClient';
 
-const DEFAULT_ROLES = ['Super Admin', 'Admin', 'Partner', 'Staff'];
+const DEFAULT_ROLES = ['Super Admin', 'hospital', 'Partner', 'Staff'];
+
+function toRoleLabel(roleValue) {
+  const normalizedRole = String(roleValue || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ');
+
+  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
+    return 'H-Staff';
+  }
+
+  if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {
+    return 'Super Admin';
+  }
+
+  if (normalizedRole === 'partner' || normalizedRole === 'partners') {
+    return 'Partner';
+  }
+
+  if (normalizedRole === 'staff') {
+    return 'Staff';
+  }
+
+  return roleValue || 'N/A';
+}
 
 function mapInviteErrorMessage(rawMessage) {
   const message = String(rawMessage || 'Unexpected error while sending invitation email.');
@@ -62,6 +88,7 @@ function formatDateTime(value) {
 
 export default function ManageUserAccountsPage() {
   const { theme } = useTheme();
+  const tableHeaderTextColor = theme?.primaryTextColor || '#000000';
 
   const [users, setUsers] = useState([]);
   const [allRoles, setAllRoles] = useState([]);
@@ -110,7 +137,7 @@ export default function ManageUserAccountsPage() {
     fetchAllRoles();
 
     const subscription = supabase
-      .channel('public:users-admin')
+      .channel('public:users-hospital')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         fetchUsers();
       })
@@ -219,7 +246,7 @@ export default function ManageUserAccountsPage() {
 
       if (signUpError) throw signUpError;
 
-      // If signUp swapped the current session, restore the original admin session.
+      // If signUp swapped the current session, restore the original session.
       if (adminSession && signUpData?.session?.user?.id !== adminSession.user.id) {
         await supabase.auth.setSession({
           access_token: adminSession.access_token,
@@ -371,7 +398,7 @@ export default function ManageUserAccountsPage() {
     [users, roleFilter, statusFilter],
   );
 
-  const roleOptions = allRoles.map((role) => ({ value: role, label: role }));
+  const roleOptions = allRoles.map((role) => ({ value: role, label: toRoleLabel(role) }));
   const statusOptions = ['Active', 'Inactive'].map((status) => ({ value: status, label: status }));
 
   const selectStyles = {
@@ -447,7 +474,7 @@ export default function ManageUserAccountsPage() {
           </div>
         ) : (
           <table className="w-full text-left">
-            <thead className="text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColorDark }}>
+            <thead className="text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: tableHeaderTextColor }}>
               <tr>
                 <th className="p-4">User Name</th>
                 <th className="p-4">Role</th>
@@ -487,7 +514,7 @@ export default function ManageUserAccountsPage() {
                         className="px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 w-fit"
                         style={{ backgroundColor: `${theme.primaryColor}18`, color: theme.primaryColorDark, borderColor: `${theme.primaryColor}33` }}
                       >
-                        <Shield size={12} /> {user.role}
+                        <Shield size={12} /> {toRoleLabel(user.role)}
                       </span>
                     </td>
                     <td className="p-4 text-gray-700 dark:text-gray-300">
@@ -687,7 +714,7 @@ export default function ManageUserAccountsPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
                   <select required name="role" value={formData.role} onChange={handleInputChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.primaryColor }}>
                     <option value="Super Admin">Super Admin</option>
-                    <option value="Admin">Admin</option>
+                    <option value="hospital">H-Staff</option>
                     <option value="Partner">Partner</option>
                     <option value="Staff">Staff</option>
                   </select>
@@ -776,7 +803,7 @@ export default function ManageUserAccountsPage() {
                         <div className="flex-1">
                           <div className="font-semibold text-gray-800 dark:text-gray-100">{u.first_name || '—'} {u.last_name || ''}</div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">{u.email}</div>
-                          <div className="text-[11px] text-gray-400 dark:text-gray-500">Current role: {u.role || 'N/A'}</div>
+                          <div className="text-[11px] text-gray-400 dark:text-gray-500">Current role: {toRoleLabel(u.role)}</div>
                         </div>
                       </label>
                     ))}
@@ -796,7 +823,7 @@ export default function ManageUserAccountsPage() {
                     style={{ '--tw-ring-color': theme.secondaryColor }}
                   >
                     <option value="Super Admin">Super Admin</option>
-                    <option value="Admin">Admin</option>
+                    <option value="hospital">H-Staff</option>
                     <option value="Partner">Partner</option>
                     <option value="Staff">Staff</option>
                   </select>
@@ -822,7 +849,7 @@ export default function ManageUserAccountsPage() {
                     style={{ backgroundColor: theme.secondaryColor }}
                   >
                     {upgradeSaving ? <Loader2 className="animate-spin" size={18} /> : <Shield size={18} />}
-                    {upgradeSaving ? 'Upgrading...' : `Upgrade to ${upgradeRole}`}
+                    {upgradeSaving ? 'Upgrading...' : `Upgrade to ${toRoleLabel(upgradeRole)}`}
                   </button>
                 </div>
               </form>

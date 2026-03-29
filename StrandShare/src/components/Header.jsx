@@ -43,7 +43,37 @@ function resolveDisplayName(userProfile) {
     return userProfile.email.split('@')[0];
   }
 
-  return 'Admin User';
+  return 'User';
+}
+
+function resolveDisplayRole(roleValue) {
+  const normalizedRole = String(roleValue || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ');
+
+  if (!normalizedRole) {
+    return 'User';
+  }
+
+  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
+    return 'H-Staff';
+  }
+
+  if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {
+    return 'Super Admin';
+  }
+
+  if (normalizedRole === 'partner' || normalizedRole === 'partners') {
+    return 'Partner';
+  }
+
+  if (normalizedRole === 'staff') {
+    return 'Staff';
+  }
+
+  return roleValue;
 }
 
 export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' }) {
@@ -52,7 +82,7 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [avatarHasError, setAvatarHasError] = useState(false);
   const displayName = resolveDisplayName(userProfile);
-  const displayRole = userProfile?.role || 'User';
+  const displayRole = resolveDisplayRole(userProfile?.role);
   const displayEmail = userProfile?.email || 'No email available';
   const resolvedAvatar = useMemo(() => resolveProfileAvatar(userProfile), [userProfile]);
   const avatarSrc = avatarHasError ? DEFAULT_PROFILE_AVATAR : resolvedAvatar;

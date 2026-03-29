@@ -203,6 +203,7 @@ export default function ResetPasswordPage() {
   const handleConfirmReset = async (event) => {
     event?.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
 
     const hasSession = await ensureRecoverySession();
     if (!hasSession) {
@@ -438,7 +439,7 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          {successMessage && (
+          {successMessage && !isPasswordChangeComplete && (
             <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
               {successMessage}
             </div>

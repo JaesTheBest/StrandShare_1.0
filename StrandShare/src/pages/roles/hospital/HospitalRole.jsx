@@ -17,7 +17,7 @@ import TrackDonationStatusPage from './TrackDonationStatusPage';
 import GenerateReportsPage from './GenerateReportsPage';
 import SettingsPage from './SettingsPage';
 
-const adminNavItems = [
+const hospitalNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'manage-hair-donations', label: 'Manage Hair Donations', icon: Heart },
   { id: 'manage-appointments', label: 'Manage Appointments', icon: Calendar },
@@ -27,7 +27,7 @@ const adminNavItems = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const adminPageComponents = {
+const hospitalPageComponents = {
   dashboard: DashboardPage,
   'manage-hair-donations': ManageHairDonationsPage,
   'manage-appointments': ManageAppointmentsPage,
@@ -37,13 +37,13 @@ const adminPageComponents = {
   settings: SettingsPage,
 };
 
-export default function AdminRole({ onSignOut, userProfile }) {
+export default function HospitalRole({ onSignOut, userProfile }) {
   return (
     <RoleDashboardShell
       onSignOut={onSignOut}
       userProfile={userProfile}
-      navItems={adminNavItems}
-      pageComponents={adminPageComponents}
+      navItems={hospitalNavItems}
+      pageComponents={hospitalPageComponents}
       defaultPage="dashboard"
     />
   );

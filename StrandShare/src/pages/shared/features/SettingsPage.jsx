@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
-import { Check, Eye, EyeOff, Save, Upload, X } from 'lucide-react';
+import { Check, Eye, EyeOff, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 import { logAuditAction } from '../../../lib/auditLogger';
 
@@ -13,8 +13,7 @@ const TAB_ITEMS = [
 ];
 
 const BRANDING_EDITOR_TABS = [
-  { id: 'colors', label: 'Colors' },
-  { id: 'typography', label: 'Typography' },
+  { id: 'appearance', label: 'Colors & Typography' },
   { id: 'branding', label: 'Branding' },
 ];
 
@@ -26,7 +25,7 @@ const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
 const SETTINGS_PROFILE_CACHE_KEY = 'strandshare_settings_profile_cache';
 const SYSTEM_PREFS_CACHE_KEY = 'strandshare_system_prefs_cache';
 const NOTIFICATION_PREFS_CACHE_KEY = 'strandshare_notification_prefs_cache';
-const BRANDING_BUCKET = 'branding_assets';
+const BRANDING_BUCKET = 'branding_assests';
 
 function normalizeGenderOption(value) {
   const normalized = String(value || '')
@@ -143,111 +142,60 @@ function mapStorageUploadError(rawMessage) {
   return message;
 }
 
-const BRAND_PRESETS = [
-  {
-    id: 'default-theme',
-    name: 'Default Theme',
-    badge: 'Active',
-    colors: {
-      primary: '#0078bd',
-      primaryDark: '#025aa3',
-      primaryLight: '#0a8ef5',
-      secondary: '#667280',
-      secondaryDark: '#485563',
-      secondaryLight: '#9ca3af',
-      tertiary: '#d1d9e2',
-      tertiaryDark: '#c4ced9',
-      tertiaryLight: '#e8edf3',
-      fontPrimary: '#0f172a',
-      fontSecondary: '#64748b',
-    },
-  },
-  {
-    id: 'ocean-blue',
-    name: 'Ocean Blue',
-    colors: {
-      primary: '#163a5f',
-      primaryDark: '#1f4f83',
-      primaryLight: '#4f8fdb',
-      secondary: '#337ab7',
-      secondaryDark: '#2f5f8f',
-      secondaryLight: '#60a5fa',
-      tertiary: '#c5d4eb',
-      tertiaryDark: '#b8c9e3',
-      tertiaryLight: '#dbeafe',
-      fontPrimary: '#0f172a',
-      fontSecondary: '#475569',
-    },
-  },
-  {
-    id: 'sunset-orange',
-    name: 'Sunset Orange',
-    colors: {
-      primary: '#7c2d12',
-      primaryDark: '#9a3412',
-      primaryLight: '#f97316',
-      secondary: '#c2410c',
-      secondaryDark: '#9a3412',
-      secondaryLight: '#fb923c',
-      tertiary: '#f2e1ca',
-      tertiaryDark: '#edd8bd',
-      tertiaryLight: '#ffedd5',
-      fontPrimary: '#1f2937',
-      fontSecondary: '#6b7280',
-    },
-  },
-  {
-    id: 'forest-green',
-    name: 'Forest Green',
-    colors: {
-      primary: '#166534',
-      primaryDark: '#14532d',
-      primaryLight: '#22c55e',
-      secondary: '#15803d',
-      secondaryDark: '#166534',
-      secondaryLight: '#4ade80',
-      tertiary: '#bbf7d0',
-      tertiaryDark: '#a7f3c0',
-      tertiaryLight: '#dcfce7',
-      fontPrimary: '#052e16',
-      fontSecondary: '#3f3f46',
-    },
-  },
-  {
-    id: 'royal-purple',
-    name: 'Royal Purple',
-    colors: {
-      primary: '#6d28d9',
-      primaryDark: '#5b21b6',
-      primaryLight: '#8b5cf6',
-      secondary: '#7c3aed',
-      secondaryDark: '#6d28d9',
-      secondaryLight: '#a78bfa',
-      tertiary: '#ddd6fe',
-      tertiaryDark: '#c4b5fd',
-      tertiaryLight: '#ede9fe',
-      fontPrimary: '#2e1065',
-      fontSecondary: '#64748b',
-    },
-  },
-  {
-    id: 'midnight',
-    name: 'Midnight',
-    colors: {
-      primary: '#6366f1',
-      primaryDark: '#4f46e5',
-      primaryLight: '#818cf8',
-      secondary: '#334155',
-      secondaryDark: '#1e293b',
-      secondaryLight: '#64748b',
-      tertiary: '#22d3ee',
-      tertiaryDark: '#0891b2',
-      tertiaryLight: '#67e8f9',
-      fontPrimary: '#e2e8f0',
-      fontSecondary: '#94a3b8',
-    },
-  },
-];
+function colorValueToHex(value) {
+  const input = String(value || '').trim();
+  if (!input) return '#000000';
+
+  if (/^#[0-9a-f]{6}$/i.test(input)) {
+    return input;
+  }
+
+  if (/^#[0-9a-f]{3}$/i.test(input)) {
+    const r = input[1];
+    const g = input[2];
+    const b = input[3];
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+
+  const match = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (!match) {
+    return input;
+  }
+
+  const [r, g, b] = match.slice(1, 4).map((part) => {
+    const valueNumber = Number(part);
+    return Math.max(0, Math.min(255, Number.isFinite(valueNumber) ? valueNumber : 0));
+  });
+
+  const toHex = (num) => num.toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function colorValueToRgb(value) {
+  const input = String(value || '').trim();
+  if (!input) return 'rgb(0, 0, 0)';
+
+  const rgbMatch = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (rgbMatch) {
+    const [r, g, b] = rgbMatch.slice(1, 4).map((part) => {
+      const valueNumber = Number(part);
+      return Math.max(0, Math.min(255, Number.isFinite(valueNumber) ? valueNumber : 0));
+    });
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  const hex = colorValueToHex(input);
+  const hexMatch = hex.match(/^#([0-9a-f]{6})$/i);
+  if (!hexMatch) {
+    return input;
+  }
+
+  const hexValue = hexMatch[1];
+  const r = parseInt(hexValue.slice(0, 2), 16);
+  const g = parseInt(hexValue.slice(2, 4), 16);
+  const b = parseInt(hexValue.slice(4, 6), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 function Toggle({ checked, onChange, activeColor }) {
   return (
@@ -268,7 +216,14 @@ function Toggle({ checked, onChange, activeColor }) {
 }
 
 export default function SettingsPage() {
-  const { theme, saveThemeGlobally } = useTheme();
+  const {
+    theme,
+    saveThemeGlobally,
+    themePresets,
+    createThemePreset,
+    softDeleteThemePreset,
+    googleFonts,
+  } = useTheme();
 
   const readCachedProfile = () => {
     let settingsParsed = null;
@@ -302,8 +257,11 @@ export default function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState('profile');
   const [previewView, setPreviewView] = useState('login');
-  const [brandingEditorTab, setBrandingEditorTab] = useState('colors');
-  const [selectedThemeId, setSelectedThemeId] = useState('default-theme');
+  const [brandingEditorTab, setBrandingEditorTab] = useState('appearance');
+  const [selectedThemeId, setSelectedThemeId] = useState('');
+  const [newPresetName, setNewPresetName] = useState('');
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [isDeletingPresetId, setIsDeletingPresetId] = useState(null);
   const [toast, setToast] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -496,8 +454,9 @@ export default function SettingsPage() {
     tertiary: theme.tertiaryColor,
     tertiaryDark: theme.tertiaryColorDark,
     tertiaryLight: theme.tertiaryColorLight,
-    fontPrimary: '#0f172a',
-    fontSecondary: '#64748b',
+    fontPrimary: theme.primaryTextColor || '#0f172a',
+    fontSecondary: theme.secondaryTextColor || '#64748b',
+    fontTertiary: theme.tertiaryTextColor || '#94a3b8',
   });
 
   const [brandingMeta, setBrandingMeta] = useState({
@@ -505,8 +464,8 @@ export default function SettingsPage() {
     brandTagline: theme.brandTagline || 'Every Strand Counts',
     loginTitle: 'Welcome Back',
     loginSubtitle: 'Login to continue supporting our beautyAI community.',
-    primaryFontFamily: 'Poppins, sans-serif',
-    secondaryFontFamily: 'Inter, sans-serif',
+    primaryFontFamily: theme.selectedFont || theme.fontFamily || 'Poppins',
+    secondaryFontFamily: theme.secondaryFontFamily || theme.selectedFont || theme.fontFamily || 'Poppins',
     cornerStyle: 'rounded',
   });
 
@@ -522,6 +481,9 @@ export default function SettingsPage() {
     logoImage: false,
     loginBackgroundImage: false,
   });
+  const [colorInputMode, setColorInputMode] = useState('hex');
+  const [showAllPresets, setShowAllPresets] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1536 : window.innerWidth));
 
   const previewStyle = useMemo(
     () => ({
@@ -531,10 +493,81 @@ export default function SettingsPage() {
   );
 
   const canManageBranding = useMemo(() => isSuperAdminRole(profile.role), [profile.role]);
+  const presetHighlightColor = theme.primaryColor || '#0275d8';
   const visibleTabs = useMemo(
     () => TAB_ITEMS.filter((tab) => tab.id !== 'branding' || canManageBranding),
     [canManageBranding],
   );
+
+  const themePresetCards = useMemo(() => {
+    return (themePresets || []).map((preset) => ({
+      id: String(preset.Preset_ID),
+      name: preset.Preset_Name || 'Untitled Preset',
+      isDefault: Boolean(preset.Is_Default),
+      colors: {
+        primary: preset.Primary_Color,
+        secondary: preset.Secondary_Color,
+        tertiary: preset.Tertiary_Color,
+        fontPrimary: preset.Primary_Text_Color,
+        fontSecondary: preset.Secondary_Text_Color,
+        fontTertiary: preset.Tertiary_Text_Color,
+      },
+      fontFamily: preset.Font_Family || 'Poppins',
+      secondaryFontFamily: preset.Secondary_Font_Family || preset.Font_Family || 'Poppins',
+      rawPresetId: preset.Preset_ID,
+    }));
+  }, [themePresets]);
+
+  const allPresetCards = useMemo(() => ([...themePresetCards, { id: 'custom', name: 'Custom', isCustom: true }]), [themePresetCards]);
+
+  const presetColumns = useMemo(() => {
+    if (viewportWidth >= 1536) return 5;
+    if (viewportWidth >= 1280) return 4;
+    if (viewportWidth >= 768) return 3;
+    return 2;
+  }, [viewportWidth]);
+
+  const maxCollapsedPresetCount = presetColumns * 2;
+  const hasMorePresetRows = allPresetCards.length > maxCollapsedPresetCount;
+  const visiblePresetCards = showAllPresets ? allPresetCards : allPresetCards.slice(0, maxCollapsedPresetCount);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasMorePresetRows) {
+      setShowAllPresets(false);
+    }
+  }, [hasMorePresetRows]);
+
+  useEffect(() => {
+    if ((themePresetCards || []).length === 0) {
+      return;
+    }
+
+    const defaultPreset = themePresetCards.find((preset) => preset.isDefault);
+    if (!defaultPreset) {
+      return;
+    }
+
+    if (!selectedThemeId) {
+      setSelectedThemeId(defaultPreset.id);
+      return;
+    }
+
+    const hasRealPresetSelection = themePresetCards.some((preset) => preset.id === selectedThemeId);
+    if (!hasRealPresetSelection && selectedThemeId !== 'custom') {
+      setSelectedThemeId(defaultPreset.id);
+    }
+  }, [themePresetCards, selectedThemeId]);
 
   useEffect(() => {
     if (activeTab === 'branding' && !canManageBranding) {
@@ -787,7 +820,7 @@ export default function SettingsPage() {
 
     try {
       const safeName = file.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
-      const assetFolder = field === 'logoImage' ? 'logo' : 'login-background';
+      const assetFolder = field === 'logoImage' ? 'logo' : 'login background';
       const filePath = `${authUserId}/${assetFolder}/${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -1269,6 +1302,95 @@ export default function SettingsPage() {
     }
   };
 
+  const buildBrandingThemePayload = useCallback(() => {
+    if (brandingUploadStatus.logoImage || brandingUploadStatus.loginBackgroundImage) {
+      return { payload: null, reason: 'uploading' };
+    }
+
+    const resolvedLogoImage = brandingAssetPaths.logoImagePath
+      ? getStoragePublicUrl(BRANDING_BUCKET, brandingAssetPaths.logoImagePath)
+      : brandingAssets.logoImage;
+    const resolvedLoginBackgroundImage = brandingAssetPaths.loginBackgroundImagePath
+      ? getStoragePublicUrl(BRANDING_BUCKET, brandingAssetPaths.loginBackgroundImagePath)
+      : brandingAssets.loginBackgroundImage;
+
+    if (isBlobUrl(resolvedLogoImage) || isBlobUrl(resolvedLoginBackgroundImage)) {
+      return { payload: null, reason: 'local-only-media' };
+    }
+
+    return {
+      payload: {
+        primaryColor: tempColors.primary,
+        primaryColorDark: tempColors.primaryDark,
+        primaryColorLight: tempColors.primaryLight,
+        secondaryColor: tempColors.secondary,
+        secondaryColorDark: tempColors.secondaryDark,
+        secondaryColorLight: tempColors.secondaryLight,
+        tertiaryColor: tempColors.tertiary,
+        tertiaryColorDark: tempColors.tertiaryDark,
+        tertiaryColorLight: tempColors.tertiaryLight,
+        primaryTextColor: tempColors.fontPrimary,
+        secondaryTextColor: tempColors.fontSecondary,
+        tertiaryTextColor: tempColors.fontTertiary || tempColors.fontSecondary,
+        fontFamily: brandingMeta.primaryFontFamily,
+        selectedFont: brandingMeta.primaryFontFamily,
+        secondaryFontFamily: brandingMeta.secondaryFontFamily || brandingMeta.primaryFontFamily,
+        brandName: brandingMeta.brandName,
+        brandTagline: brandingMeta.brandTagline,
+        logoImage: resolvedLogoImage,
+        logoImagePath: brandingAssetPaths.logoImagePath,
+        loginBackgroundImage: resolvedLoginBackgroundImage,
+        loginBackgroundImagePath: brandingAssetPaths.loginBackgroundImagePath,
+      },
+      reason: '',
+    };
+  }, [
+    brandingUploadStatus,
+    brandingAssetPaths,
+    brandingAssets,
+    tempColors,
+    brandingMeta,
+  ]);
+
+  const saveBrandingGlobally = useCallback(async ({ successMessage = '', showError = true } = {}) => {
+    const { payload, reason } = buildBrandingThemePayload();
+    if (!payload) {
+      if (showError && reason === 'uploading') {
+        showToast('Please wait for branding uploads to finish before saving.');
+      } else if (showError && reason === 'local-only-media') {
+        showToast('Branding image is still local only. Re-upload it and wait for upload success before saving.');
+      }
+      return { saved: false, error: null, reason };
+    }
+
+    let actorUserId = userId || null;
+
+    if (!actorUserId && isSupabaseConfigured && supabase && authUserId) {
+      try {
+        actorUserId = await ensureUserRow();
+      } catch (actorError) {
+        if (showError) {
+          showToast(actorError?.message || 'Unable to resolve user identity for Updated_By.');
+        }
+        return { saved: false, error: actorError, reason: 'missing-updated-by' };
+      }
+    }
+
+    const { error } = await saveThemeGlobally(payload, actorUserId);
+    if (error) {
+      if (showError) {
+        showToast(error.message || 'Failed to save global branding settings.');
+      }
+      return { saved: false, error, reason: 'save-error' };
+    }
+
+    if (successMessage) {
+      showToast(successMessage);
+    }
+
+    return { saved: true, error: null, reason: '' };
+  }, [authUserId, buildBrandingThemePayload, ensureUserRow, saveThemeGlobally, showToast, userId]);
+
   const handleSave = async () => {
     if (activeTab === 'profile') {
       await handleSaveProfile();
@@ -1286,47 +1408,7 @@ export default function SettingsPage() {
     }
 
     if (activeTab === 'branding') {
-      if (brandingUploadStatus.logoImage || brandingUploadStatus.loginBackgroundImage) {
-        showToast('Please wait for branding uploads to finish before saving.');
-        return;
-      }
-
-      const resolvedLogoImage = brandingAssetPaths.logoImagePath
-        ? getStoragePublicUrl(BRANDING_BUCKET, brandingAssetPaths.logoImagePath)
-        : brandingAssets.logoImage;
-      const resolvedLoginBackgroundImage = brandingAssetPaths.loginBackgroundImagePath
-        ? getStoragePublicUrl(BRANDING_BUCKET, brandingAssetPaths.loginBackgroundImagePath)
-        : brandingAssets.loginBackgroundImage;
-
-      if (isBlobUrl(resolvedLogoImage) || isBlobUrl(resolvedLoginBackgroundImage)) {
-        showToast('Branding image is still local only. Re-upload it and wait for upload success before saving.');
-        return;
-      }
-
-      const brandingThemePayload = {
-        primaryColor: tempColors.primary,
-        primaryColorDark: tempColors.primaryDark,
-        primaryColorLight: tempColors.primaryLight,
-        secondaryColor: tempColors.secondary,
-        secondaryColorDark: tempColors.secondaryDark,
-        secondaryColorLight: tempColors.secondaryLight,
-        tertiaryColor: tempColors.tertiary,
-        tertiaryColorDark: tempColors.tertiaryDark,
-        tertiaryColorLight: tempColors.tertiaryLight,
-        brandName: brandingMeta.brandName,
-        brandTagline: brandingMeta.brandTagline,
-        logoImage: resolvedLogoImage,
-        logoImagePath: brandingAssetPaths.logoImagePath,
-        loginBackgroundImage: resolvedLoginBackgroundImage,
-        loginBackgroundImagePath: brandingAssetPaths.loginBackgroundImagePath,
-      };
-
-      const { error } = await saveThemeGlobally(brandingThemePayload);
-      if (error) {
-        showToast(error.message || 'Failed to save global branding settings.');
-      } else {
-        showToast('Global branding updated for all users.');
-      }
+      await saveBrandingGlobally({ successMessage: 'Global branding updated for all users.', showError: true });
       return;
     }
 
@@ -1378,14 +1460,18 @@ export default function SettingsPage() {
         tertiary: theme.tertiaryColor,
         tertiaryDark: theme.tertiaryColorDark,
         tertiaryLight: theme.tertiaryColorLight,
-        fontPrimary: '#0f172a',
-        fontSecondary: '#64748b',
+        fontPrimary: theme.primaryTextColor || '#0f172a',
+        fontSecondary: theme.secondaryTextColor || '#64748b',
+        fontTertiary: theme.tertiaryTextColor || '#94a3b8',
       });
-      setSelectedThemeId('default-theme');
+      const defaultPreset = themePresetCards.find((preset) => preset.isDefault);
+      setSelectedThemeId(defaultPreset ? defaultPreset.id : 'custom');
       setBrandingMeta((prev) => ({
         ...prev,
         brandName: theme.brandName || 'StrandShare',
         brandTagline: theme.brandTagline || 'Every Strand Counts',
+        primaryFontFamily: theme.selectedFont || theme.fontFamily || prev.primaryFontFamily,
+        secondaryFontFamily: theme.secondaryFontFamily || theme.selectedFont || theme.fontFamily || prev.secondaryFontFamily,
       }));
       setBrandingAssets({
         logoImage: theme.logoImage || '',
@@ -1420,8 +1506,86 @@ export default function SettingsPage() {
       return;
     }
     setTempColors({ ...preset.colors });
+    setBrandingMeta((prev) => ({
+      ...prev,
+      primaryFontFamily: preset.fontFamily || prev.primaryFontFamily,
+      secondaryFontFamily: preset.secondaryFontFamily || preset.fontFamily || prev.secondaryFontFamily,
+    }));
     setSelectedThemeId(preset.id);
+    setColorInputMode('hex');
     showToast(`${preset.name} theme loaded.`);
+  };
+
+  const handleSaveCustomPreset = async () => {
+    const trimmedName = String(newPresetName || '').trim();
+    if (!trimmedName) {
+      showToast('Enter a preset name first.');
+      return;
+    }
+
+    if (trimmedName.toLowerCase() === 'default') {
+      showToast('The Default preset name is reserved.');
+      return;
+    }
+
+    setIsSavingPreset(true);
+    const { data, error } = await createThemePreset({
+      presetName: trimmedName,
+      colors: tempColors,
+      fontFamily: brandingMeta.primaryFontFamily,
+      secondaryFontFamily: brandingMeta.secondaryFontFamily,
+    });
+    setIsSavingPreset(false);
+
+    if (error) {
+      showToast(error.message || 'Failed to save custom preset.');
+      return;
+    }
+
+    setNewPresetName('');
+    setSelectedThemeId(String(data?.Preset_ID || 'custom'));
+    showToast('Custom preset saved.');
+  };
+
+  const handleSoftDeletePreset = async (preset) => {
+    if (!preset || preset.isDefault) {
+      showToast('Default preset cannot be deleted.');
+      return;
+    }
+
+    setIsDeletingPresetId(preset.rawPresetId);
+    const { error } = await softDeleteThemePreset(preset.rawPresetId);
+    setIsDeletingPresetId(null);
+
+    if (error) {
+      showToast(error.message || 'Failed to delete preset.');
+      return;
+    }
+
+    const defaultPreset = themePresetCards.find((item) => item.isDefault);
+    setSelectedThemeId(defaultPreset ? defaultPreset.id : 'custom');
+    showToast('Preset removed from available themes.');
+  };
+
+  const handleResetBrandingToDefault = () => {
+    const defaultPreset = themePresetCards.find((preset) => preset.isDefault);
+
+    if (!defaultPreset) {
+      showToast('Default preset is unavailable.');
+      return;
+    }
+
+    setTempColors({ ...defaultPreset.colors });
+    setBrandingMeta((prev) => ({
+      ...prev,
+      brandName: 'StrandShare',
+      brandTagline: 'Every Strand Counts',
+      primaryFontFamily: defaultPreset.fontFamily || 'Poppins',
+      secondaryFontFamily: defaultPreset.secondaryFontFamily || defaultPreset.fontFamily || 'Poppins',
+    }));
+    setSelectedThemeId(defaultPreset.id);
+    setColorInputMode('hex');
+    showToast('Reset to Default preset. Click Save Branding Now to apply globally.');
   };
 
   const activeTabStyle = (tabId) =>
@@ -1907,59 +2071,98 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'branding' && (
-          <div className="grid grid-cols-12 gap-8">
-            <div className="col-span-12 lg:col-span-7 space-y-8">
+          <div className="grid grid-cols-12 gap-6 xl:gap-8">
+            <div className="col-span-12 xl:col-span-8 space-y-6">
               <section className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Available Themes</h3>
+                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Available Themes</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Apply, save, and manage visual presets for the whole platform.</p>
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{themePresetCards.length} presets</span>
                 </div>
                 <div className="p-6">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {BRAND_PRESETS.map((preset) => {
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                    {visiblePresetCards.map((preset) => {
                       const isActive = preset.id === selectedThemeId;
                       return (
                         <button
                           key={preset.id}
                           type="button"
-                          onClick={() => applyPreset(preset)}
-                          className="group relative aspect-[4/3] rounded-lg border-2 p-2 overflow-hidden transition-all"
+                          onClick={() => {
+                            if (preset.isCustom) {
+                              setSelectedThemeId('custom');
+                              return;
+                            }
+                            applyPreset(preset);
+                          }}
+                          className="group relative h-44 rounded-3xl border-2 p-3 overflow-hidden transition-all text-left"
                           style={
                             isActive
                               ? {
-                                  borderColor: tempColors.primary,
-                                  backgroundColor: `${tempColors.primary}0d`,
-                                  boxShadow: `0 0 0 2px ${tempColors.primary}33`,
+                                  borderColor: presetHighlightColor,
+                                  backgroundColor: `${presetHighlightColor}0d`,
+                                  boxShadow: `0 0 0 2px ${presetHighlightColor}33`,
                                 }
-                              : { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }
+                              : { borderColor: '#dce3ea', backgroundColor: '#f2f6fb' }
                           }
                         >
-                          {preset.id !== 'custom' ? (
-                            <div className="w-full h-full rounded border border-slate-200 bg-white dark:bg-slate-900 flex flex-col p-2 gap-2">
-                              <div className="flex gap-1.5 h-7">
-                                <div className="flex-1 rounded" style={{ backgroundColor: preset.colors.primary }} />
-                                <div className="flex-1 rounded" style={{ backgroundColor: preset.colors.secondary }} />
-                                <div className="flex-1 rounded" style={{ backgroundColor: preset.colors.primaryLight }} />
+                          {!preset.isCustom ? (
+                            <div className="w-full h-full rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 flex flex-col p-3 gap-3">
+                              <div className="flex gap-2 h-16">
+                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.primary }} />
+                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.secondary }} />
+                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.tertiary }} />
                               </div>
-                              <div className="grid grid-cols-2 gap-1 h-4">
-                                <div className="rounded bg-white border border-slate-100" />
-                                <div className="rounded" style={{ backgroundColor: preset.colors.tertiary }} />
+                              <div className="space-y-2">
+                                <div className="h-2.5 rounded" style={{ backgroundColor: preset.colors.fontPrimary }} />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="h-6 rounded" style={{ backgroundColor: preset.colors.fontSecondary }} />
+                                  <div className="h-6 rounded" style={{ backgroundColor: preset.colors.fontTertiary }} />
+                                </div>
                               </div>
                             </div>
                           ) : (
-                            <div className="w-full h-full rounded border border-dashed border-slate-300 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-slate-500 text-[10px] font-bold uppercase">
+                            <div className="w-full h-full rounded-2xl border border-dashed border-slate-300 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-slate-500 text-[10px] font-bold uppercase">
                               Custom
                             </div>
                           )}
-                          {preset.badge && (
-                            <span className="absolute right-2 top-2 rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white">{preset.badge}</span>
+                          {isActive && (
+                            <span className="absolute right-4 top-4 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white">Active</span>
                           )}
-                          <div className="absolute inset-x-2 bottom-1 text-[10px] font-bold text-slate-700 dark:text-slate-200">
+                          {!preset.isCustom && !preset.isDefault && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleSoftDeletePreset(preset);
+                              }}
+                              title="Delete preset"
+                              aria-label="Delete preset"
+                              className={`absolute right-3 top-3 h-7 w-7 inline-flex items-center justify-center rounded-full border border-red-200 bg-white/95 text-red-600 shadow-sm transition hover:bg-red-50 ${isDeletingPresetId === preset.rawPresetId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                          <div className="absolute inset-x-4 bottom-3 text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate">
                             {preset.name}
                           </div>
                         </button>
                       );
                     })}
                   </div>
+                  {hasMorePresetRows && (
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPresets((prev) => !prev)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+                      >
+                        {showAllPresets ? 'View Less' : 'View More'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -1983,91 +2186,157 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="p-6 space-y-6">
-                  {brandingEditorTab === 'colors' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Primary Color</label>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.primary }} />
-                          <input
-                            value={tempColors.primary}
-                            onChange={(e) => setTempColors({ ...tempColors, primary: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                          />
+                  {brandingEditorTab === 'appearance' && (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-950/60 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Color Mode</label>
+                        <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1">
+                          <button
+                            type="button"
+                            onClick={() => setColorInputMode('hex')}
+                            className={`px-2 py-0.5 text-[10px] rounded ${colorInputMode === 'hex' ? 'font-bold bg-slate-100 dark:bg-slate-800' : 'text-slate-500'}`}
+                          >
+                            HEX
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setColorInputMode('rgb')}
+                            className={`px-2 py-0.5 text-[10px] rounded ${colorInputMode === 'rgb' ? 'font-bold bg-slate-100 dark:bg-slate-800' : 'text-slate-500'}`}
+                          >
+                            RGB
+                          </button>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Secondary Color</label>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.secondary }} />
+
+                      {selectedThemeId === 'custom' && (
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Custom Preset Name</label>
                           <input
-                            value={tempColors.secondary}
-                            onChange={(e) => setTempColors({ ...tempColors, secondary: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                            value={newPresetName}
+                            onChange={(event) => setNewPresetName(event.target.value)}
+                            placeholder="Name this custom preset"
+                            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
                           />
                         </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Tertiary Color</label>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.tertiary }} />
-                          <input
-                            value={tempColors.tertiary}
-                            onChange={(e) => setTempColors({ ...tempColors, tertiary: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Primary Color</label>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontPrimary }} />
-                          <input
-                            value={tempColors.fontPrimary}
-                            onChange={(e) => setTempColors({ ...tempColors, fontPrimary: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                          />
-                        </div>
-                      </div>
-                      <div className="sm:col-span-2 space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Secondary Color</label>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontSecondary }} />
-                          <input
-                            value={tempColors.fontSecondary}
-                            onChange={(e) => setTempColors({ ...tempColors, fontSecondary: e.target.value })}
-                            className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                          />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
-                  {brandingEditorTab === 'typography' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {brandingEditorTab === 'appearance' && (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                          <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Theme Colors</h4>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Primary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.primary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.primary) : colorValueToHex(tempColors.primary)}
+                                onChange={(e) => setTempColors({ ...tempColors, primary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Secondary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.secondary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.secondary) : colorValueToHex(tempColors.secondary)}
+                                onChange={(e) => setTempColors({ ...tempColors, secondary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Tertiary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.tertiary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.tertiary) : colorValueToHex(tempColors.tertiary)}
+                                onChange={(e) => setTempColors({ ...tempColors, tertiary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                          <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Font Colors</h4>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Primary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontPrimary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontPrimary) : colorValueToHex(tempColors.fontPrimary)}
+                                onChange={(e) => setTempColors({ ...tempColors, fontPrimary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Secondary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontSecondary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontSecondary) : colorValueToHex(tempColors.fontSecondary)}
+                                onChange={(e) => setTempColors({ ...tempColors, fontSecondary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Tertiary Color</label>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontTertiary }} />
+                              <input
+                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontTertiary) : colorValueToHex(tempColors.fontTertiary)}
+                                onChange={(e) => setTempColors({ ...tempColors, fontTertiary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
+                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Primary Font Family</label>
-                        <input
+                        <select
                           value={brandingMeta.primaryFontFamily}
                           onChange={(e) => setBrandingMeta({ ...brandingMeta, primaryFontFamily: e.target.value })}
                           className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
+                        >
+                          {(googleFonts || []).map((fontName) => (
+                            <option key={fontName} value={fontName}>{fontName}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-2">
                         <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Secondary Font Family</label>
-                        <input
+                        <select
                           value={brandingMeta.secondaryFontFamily}
                           onChange={(e) => setBrandingMeta({ ...brandingMeta, secondaryFontFamily: e.target.value })}
                           className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
+                        >
+                          {(googleFonts || []).map((fontName) => (
+                            <option key={fontName} value={fontName}>{fontName}</option>
+                          ))}
+                        </select>
                       </div>
-                      <div className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-4">
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-4">
                         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Typography Preview</p>
                         <h4 className="text-lg font-bold" style={{ color: tempColors.fontPrimary, fontFamily: brandingMeta.primaryFontFamily }}>
                           Analytics Overview
                         </h4>
                         <p className="text-sm mt-1" style={{ color: tempColors.fontSecondary, fontFamily: brandingMeta.secondaryFontFamily }}>
                           Real-time performance data and engagement metrics
+                        </p>
+                        <p className="text-xs mt-2" style={{ color: tempColors.fontTertiary, fontFamily: brandingMeta.secondaryFontFamily }}>
+                          Supporting helper text style
                         </p>
                       </div>
                     </div>
@@ -2132,11 +2401,28 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   )}
+
+                  {selectedThemeId === 'custom' && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSaveCustomPreset}
+                          disabled={isSavingPreset}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider text-white disabled:opacity-60"
+                          style={{ backgroundColor: theme.primaryColor }}
+                        >
+                          <Plus size={14} />
+                          {isSavingPreset ? 'Saving...' : 'Save As Preset'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             </div>
 
-            <div className="col-span-12 lg:col-span-5">
+            <div className="col-span-12 xl:col-span-4">
               <div className="sticky top-24">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2148,7 +2434,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => setPreviewView('login')}
                       className="px-3 py-1.5 text-[11px] font-bold"
-                      style={previewView === 'login' ? { backgroundColor: `${tempColors.primary}20`, color: tempColors.primary } : { color: '#64748b' }}
+                      style={previewView === 'login' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
                     >
                       Login
                     </button>
@@ -2156,7 +2442,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => setPreviewView('home')}
                       className="px-3 py-1.5 text-[11px] font-bold"
-                      style={previewView === 'home' ? { backgroundColor: `${tempColors.primary}20`, color: tempColors.primary } : { color: '#64748b' }}
+                      style={previewView === 'home' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
                     >
                       Home
                     </button>
@@ -2254,25 +2540,27 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center mt-4 italic">
-                  Changes are reflected in real-time as you customize {previewView} preview.
-                </p>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleResetBrandingToDefault}
+                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500"
+                  >
+                    Reset To Default
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider text-white"
+                    style={{ backgroundColor: theme.primaryColor }}
+                  >
+                    <Save size={14} />
+                    Save Branding Now
+                  </button>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <div className="col-span-12 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-4">
-              <button type="button" onClick={handleDiscard} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-                Discard Branding Changes
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider text-white"
-                style={{ backgroundColor: theme.primaryColor }}
-              >
-                <Save size={14} />
-                Save Branding Changes
-              </button>
             </div>
           </div>
         )}

@@ -3,7 +3,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { Clock, Shield } from 'lucide-react';
 
 const mockUsers = [
-  { id: 1, name: 'Sarah Johnson', email: 'sarah@strandshare.com', role: 'Admin', status: 'active', joinDate: '2024-01-15' },
+  { id: 1, name: 'Sarah Johnson', email: 'sarah@strandshare.com', role: 'H-Staff', status: 'active', joinDate: '2024-01-15' },
   { id: 2, name: 'Michael Chen', email: 'michael@strandshare.com', role: 'Moderator', status: 'active', joinDate: '2024-02-20' },
   { id: 3, name: 'Emily Rodriguez', email: 'emily@strandshare.com', role: 'User', status: 'active', joinDate: '2024-03-10' },
   { id: 4, name: 'James Brown', email: 'james@strandshare.com', role: 'User', status: 'active', joinDate: '2024-03-05' },
@@ -13,12 +13,12 @@ const mockUsers = [
 const mockPending = [
   { id: 101, name: 'David Martinez', email: 'david@example.com', appliedDate: '2024-03-12', requestedRole: 'Moderator' },
   { id: 102, name: 'Jennifer Lee', email: 'jennifer@example.com', appliedDate: '2024-03-10', requestedRole: 'Support' },
-  { id: 103, name: 'Robert Taylor', email: 'robert@example.com', appliedDate: '2024-03-08', requestedRole: 'Admin' },
+  { id: 103, name: 'Robert Taylor', email: 'robert@example.com', appliedDate: '2024-03-08', requestedRole: 'H-Staff' },
 ];
 
 const mockRoles = [
   { name: 'Super Admin', permissions: 28, users: 5, color: '#ef4444' },
-  { name: 'Admin', permissions: 22, users: 8, color: '#f97316' },
+  { name: 'H-Staff', permissions: 22, users: 8, color: '#f97316' },
   { name: 'Moderator', permissions: 15, users: 12, color: '#3b82f6' },
   { name: 'Support', permissions: 10, users: 18, color: '#10b981' },
   { name: 'User', permissions: 5, users: 1247, color: '#6b7280' },
