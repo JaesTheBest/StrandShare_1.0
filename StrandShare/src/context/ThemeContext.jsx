@@ -461,7 +461,7 @@ export function ThemeProvider({ children }) {
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [refreshThemePresets]);
 
   // Save theme to localStorage whenever it changes
   useEffect(() => {

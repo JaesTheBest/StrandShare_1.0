@@ -583,10 +583,10 @@ export default function SettingsPage() {
     loadSecurityActivity(userId);
   }, [userId, loadSecurityActivity]);
 
-  const showToast = (message) => {
+  const showToast = useCallback((message) => {
     setToast(message);
     setTimeout(() => setToast(''), 2200);
-  };
+  }, []);
 
   const pushUserProfileToShell = (nextProfile) => {
     try {
@@ -857,7 +857,7 @@ export default function SettingsPage() {
     }
   };
 
-  const ensureUserRow = async () => {
+  const ensureUserRow = useCallback(async () => {
     if (userId) {
       return userId;
     }
@@ -882,7 +882,7 @@ export default function SettingsPage() {
 
     setUserId(createdOrExistingUser.user_id);
     return createdOrExistingUser.user_id;
-  };
+  }, [userId, supabase, authUserId, profile.email, authEmail, profile.role]);
 
   const appendSecurityLog = async (action, description, resource = 'security/settings') => {
     const targetUserId = userId || await ensureUserRow();
