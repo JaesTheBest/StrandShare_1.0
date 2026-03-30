@@ -20,15 +20,15 @@ export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
   const { theme } = useTheme();
 
   return (
-    <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+    <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
       {/* Logo Section */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3 mb-2">
           {theme.logoImage ? (
             <img
               src={theme.logoImage}
               alt="Brand logo"
-              className="w-10 h-10 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+              className="w-10 h-10 rounded-lg object-cover border border-gray-200"
             />
           ) : (
             <div
@@ -39,8 +39,8 @@ export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
             </div>
           )}
           <div>
-            <h2 className="font-bold text-gray-900 dark:text-white">{theme.brandName}</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{theme.brandTagline}</p>
+            <h2 className="font-bold text-gray-900">{theme.brandName}</h2>
+            <p className="text-xs text-gray-500">{theme.brandTagline}</p>
           </div>
         </div>
       </div>
@@ -57,8 +57,8 @@ export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
               onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 isActive
-                  ? 'bg-blue-50 dark:bg-gray-700'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'bg-blue-50'
+                  : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
               <Icon
@@ -67,7 +67,7 @@ export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
               />
               <span
                 className={`text-sm font-medium ${
-                  isActive ? 'text-gray-600 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400'
+                  isActive ? 'text-gray-600' : 'text-gray-600'
                 }`}
                 style={isActive ? { color: theme.primaryColor } : {}}
               >

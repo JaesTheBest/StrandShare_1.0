@@ -384,7 +384,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-white dark:bg-gray-900">
+    <div className="flex min-h-screen bg-white">
       <div
         className="hidden lg:flex w-1/2 items-center justify-center p-12"
         style={{
@@ -402,20 +402,20 @@ export default function ResetPasswordPage() {
           <h2 className="text-4xl font-bold text-center mb-3" style={{ color: theme.primaryColor }}>
             Secure Your Account
           </h2>
-          <p className="text-center text-gray-600 dark:text-gray-400 text-sm">
+          <p className="text-center text-gray-600 text-sm">
             Create a new password to regain secure access to your dashboard.
           </p>
         </div>
       </div>
 
-      <div className="w-full lg:w-1/2 bg-white dark:bg-gray-900 flex flex-col items-center justify-center px-6 py-12">
+      <div className="w-full lg:w-1/2 bg-white flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="flex items-center gap-2 mb-10">
             {theme.logoImage ? (
               <img
                 src={theme.logoImage}
                 alt={`${theme.brandName || 'StrandShare'} logo`}
-                className="w-8 h-8 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+                className="w-8 h-8 rounded-lg object-cover border border-gray-200"
               />
             ) : (
               <div
@@ -425,29 +425,29 @@ export default function ResetPasswordPage() {
                 S
               </div>
             )}
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">{theme.brandName}</span>
+            <span className="text-2xl font-bold text-gray-900">{theme.brandName}</span>
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Reset Password</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Reset Password</h1>
+          <p className="text-gray-600 mb-6 text-sm">
             Set a new password for your account.
           </p>
 
           {errorMessage && (
-            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
+            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
               {errorMessage}
             </div>
           )}
 
           {successMessage && !isPasswordChangeComplete && (
-            <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
+            <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700">
               {successMessage}
             </div>
           )}
 
           {canRequestNewRecoveryLink && (
-            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-3 dark:border-amber-700 dark:bg-amber-900/20">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-3">
+              <p className="text-sm text-amber-800">
                 Your reset link expired. Request a new one below.
               </p>
               <input
@@ -455,7 +455,7 @@ export default function ResetPasswordPage() {
                 value={recoveryEmail}
                 onChange={(event) => setRecoveryEmail(event.target.value)}
                 placeholder="name@example.com"
-                className="w-full p-2.5 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                className="w-full p-2.5 border border-amber-300 rounded-lg bg-white text-gray-900"
               />
               <button
                 type="button"
@@ -473,21 +473,21 @@ export default function ResetPasswordPage() {
             {!isPasswordChangeComplete && !mfaRequired && !emailConfirmRequired && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">New Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                    <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={newPassword}
                       onChange={(event) => setNewPassword(event.target.value)}
-                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-white text-gray-900"
                       placeholder="Enter new password"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-3 top-3 text-gray-400 dark:text-gray-500"
+                      className="absolute right-3 top-3 text-gray-400"
                     >
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
@@ -495,41 +495,41 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Confirm Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                    <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
                     <input
                       type={showConfirm ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(event) => setConfirmPassword(event.target.value)}
-                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-white text-gray-900"
                       placeholder="Confirm new password"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirm((prev) => !prev)}
-                      className="absolute right-3 top-3 text-gray-400 dark:text-gray-500"
+                      className="absolute right-3 top-3 text-gray-400"
                     >
                       {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
                   </div>
                   {passwordsMatch && (
-                    <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">Passwords matched.</p>
+                    <p className="mt-2 text-xs font-medium text-emerald-600">Passwords matched.</p>
                   )}
                   {passwordsMismatch && (
-                    <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">Passwords mismatched.</p>
+                    <p className="mt-2 text-xs font-medium text-red-600">Passwords mismatched.</p>
                   )}
                 </div>
 
-                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-sm">
+                <div className="rounded-lg border border-gray-200 p-3 text-sm">
                   {[
                     ['At least 8 characters', passwordRules.length],
                     ['At least one uppercase letter', passwordRules.uppercase],
                     ['At least one number', passwordRules.number],
                     ['At least one special character', passwordRules.special],
                   ].map(([label, valid]) => (
-                    <div key={label} className="flex items-center gap-2 py-0.5 text-gray-600 dark:text-gray-300">
+                    <div key={label} className="flex items-center gap-2 py-0.5 text-gray-600">
                       <Check size={14} className={valid ? 'text-emerald-500' : 'text-gray-400'} />
                       <span>{label}</span>
                     </div>
@@ -549,18 +549,18 @@ export default function ResetPasswordPage() {
             )}
 
             {!isPasswordChangeComplete && mfaRequired && emailConfirmRequired && (
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div className="rounded-lg border border-gray-200 p-4 space-y-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={16} style={{ color: theme.primaryColor }} />
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Confirm It Is Really You</p>
+                  <p className="text-sm font-semibold text-gray-800">Confirm It Is Really You</p>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-gray-500">
                   Enter your authenticator code and the reauthentication email code to finish changing your password.
                 </p>
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Authenticator Code</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Authenticator Code</label>
                     <input
                       value={mfaCode}
                       onChange={(event) => {
@@ -570,11 +570,11 @@ export default function ResetPasswordPage() {
                         }
                       }}
                       placeholder="123456"
-                      className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-[0.25em]"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-gray-900 tracking-[0.25em]"
                       inputMode="numeric"
                       required
                     />
-                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-[11px] text-gray-500">
                       Authenticator codes refresh quickly. Use the current code before the timer resets.
                     </p>
 
@@ -582,25 +582,25 @@ export default function ResetPasswordPage() {
                       <button
                         type="button"
                         onClick={handleCheckMfaCode}
-                        className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-700 dark:text-gray-300"
+                        className="px-3 py-1.5 rounded-md border border-gray-300 text-xs font-semibold text-gray-700"
                         disabled={isCheckingMfaCode || isConfirmingReset}
                       >
                         {isCheckingMfaCode ? 'Checking MFA...' : 'Check MFA Code'}
                       </button>
 
                       {isMfaCodeVerified && (
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">MFA verified ✓</span>
+                        <span className="text-xs font-semibold text-emerald-600">MFA verified ✓</span>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Email OTP Code</label>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Email OTP Code</label>
                     <input
                       value={emailOtpCode}
                       onChange={(event) => setEmailOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="123456"
-                      className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-[0.25em]"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-gray-900 tracking-[0.25em]"
                       inputMode="numeric"
                       required
                     />
@@ -620,7 +620,7 @@ export default function ResetPasswordPage() {
                 <button
                   type="button"
                   onClick={requestEmailConfirmationCode}
-                  className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium"
+                  className="w-full py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium"
                   disabled={isSendingEmailOtp || isConfirmingReset || emailOtpCooldown > 0}
                 >
                   {isSendingEmailOtp
@@ -631,7 +631,7 @@ export default function ResetPasswordPage() {
                 </button>
 
                 {emailOtpCooldown > 0 && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                  <p className="text-xs text-gray-500 text-center">
                     You can request another code in {emailOtpCooldown}s.
                   </p>
                 )}
@@ -639,9 +639,9 @@ export default function ResetPasswordPage() {
             )}
 
             {isPasswordChangeComplete && (
-              <div className="rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/20 p-4">
-                <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-200">Password confirmation done.</p>
-                <p className="mt-1 text-xs text-emerald-700/90 dark:text-emerald-200/90">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm font-semibold text-emerald-700">Password confirmation done.</p>
+                <p className="mt-1 text-xs text-emerald-700/90">
                   Your password was updated successfully. Use the button below when you are ready to go back to login.
                 </p>
               </div>
@@ -650,7 +650,7 @@ export default function ResetPasswordPage() {
             <button
               type="button"
               onClick={goToLogin}
-              className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium"
+              className="w-full py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium"
             >
               Back to Login
             </button>

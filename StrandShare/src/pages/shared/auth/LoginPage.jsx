@@ -7,6 +7,7 @@ import { logAuditAction } from '../../../lib/auditLogger';
 const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
 const EMAIL_OTP_COOLDOWN_SECONDS = 60;
+const DEFAULT_LOGIN_BG = 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1080&q=80';
 
 function withAlpha(colorValue, alpha) {
   const input = String(colorValue || '').trim();
@@ -48,7 +49,7 @@ function withAlpha(colorValue, alpha) {
 }
 
 export default function LoginPage({ authNotice, onClearNotice }) {
-  const { theme } = useTheme();
+  const { theme, isThemeReady } = useTheme();
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -517,7 +518,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-white dark:bg-gray-900">
+    <div className="flex min-h-screen bg-white">
       {/* Left Pane - Branding */}
       <div
         className="hidden lg:flex w-1/2 items-center justify-center p-12"
@@ -529,39 +530,43 @@ export default function LoginPage({ authNotice, onClearNotice }) {
         <div className="max-w-md">
           {/* Main Image Card */}
           <div className="rounded-2xl shadow-2xl overflow-hidden mb-8 hover:shadow-3xl transition-shadow">
-            <img
-              src={theme.loginBackgroundImage || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1080&q=80'}
-              alt="Professional hairstylist at work"
-              className="w-full h-80 object-cover"
-            />
+            {isThemeReady ? (
+              <img
+                src={theme.loginBackgroundImage || DEFAULT_LOGIN_BG}
+                alt="Professional hairstylist at work"
+                className="w-full h-80 object-cover"
+              />
+            ) : (
+              <div className="w-full h-80 bg-gray-200 animate-pulse" />
+            )}
           </div>
 
           {/* Headline */}
           <h2 className="text-4xl font-bold text-center mb-4" style={{ color: theme.primaryColor }}>
-            Every Strand Counts
+            {theme.brandTagline || 'Every Strand Counts'}
           </h2>
 
           {/* Subtext */}
-          <p className="text-center text-gray-600 dark:text-gray-400 mb-8 text-sm leading-relaxed">
+          <p className="text-center text-gray-600 mb-8 text-sm leading-relaxed">
             Join our community of donors and recipients. Your contribution brings confidence and joy to those battling hair loss.
           </p>
 
           {/* Badges */}
           <div className="flex gap-4 justify-center">
-            <div className="bg-white dark:bg-gray-700 rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
+            <div className="bg-white rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
               <Coins size={18} style={{ color: theme.primaryColor }} />
-              <span className="text-sm font-medium text-gray-800 dark:text-white">10K+ Donors</span>
+              <span className="text-sm font-medium text-gray-800">10K+ Donors</span>
             </div>
-            <div className="bg-white dark:bg-gray-700 rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
+            <div className="bg-white rounded-full px-6 py-3 shadow-md flex items-center gap-2 whitespace-nowrap">
               <Heart size={18} style={{ color: theme.primaryColor }} />
-              <span className="text-sm font-medium text-gray-800 dark:text-white">Empathetic Care</span>
+              <span className="text-sm font-medium text-gray-800">Empathetic Care</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Right Pane - Login Form */}
-      <div className="w-full lg:w-1/2 bg-white dark:bg-gray-900 flex flex-col items-center justify-center px-6 py-12 lg:py-0">
+      <div className="w-full lg:w-1/2 bg-white flex flex-col items-center justify-center px-6 py-12 lg:py-0">
         <div className="w-full max-w-sm">
           {/* Logo */}
           <div className="flex items-center gap-2 mb-12">
@@ -569,7 +574,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
               <img
                 src={theme.logoImage}
                 alt={`${theme.brandName || 'StrandShare'} logo`}
-                className="w-8 h-8 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+                className="w-8 h-8 rounded-lg object-cover border border-gray-200"
               />
             ) : (
               <div
@@ -579,33 +584,33 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                 A
               </div>
             )}
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">{theme.brandName}</span>
+            <span className="text-2xl font-bold text-gray-900">{theme.brandName}</span>
           </div>
 
           {/* Header */}
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
             {mode === 'login' ? 'Welcome Back' : 'Create Your Account'}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-8 text-sm">
+          <p className="text-gray-600 mb-8 text-sm">
             {mode === 'login'
               ? 'Login to continue supporting our beautiful community and making a difference.'
               : 'Sign up to start your StrandShare journey and access your dashboard.'}
           </p>
 
           {authNotice && (
-            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {authNotice}
             </div>
           )}
 
           {errorMessage && (
-            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
+            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
               {errorMessage}
             </div>
           )}
 
           {successMessage && (
-            <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
+            <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700">
               {successMessage}
             </div>
           )}
@@ -615,17 +620,17 @@ export default function LoginPage({ authNotice, onClearNotice }) {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                <Mail className="absolute left-3 top-3 text-gray-400" size={20} />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-offset-2"
                   style={{ '--tw-ring-color': theme.primaryColor }}
                   required
                 />
@@ -635,7 +640,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
             {/* Password Field */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-gray-700">
                   Password
                 </label>
                 <button
@@ -649,20 +654,20 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                 </button>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="........"
-                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-offset-2"
                   style={{ '--tw-ring-color': theme.primaryColor }}
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
                     disabled={isSubmitting}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -672,11 +677,11 @@ export default function LoginPage({ authNotice, onClearNotice }) {
 
             {mode === 'signup' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
+                  <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={confirmPassword}
@@ -685,7 +690,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                       setConfirmPassword(e.target.value);
                     }}
                     placeholder="........"
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-offset-2"
                     style={{ '--tw-ring-color': theme.primaryColor }}
                     required
                   />
@@ -700,12 +705,12 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                 id="remember"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 cursor-pointer"
+                className="w-4 h-4 rounded border-gray-300 cursor-pointer"
                 style={{
                   accentColor: theme.primaryColor,
                 }}
               />
-              <label htmlFor="remember" className="ml-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+              <label htmlFor="remember" className="ml-2 text-sm text-gray-600 cursor-pointer">
                 Remember me for 30 days
               </label>
             </div>
@@ -728,14 +733,14 @@ export default function LoginPage({ authNotice, onClearNotice }) {
           )}
 
           {mfaMode && (
-            <div className="space-y-5 rounded-xl border border-gray-200 dark:border-gray-700 p-5 bg-gray-50 dark:bg-gray-800/50">
+            <div className="space-y-5 rounded-xl border border-gray-200 p-5 bg-gray-50">
               <div className="flex items-center gap-2">
                 <ShieldCheck size={18} style={{ color: theme.primaryColor }} />
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Two-Factor Authentication</h3>
+                <h3 className="font-semibold text-gray-900">Two-Factor Authentication</h3>
               </div>
 
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Sign in another way</p>
+              <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Sign in another way</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -766,7 +771,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
 
               {mfaMethod === 'authenticator' && mfaMode === 'enroll' && (
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600">
                     Scan this QR code in Google Authenticator, then enter the generated 6-digit code.
                   </p>
 
@@ -776,22 +781,22 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                       dangerouslySetInnerHTML={{ __html: mfaQrSvg }}
                     />
                   ) : (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                    <div className="text-sm text-gray-500 flex items-center gap-2">
                       <QrCode size={16} /> QR code unavailable. Use the secret below.
                     </div>
                   )}
 
                   {mfaSecret && (
-                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Manual setup secret</p>
-                      <p className="font-mono text-sm text-gray-800 dark:text-gray-100 break-all">{mfaSecret}</p>
+                    <div className="rounded-lg bg-white border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500 mb-1">Manual setup secret</p>
+                      <p className="font-mono text-sm text-gray-800 break-all">{mfaSecret}</p>
                     </div>
                   )}
                 </div>
               )}
 
               {mfaMethod === 'authenticator' && mfaMode === 'verify' && (
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-sm text-gray-600">
                   Enter the 6-digit code from your Google Authenticator app.
                 </p>
               )}
@@ -799,14 +804,14 @@ export default function LoginPage({ authNotice, onClearNotice }) {
               {mfaMethod === 'authenticator' && (
                 <form onSubmit={handleMfaVerify} className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
                       Authenticator Code
                     </label>
                     <input
                       value={mfaCode}
                       onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="123456"
-                      className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-gray-900"
                       required
                     />
                   </div>
@@ -824,13 +829,13 @@ export default function LoginPage({ authNotice, onClearNotice }) {
 
               {mfaMethod === 'email-otp' && (
                 <div className="space-y-3">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600">
                     Receive a one-time sign-in code in your email and use it to complete sign in.
                   </p>
 
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">OTP will be sent to</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{mfaPendingProfile?.email || email}</p>
+                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                    <p className="text-xs text-gray-500">OTP will be sent to</p>
+                    <p className="text-sm font-medium text-gray-900 break-all">{mfaPendingProfile?.email || email}</p>
                   </div>
 
                   {!emailOtpRequested ? (
@@ -846,14 +851,14 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                   ) : (
                     <form onSubmit={handleVerifyEmailOtp} className="space-y-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Email OTP Code
                         </label>
                         <input
                           value={emailOtpCode}
                           onChange={(event) => setEmailOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                           placeholder="123456"
-                          className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          className="w-full p-2.5 border border-gray-300 rounded-lg bg-white text-gray-900"
                           required
                         />
                       </div>
@@ -870,7 +875,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                       <button
                         type="button"
                         onClick={handleRequestEmailOtp}
-                        className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                        className="w-full py-2.5 rounded-lg border border-gray-300 text-gray-700"
                         disabled={isSendingEmailOtp || isSubmitting || emailOtpCooldown > 0}
                       >
                         {isSendingEmailOtp
@@ -881,7 +886,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                       </button>
 
                       {emailOtpCooldown > 0 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                        <p className="text-xs text-gray-500 text-center">
                           You can request a new code in {emailOtpCooldown}s.
                         </p>
                       )}
@@ -896,7 +901,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
                   clearMfaState();
                   await supabase.auth.signOut();
                 }}
-                className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                className="w-full py-2.5 rounded-lg border border-gray-300 text-gray-700"
                 disabled={isSubmitting || isSendingEmailOtp}
               >
                 Cancel
@@ -905,7 +910,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
           )}
 
           {/* Disclaimer */}
-          <p className="text-center text-gray-400 dark:text-gray-500 mt-8 text-xs">
+          <p className="text-center text-gray-400 mt-8 text-xs">
             © 2026 {theme.brandName}. Built with love for the hair donation community.
           </p>
         </div>

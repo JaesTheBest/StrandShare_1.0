@@ -133,22 +133,22 @@ export default function BackupPage({ userProfile }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Backup</h1>
-        <p className="text-gray-600 dark:text-gray-400">Manage snapshots, retention, and restore readiness.</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Backup</h1>
+        <p className="text-gray-600">Manage snapshots, retention, and restore readiness.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Latest Backup</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{latestBackup}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <p className="text-sm text-gray-500">Latest Backup</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{latestBackup}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Storage Used</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{storageUsedGb.toFixed(1)} GB</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <p className="text-sm text-gray-500">Storage Used</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{storageUsedGb.toFixed(1)} GB</p>
         </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Retention Policy</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">30 days</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <p className="text-sm text-gray-500">Retention Policy</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">30 days</p>
         </div>
       </div>
 
@@ -162,31 +162,31 @@ export default function BackupPage({ userProfile }) {
         </button>
         <button
           onClick={handleRunVerification}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700"
         >
           <RefreshCcw size={16} /> Run Verification
         </button>
       </div>
 
       {notice && (
-        <div className="text-sm text-gray-700 dark:text-gray-300">{notice}</div>
+        <div className="text-sm text-gray-700">{notice}</div>
       )}
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full">
           <thead style={{ backgroundColor: `${theme.primaryColor}15` }}>
             <tr>
-              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Backup ID</th>
-              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Created At</th>
-              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Size</th>
-              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Status</th>
-              <th className="px-6 py-3 text-right text-sm font-bold text-gray-900 dark:text-white">Action</th>
+              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Backup ID</th>
+              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Created At</th>
+              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Size</th>
+              <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Status</th>
+              <th className="px-6 py-3 text-right text-sm font-bold text-gray-900">Action</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400" colSpan={5}>
+                <td className="px-6 py-4 text-sm text-gray-600" colSpan={5}>
                   Loading backup history...
                 </td>
               </tr>
@@ -194,17 +194,17 @@ export default function BackupPage({ userProfile }) {
 
             {!isLoading && backupRows.length === 0 && (
               <tr>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400" colSpan={5}>
+                <td className="px-6 py-4 text-sm text-gray-600" colSpan={5}>
                   No backup logs yet. Create your first backup.
                 </td>
               </tr>
             )}
 
             {backupRows.map((row) => (
-              <tr key={row.id} className="border-t border-gray-200 dark:border-gray-700">
-                <td className="px-6 py-4 text-sm text-gray-800 dark:text-gray-200">{row.id}</td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{row.createdAt}</td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{row.size}</td>
+              <tr key={row.id} className="border-t border-gray-200">
+                <td className="px-6 py-4 text-sm text-gray-800">{row.id}</td>
+                <td className="px-6 py-4 text-sm text-gray-600">{row.createdAt}</td>
+                <td className="px-6 py-4 text-sm text-gray-600">{row.size}</td>
                 <td className="px-6 py-4 text-sm">
                   <span className={`px-2 py-1 rounded text-xs font-semibold ${row.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                     {row.status}
@@ -213,7 +213,7 @@ export default function BackupPage({ userProfile }) {
                 <td className="px-6 py-4 text-right">
                   <button
                     onClick={() => handleDownloadBackup(row)}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm"
                   >
                     <DownloadCloud size={14} /> Download
                   </button>

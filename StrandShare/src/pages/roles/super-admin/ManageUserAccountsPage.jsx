@@ -416,7 +416,7 @@ export default function ManageUserAccountsPage() {
     }),
     multiValueLabel: (base) => ({
       ...base,
-      color: theme.primaryColorDark,
+      color: theme.primaryColor,
     }),
   };
 
@@ -424,8 +424,8 @@ export default function ManageUserAccountsPage() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Manage User Accounts</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">Invite users, upgrade roles, and monitor account access windows.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Manage User Accounts</h2>
+          <p className="text-sm text-gray-600">Invite users, upgrade roles, and monitor account access windows.</p>
         </div>
         <button
           onClick={() => {
@@ -442,7 +442,7 @@ export default function ManageUserAccountsPage() {
 
       <div className="flex flex-wrap gap-4 mb-4">
         <div className="w-64">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Filter by Role</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Role</label>
           <Select
             isMulti
             options={roleOptions}
@@ -454,7 +454,7 @@ export default function ManageUserAccountsPage() {
           />
         </div>
         <div className="w-64">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Filter by Status</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
           <Select
             isMulti
             options={statusOptions}
@@ -467,9 +467,9 @@ export default function ManageUserAccountsPage() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
         {loading ? (
-          <div className="p-10 flex justify-center text-gray-700 dark:text-gray-300 gap-2">
+          <div className="p-10 flex justify-center text-gray-700 gap-2">
             <Loader2 className="animate-spin" /> Loading...
           </div>
         ) : (
@@ -484,40 +484,40 @@ export default function ManageUserAccountsPage() {
                 <th className="p-4 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            <tbody className="divide-y divide-gray-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan="6" className="p-10 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
-                      <Search size={40} className="text-gray-300 dark:text-gray-600" />
+                      <Search size={40} className="text-gray-300" />
                       <p>No users found for selected filters.</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                    <td className="p-4 font-medium text-gray-800 dark:text-gray-100 flex items-center gap-3">
+                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-4 font-medium text-gray-800 flex items-center gap-3">
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs uppercase"
-                        style={{ backgroundColor: `${theme.primaryColor}22`, color: theme.primaryColorDark }}
+                        style={{ backgroundColor: `${theme.primaryColor}22`, color: theme.primaryColor }}
                       >
                         {user.firstName.charAt(0)}
                       </div>
                       <div>
                         <div className="font-bold">{user.firstName} {user.lastName}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
+                        <div className="text-xs text-gray-500">{user.email}</div>
                       </div>
                     </td>
                     <td className="p-4">
                       <span
                         className="px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 w-fit"
-                        style={{ backgroundColor: `${theme.primaryColor}18`, color: theme.primaryColorDark, borderColor: `${theme.primaryColor}33` }}
+                        style={{ backgroundColor: `${theme.primaryColor}18`, color: theme.primaryColor, borderColor: `${theme.primaryColor}33` }}
                       >
                         <Shield size={12} /> {toRoleLabel(user.role)}
                       </span>
                     </td>
-                    <td className="p-4 text-gray-700 dark:text-gray-300">
+                    <td className="p-4 text-gray-700">
                       {user.joinedDate
                         ? new Date(user.joinedDate).toLocaleDateString('en-US', {
                             month: 'long',
@@ -526,7 +526,7 @@ export default function ManageUserAccountsPage() {
                           })
                         : '—'}
                     </td>
-                    <td className="p-4 text-gray-600 dark:text-gray-300 text-sm">
+                    <td className="p-4 text-gray-600 text-sm">
                       <div className="flex items-center gap-2">
                         <Calendar size={14} className="text-gray-400" />
                         <span>{user.accessStart || 'N/A'}</span>
@@ -559,23 +559,23 @@ export default function ManageUserAccountsPage() {
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
               {successKind === 'invite' ? <Mail size={40} /> : <CheckCircle size={40} />}
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">
               {successKind === 'invite' ? 'Invitation Email Sent' : 'Account Upgraded'}
             </h3>
             {successKind === 'invite' ? (
               <div>
-                <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">An invitation email has been sent to:</p>
+                <p className="text-gray-600 text-sm mb-4">An invitation email has been sent to:</p>
                 <p className="font-bold text-lg mb-6" style={{ color: theme.primaryColor }}>{invitedEmail}</p>
-                <p className="text-gray-500 dark:text-gray-400 text-xs mb-6">
+                <p className="text-gray-500 text-xs mb-6">
                   The user will receive an email with a confirmation link to complete account setup.
                 </p>
               </div>
             ) : (
-              <p className="text-gray-500 dark:text-gray-300 text-sm mb-6">
+              <p className="text-gray-500 text-sm mb-6">
                 The selected account has been upgraded to the specified role and activated.
               </p>
             )}
@@ -637,12 +637,12 @@ export default function ManageUserAccountsPage() {
 
       {showErrorModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
               <AlertTriangle size={40} />
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">Error</h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">{errorMessage}</p>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">Error</h3>
+            <p className="text-gray-600 mb-6 text-sm">{errorMessage}</p>
             <button
               onClick={() => setShowErrorModal(false)}
               className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
@@ -655,19 +655,19 @@ export default function ManageUserAccountsPage() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-              <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Add New User</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
+              <h3 className="text-xl font-bold text-gray-800">Add New User</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={24} /></button>
             </div>
 
             <div className="flex gap-2 mb-4">
               <button
                 type="button"
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${activeTab === 'invite' ? '' : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${activeTab === 'invite' ? '' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
                 style={
                   activeTab === 'invite'
-                    ? { backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColorDark, borderColor: `${theme.primaryColor}33` }
+                    ? { backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColor, borderColor: `${theme.primaryColor}33` }
                     : {}
                 }
                 onClick={() => setActiveTab('invite')}
@@ -676,7 +676,7 @@ export default function ManageUserAccountsPage() {
               </button>
               <button
                 type="button"
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${activeTab === 'upgrade' ? '' : 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${activeTab === 'upgrade' ? '' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
                 style={
                   activeTab === 'upgrade'
                     ? { backgroundColor: `${theme.secondaryColor}20`, color: theme.secondaryColorDark, borderColor: `${theme.secondaryColor}33` }
@@ -690,29 +690,29 @@ export default function ManageUserAccountsPage() {
 
             {activeTab === 'invite' && (
               <form onSubmit={handleInviteUser} className="space-y-4">
-                <div className="p-3 rounded-lg text-xs border" style={{ backgroundColor: `${theme.primaryColor}12`, color: theme.primaryColorDark, borderColor: `${theme.primaryColor}33` }}>
+                <div className="p-3 rounded-lg text-xs border" style={{ backgroundColor: `${theme.primaryColor}12`, color: theme.primaryColor, borderColor: `${theme.primaryColor}33` }}>
                   System will send a confirmation email. User must click the link to complete registration.
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name</label>
-                    <input required name="firstName" value={formData.firstName} onChange={handleInputChange} type="text" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.primaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                    <input required name="firstName" value={formData.firstName} onChange={handleInputChange} type="text" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
-                    <input required name="lastName" value={formData.lastName} onChange={handleInputChange} type="text" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.primaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                    <input required name="lastName" value={formData.lastName} onChange={handleInputChange} type="text" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }} />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
-                  <input required name="email" value={formData.email} onChange={handleInputChange} type="email" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.primaryColor }} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                  <input required name="email" value={formData.email} onChange={handleInputChange} type="email" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }} />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
-                  <select required name="role" value={formData.role} onChange={handleInputChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.primaryColor }}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select required name="role" value={formData.role} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }}>
                     <option value="Super Admin">Super Admin</option>
                     <option value="hospital">H-Staff</option>
                     <option value="Partner">Partner</option>
@@ -722,12 +722,12 @@ export default function ManageUserAccountsPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Access Start</label>
-                    <input required={!inviteNoAccessTime} disabled={inviteNoAccessTime} name="accessStart" value={formData.accessStart} onChange={handleInputChange} type="date" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed" style={{ '--tw-ring-color': theme.primaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Access Start</label>
+                    <input required={!inviteNoAccessTime} disabled={inviteNoAccessTime} name="accessStart" value={formData.accessStart} onChange={handleInputChange} type="date" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" style={{ '--tw-ring-color': theme.primaryColor }} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Access End</label>
-                    <input required={!inviteNoAccessTime} disabled={inviteNoAccessTime} name="accessEnd" value={formData.accessEnd} onChange={handleInputChange} type="date" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed" style={{ '--tw-ring-color': theme.primaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Access End</label>
+                    <input required={!inviteNoAccessTime} disabled={inviteNoAccessTime} name="accessEnd" value={formData.accessEnd} onChange={handleInputChange} type="date" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" style={{ '--tw-ring-color': theme.primaryColor }} />
                   </div>
                 </div>
 
@@ -746,7 +746,7 @@ export default function ManageUserAccountsPage() {
                     className="w-full py-2 rounded-lg border text-sm font-semibold transition-colors"
                     style={
                       inviteNoAccessTime
-                        ? { backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColorDark, borderColor: `${theme.primaryColor}33` }
+                        ? { backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColor, borderColor: `${theme.primaryColor}33` }
                         : {}
                     }
                   >
@@ -755,7 +755,7 @@ export default function ManageUserAccountsPage() {
                 </div>
 
                 <div className="flex gap-3 mt-8 pt-2">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">Cancel</button>
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
                   <button type="submit" disabled={saving} className="flex-1 py-2 text-white rounded-lg flex justify-center items-center gap-2" style={{ backgroundColor: theme.primaryColor }}>
                     {saving ? <Loader2 className="animate-spin" size={18} /> : <Mail size={18} />}
                     {saving ? 'Sending...' : 'Send Invite'}
@@ -771,27 +771,27 @@ export default function ManageUserAccountsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search User (name or email)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Search User (name or email)</label>
                   <div className="relative">
                     <input
                       type="text"
                       value={upgradeSearch}
                       onChange={(e) => setUpgradeSearch(e.target.value)}
                       placeholder="Start typing to search..."
-                      className="w-full p-2 pl-9 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                      className="w-full p-2 pl-9 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900"
                       style={{ '--tw-ring-color': theme.secondaryColor }}
                     />
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   </div>
-                  <div className="mt-2 max-h-40 overflow-auto border border-gray-100 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="mt-2 max-h-40 overflow-auto border border-gray-100 rounded-lg divide-y divide-gray-100 bg-gray-50">
                     {upgradeSearching && (
-                      <div className="p-3 text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Searching...</div>
+                      <div className="p-3 text-sm text-gray-500 flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Searching...</div>
                     )}
                     {!upgradeSearching && upgradeResults.length === 0 && upgradeHasSearched && (
-                      <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No matching users found.</div>
+                      <div className="p-3 text-sm text-gray-500">No matching users found.</div>
                     )}
                     {!upgradeSearching && upgradeResults.map((u) => (
-                      <label key={u.user_id} className="flex items-center gap-3 p-3 hover:bg-white dark:hover:bg-gray-800 cursor-pointer">
+                      <label key={u.user_id} className="flex items-center gap-3 p-3 hover:bg-white cursor-pointer">
                         <input
                           type="radio"
                           name="upgradeUser"
@@ -801,9 +801,9 @@ export default function ManageUserAccountsPage() {
                           className="text-blue-600"
                         />
                         <div className="flex-1">
-                          <div className="font-semibold text-gray-800 dark:text-gray-100">{u.first_name || '—'} {u.last_name || ''}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{u.email}</div>
-                          <div className="text-[11px] text-gray-400 dark:text-gray-500">Current role: {toRoleLabel(u.role)}</div>
+                          <div className="font-semibold text-gray-800">{u.first_name || '—'} {u.last_name || ''}</div>
+                          <div className="text-xs text-gray-500">{u.email}</div>
+                          <div className="text-[11px] text-gray-400">Current role: {toRoleLabel(u.role)}</div>
                         </div>
                       </label>
                     ))}
@@ -814,12 +814,12 @@ export default function ManageUserAccountsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                   <select
                     required
                     value={upgradeRole}
                     onChange={(e) => setUpgradeRole(e.target.value)}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900"
                     style={{ '--tw-ring-color': theme.secondaryColor }}
                   >
                     <option value="Super Admin">Super Admin</option>
@@ -831,17 +831,17 @@ export default function ManageUserAccountsPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Access Start</label>
-                    <input required name="upgradeAccessStart" value={upgradeForm.accessStart} onChange={(e) => setUpgradeForm((prev) => ({ ...prev, accessStart: e.target.value }))} type="date" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.secondaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Access Start</label>
+                    <input required name="upgradeAccessStart" value={upgradeForm.accessStart} onChange={(e) => setUpgradeForm((prev) => ({ ...prev, accessStart: e.target.value }))} type="date" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.secondaryColor }} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Access End</label>
-                    <input required name="upgradeAccessEnd" value={upgradeForm.accessEnd} onChange={(e) => setUpgradeForm((prev) => ({ ...prev, accessEnd: e.target.value }))} type="date" className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" style={{ '--tw-ring-color': theme.secondaryColor }} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Access End</label>
+                    <input required name="upgradeAccessEnd" value={upgradeForm.accessEnd} onChange={(e) => setUpgradeForm((prev) => ({ ...prev, accessEnd: e.target.value }))} type="date" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.secondaryColor }} />
                   </div>
                 </div>
 
                 <div className="flex gap-3 mt-8 pt-2">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">Cancel</button>
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
                   <button
                     type="submit"
                     disabled={upgradeSaving || !upgradeSelected || !upgradeForm.accessStart || !upgradeForm.accessEnd}

@@ -255,14 +255,14 @@ export default function CompleteAccountPage() {
 
   if (isCompleted) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 py-10 px-6">
+      <div className="min-h-screen bg-white py-10 px-6">
         <div className="max-w-xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center space-y-4">
-            <div className="inline-flex items-center justify-center rounded-full bg-green-100 text-green-700 p-3 dark:bg-green-900/30 dark:text-green-300">
+          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center space-y-4">
+            <div className="inline-flex items-center justify-center rounded-full bg-green-100 text-green-700 p-3">
               <CheckCircle2 size={24} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Account Completed</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-300">Your account is now available for use.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Account Completed</h1>
+            <p className="text-sm text-gray-600">Your account is now available for use.</p>
             <button
               type="button"
               onClick={() => window.location.replace('/')}
@@ -279,22 +279,22 @@ export default function CompleteAccountPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-700 dark:text-gray-300">
+      <div className="min-h-screen flex items-center justify-center text-gray-700">
         <Loader2 className="animate-spin mr-2" size={18} /> Preparing your account...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 py-10 px-6">
+    <div className="min-h-screen bg-white py-10 px-6">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Complete Account</h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{completionHint}</p>
+          <h1 className="text-3xl font-bold text-gray-900">Complete Account</h1>
+          <p className="text-sm text-gray-600 mt-2">{completionHint}</p>
         </div>
 
         {errorMessage && (
-          <div className="mb-5 rounded-lg border border-red-300 bg-red-50 text-red-700 px-4 py-3 text-sm dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
+          <div className="mb-5 rounded-lg border border-red-300 bg-red-50 text-red-700 px-4 py-3 text-sm">
             <div className="flex items-center gap-2">
               <AlertTriangle size={16} />
               <span>{errorMessage}</span>
@@ -303,7 +303,7 @@ export default function CompleteAccountPage() {
         )}
 
         {statusMessage && (
-          <div className="mb-5 rounded-lg border border-green-300 bg-green-50 text-green-700 px-4 py-3 text-sm dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
+          <div className="mb-5 rounded-lg border border-green-300 bg-green-50 text-green-700 px-4 py-3 text-sm">
             <div className="flex items-center gap-2">
               <CheckCircle2 size={16} />
               <span>{statusMessage}</span>
@@ -311,62 +311,62 @@ export default function CompleteAccountPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name</label>
-              <input name="firstName" value={form.firstName} onChange={updateField} required className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+              <input name="firstName" value={form.firstName} onChange={updateField} required className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Middle Name</label>
-              <input name="middleName" value={form.middleName} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+              <input name="middleName" value={form.middleName} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
-              <input name="lastName" value={form.lastName} onChange={updateField} required className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+              <input name="lastName" value={form.lastName} onChange={updateField} required className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
                 type="password"
                 name="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                className="w-full p-2 border border-gray-300 rounded-lg bg-white"
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-gray-500 mt-1">
                 Must be at least 8 characters with an uppercase letter, a number, and a special character.
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
               <input
                 type="password"
                 name="confirmPassword"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 required
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                className="w-full p-2 border border-gray-300 rounded-lg bg-white"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suffix</label>
-              <input name="suffix" value={form.suffix} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Suffix</label>
+              <input name="suffix" value={form.suffix} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Birthdate</label>
-              <input type="date" name="birthdate" value={form.birthdate} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Birthdate</label>
+              <input type="date" name="birthdate" value={form.birthdate} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gender</label>
-              <select name="gender" value={form.gender} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+              <select name="gender" value={form.gender} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white">
                 <option value="">Select</option>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -377,37 +377,37 @@ export default function CompleteAccountPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Contact Number</label>
-              <input name="contactNumber" value={form.contactNumber} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+              <input name="contactNumber" value={form.contactNumber} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Street</label>
-              <input name="street" value={form.street} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Street</label>
+              <input name="street" value={form.street} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Region</label>
-              <input name="region" value={form.region} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+              <input name="region" value={form.region} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Barangay</label>
-              <input name="barangay" value={form.barangay} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Barangay</label>
+              <input name="barangay" value={form.barangay} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
-              <input name="city" value={form.city} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input name="city" value={form.city} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Province</label>
-              <input name="province" value={form.province} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
+              <input name="province" value={form.province} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
-            <input name="country" value={form.country} onChange={updateField} className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+            <input name="country" value={form.country} onChange={updateField} className="w-full p-2 border border-gray-300 rounded-lg bg-white" />
           </div>
 
           <div className="pt-2">

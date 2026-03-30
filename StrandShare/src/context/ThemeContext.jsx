@@ -43,6 +43,7 @@ const DEFAULT_THEME = {
   tertiaryColor: '#10b981',
   tertiaryColorDark: '#059669',
   tertiaryColorLight: '#34d399',
+  backgroundColor: '#f4f7fb',
   primaryTextColor: '#0f172a',
   secondaryTextColor: '#64748b',
   tertiaryTextColor: '#94a3b8',
@@ -54,7 +55,7 @@ const DEFAULT_THEME = {
   
   // Branding
   brandName: 'StrandShare',
-  brandTagline: 'IT & System Ops',
+  brandTagline: 'Every Strand Counts',
   logoImage: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1080&q=80',
   logoImagePath: '',
   faviconImage: '',
@@ -75,6 +76,7 @@ const DEFAULT_PRESET_PAYLOAD = {
   Primary_Color: DEFAULT_THEME.primaryColor,
   Secondary_Color: DEFAULT_THEME.secondaryColor,
   Tertiary_Color: DEFAULT_THEME.tertiaryColor,
+  Background_Color: DEFAULT_THEME.backgroundColor,
   Primary_Text_Color: DEFAULT_THEME.primaryTextColor,
   Secondary_Text_Color: DEFAULT_THEME.secondaryTextColor,
   Tertiary_Text_Color: DEFAULT_THEME.tertiaryTextColor,
@@ -91,6 +93,7 @@ const STARTER_PRESETS = [
     Primary_Color: '#0f4c81',
     Secondary_Color: '#1d7874',
     Tertiary_Color: '#7ed6df',
+    Background_Color: '#f2f7fb',
     Primary_Text_Color: '#0b132b',
     Secondary_Text_Color: '#1c2541',
     Tertiary_Text_Color: '#3a506b',
@@ -104,6 +107,7 @@ const STARTER_PRESETS = [
     Primary_Color: '#c44536',
     Secondary_Color: '#e58e26',
     Tertiary_Color: '#f8c291',
+    Background_Color: '#fdf4ee',
     Primary_Text_Color: '#2f1b12',
     Secondary_Text_Color: '#5d4037',
     Tertiary_Text_Color: '#8d6e63',
@@ -117,6 +121,7 @@ const STARTER_PRESETS = [
     Primary_Color: '#2d6a4f',
     Secondary_Color: '#40916c',
     Tertiary_Color: '#95d5b2',
+    Background_Color: '#eef8f2',
     Primary_Text_Color: '#081c15',
     Secondary_Text_Color: '#1b4332',
     Tertiary_Text_Color: '#2d6a4f',
@@ -130,6 +135,7 @@ const STARTER_PRESETS = [
     Primary_Color: '#334155',
     Secondary_Color: '#475569',
     Tertiary_Color: '#f59e0b',
+    Background_Color: '#f2f5f8',
     Primary_Text_Color: '#0f172a',
     Secondary_Text_Color: '#334155',
     Tertiary_Text_Color: '#64748b',
@@ -141,6 +147,21 @@ const STARTER_PRESETS = [
 ];
 
 // Helper function to apply CSS variables globally
+const toRgba = (value, alpha, fallback = '#000000') => {
+  const hex = normalizeColorToHex(value) || normalizeColorToHex(fallback) || '#000000';
+  const rgb = hex.match(/^#([0-9a-f]{6})$/i);
+  if (!rgb) {
+    return value;
+  }
+
+  const raw = rgb[1];
+  const r = parseInt(raw.slice(0, 2), 16);
+  const g = parseInt(raw.slice(2, 4), 16);
+  const b = parseInt(raw.slice(4, 6), 16);
+  const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+};
+
 const applyThemeVariables = (themeObj) => {
   document.documentElement.style.setProperty('--color-primary', themeObj.primaryColor);
   document.documentElement.style.setProperty('--color-primary-dark', themeObj.primaryColorDark);
@@ -151,9 +172,18 @@ const applyThemeVariables = (themeObj) => {
   document.documentElement.style.setProperty('--color-tertiary', themeObj.tertiaryColor);
   document.documentElement.style.setProperty('--color-tertiary-dark', themeObj.tertiaryColorDark);
   document.documentElement.style.setProperty('--color-tertiary-light', themeObj.tertiaryColorLight);
+  document.documentElement.style.setProperty('--color-background', themeObj.backgroundColor || DEFAULT_THEME.backgroundColor);
+  document.documentElement.style.setProperty('--color-surface', toRgba(themeObj.backgroundColor, 0.8, DEFAULT_THEME.backgroundColor));
+  document.documentElement.style.setProperty('--color-card-background', toRgba(themeObj.tertiaryColor, 0.08, DEFAULT_THEME.tertiaryColor));
+  document.documentElement.style.setProperty('--color-selected-background', toRgba(themeObj.primaryColor, 0.14, DEFAULT_THEME.primaryColor));
+  document.documentElement.style.setProperty('--color-table-header-background', toRgba(themeObj.primaryColor, 0.18, DEFAULT_THEME.primaryColor));
+  document.documentElement.style.setProperty('--color-border-soft', toRgba(themeObj.secondaryColor, 0.24, DEFAULT_THEME.secondaryColor));
   document.documentElement.style.setProperty('--color-text-primary', themeObj.primaryTextColor || DEFAULT_THEME.primaryTextColor);
   document.documentElement.style.setProperty('--color-text-secondary', themeObj.secondaryTextColor || DEFAULT_THEME.secondaryTextColor);
   document.documentElement.style.setProperty('--color-text-tertiary', themeObj.tertiaryTextColor || DEFAULT_THEME.tertiaryTextColor);
+  document.documentElement.style.setProperty('--color-heading', themeObj.primaryTextColor || DEFAULT_THEME.primaryTextColor);
+  document.documentElement.style.setProperty('--color-body-text', themeObj.secondaryTextColor || DEFAULT_THEME.secondaryTextColor);
+  document.documentElement.style.setProperty('--color-muted-text', themeObj.tertiaryTextColor || DEFAULT_THEME.tertiaryTextColor);
   document.documentElement.style.setProperty('--font-family', themeObj.selectedFont || themeObj.fontFamily || DEFAULT_THEME.fontFamily);
   document.documentElement.style.setProperty('--font-family-secondary', themeObj.secondaryFontFamily || themeObj.fontFamily || DEFAULT_THEME.secondaryFontFamily);
 };
@@ -177,6 +207,75 @@ const resolveBrandingAssetUrl = (urlValue, pathValue, fallbackValue) => {
   return fallbackValue;
 };
 
+const THEME_COLOR_KEYS = [
+  'primaryColor',
+  'primaryColorDark',
+  'primaryColorLight',
+  'secondaryColor',
+  'secondaryColorDark',
+  'secondaryColorLight',
+  'tertiaryColor',
+  'tertiaryColorDark',
+  'tertiaryColorLight',
+  'backgroundColor',
+  'primaryTextColor',
+  'secondaryTextColor',
+  'tertiaryTextColor',
+];
+
+const normalizeColorToHex = (value) => {
+  const input = String(value || '').trim();
+  if (!input) {
+    return null;
+  }
+
+  const hex6 = input.match(/^#([0-9a-f]{6})$/i);
+  if (hex6) {
+    return `#${hex6[1].toLowerCase()}`;
+  }
+
+  const hex3 = input.match(/^#([0-9a-f]{3})$/i);
+  if (hex3) {
+    const [r, g, b] = hex3[1].split('');
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+
+  const rgb = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (!rgb) {
+    return null;
+  }
+
+  const [r, g, b] = rgb.slice(1, 4).map((part) => {
+    const channel = Number(part);
+    return Math.max(0, Math.min(255, Number.isFinite(channel) ? channel : 0));
+  });
+
+  const toHex = (channel) => channel.toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+};
+
+const sanitizeThemeColors = (rawTheme) => {
+  const nextTheme = { ...(rawTheme || {}) };
+
+  THEME_COLOR_KEYS.forEach((key) => {
+    if (!(key in nextTheme)) {
+      return;
+    }
+
+    const normalized = normalizeColorToHex(nextTheme[key]);
+    if (normalized) {
+      nextTheme[key] = normalized;
+      return;
+    }
+
+    if (!String(nextTheme[key] || '').trim()) {
+      delete nextTheme[key];
+    }
+  });
+
+  return nextTheme;
+};
+
 const sanitizeThemeMedia = (rawTheme) => {
   const nextTheme = { ...(rawTheme || {}) };
   nextTheme.logoImage = resolveBrandingAssetUrl(
@@ -192,7 +291,10 @@ const sanitizeThemeMedia = (rawTheme) => {
   return nextTheme;
 };
 
-const mergeTheme = (rawTheme) => ({ ...DEFAULT_THEME, ...sanitizeThemeMedia(rawTheme) });
+const mergeTheme = (rawTheme) => ({
+  ...DEFAULT_THEME,
+  ...sanitizeThemeMedia(sanitizeThemeColors(rawTheme)),
+});
 
 const loadGoogleFont = (fontFamily) => {
   const fontName = String(fontFamily || '').trim();
@@ -226,12 +328,15 @@ const mapSettingsRowToTheme = (row) => {
     primaryColor: row.Primary_Color,
     secondaryColor: row.Secondary_Color,
     tertiaryColor: row.Tertiary_Color,
+    backgroundColor: row.Background_Color || DEFAULT_THEME.backgroundColor,
     primaryTextColor: row.Primary_Text_Color,
     secondaryTextColor: row.Secondary_Text_Color,
     tertiaryTextColor: row.Tertiary_Text_Color,
     fontFamily: row.Font_Family || DEFAULT_THEME.fontFamily,
     selectedFont: row.Font_Family || DEFAULT_THEME.fontFamily,
     secondaryFontFamily: row.Secondary_Font_Family || row.Font_Family || DEFAULT_THEME.secondaryFontFamily,
+    brandName: row.Brand_Name || DEFAULT_THEME.brandName,
+    brandTagline: row.Brand_Tagline || DEFAULT_THEME.brandTagline,
     logoImage: logoRaw,
     logoImagePath: logoPath,
     loginBackgroundImage: loginBgRaw,
@@ -257,6 +362,7 @@ export function ThemeProvider({ children }) {
   });
   const [themePresets, setThemePresets] = useState([]);
   const [googleFonts, setGoogleFonts] = useState(DEFAULT_GOOGLE_FONTS);
+  const [isThemeReady, setIsThemeReady] = useState(() => !isSupabaseConfigured || !supabase);
 
   const fetchGoogleFonts = async () => {
     const apiKey = process.env.REACT_APP_GOOGLE_FONTS_API_KEY;
@@ -360,6 +466,7 @@ export function ThemeProvider({ children }) {
       Primary_Color: colors.primary,
       Secondary_Color: colors.secondary,
       Tertiary_Color: colors.tertiary,
+      Background_Color: colors.background || DEFAULT_THEME.backgroundColor,
       Primary_Text_Color: colors.fontPrimary,
       Secondary_Text_Color: colors.fontSecondary,
       Tertiary_Text_Color: colors.fontTertiary || colors.fontSecondary,
@@ -403,24 +510,31 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
+      setIsThemeReady(true);
       return undefined;
     }
 
     let isMounted = true;
 
     const loadGlobalTheme = async () => {
-      const { data, error } = await supabase
-        .from(UI_SETTINGS_TABLE)
-        .select('*')
-        .order('Updated_At', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      try {
+        const { data, error } = await supabase
+          .from(UI_SETTINGS_TABLE)
+          .select('*')
+          .order('Updated_At', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (!isMounted || error || !data) {
-        return;
+        if (!isMounted || error || !data) {
+          return;
+        }
+
+        setTheme((prev) => mergeTheme({ ...prev, ...mapSettingsRowToTheme(data) }));
+      } finally {
+        if (isMounted) {
+          setIsThemeReady(true);
+        }
       }
-
-      setTheme((prev) => mergeTheme({ ...prev, ...mapSettingsRowToTheme(data) }));
     };
 
     loadGlobalTheme();
@@ -477,7 +591,7 @@ export function ThemeProvider({ children }) {
   }, [theme]);
 
   const updateTheme = (newTheme) => {
-    setTheme((prev) => ({ ...prev, ...newTheme }));
+    setTheme((prev) => mergeTheme({ ...prev, ...newTheme }));
   };
 
   const saveThemeGlobally = async (newTheme, updatedByUserId = null) => {
@@ -492,11 +606,14 @@ export function ThemeProvider({ children }) {
       Primary_Color: mergedTheme.primaryColor,
       Secondary_Color: mergedTheme.secondaryColor,
       Tertiary_Color: mergedTheme.tertiaryColor,
+      Background_Color: mergedTheme.backgroundColor || DEFAULT_THEME.backgroundColor,
       Primary_Text_Color: mergedTheme.primaryTextColor,
       Secondary_Text_Color: mergedTheme.secondaryTextColor,
       Tertiary_Text_Color: mergedTheme.tertiaryTextColor,
       Font_Family: mergedTheme.selectedFont || mergedTheme.fontFamily,
       Secondary_Font_Family: mergedTheme.secondaryFontFamily || mergedTheme.selectedFont || mergedTheme.fontFamily,
+      Brand_Name: mergedTheme.brandName || DEFAULT_THEME.brandName,
+      Brand_Tagline: mergedTheme.brandTagline || DEFAULT_THEME.brandTagline,
       Logo_Icon: mergedTheme.logoImagePath || mergedTheme.logoImage || '',
       Login_Background_Photo: mergedTheme.loginBackgroundImagePath || mergedTheme.loginBackgroundImage || '',
       Updated_By: updatedByUserId,
@@ -560,6 +677,7 @@ export function ThemeProvider({ children }) {
         createThemePreset,
         softDeleteThemePreset,
         googleFonts,
+        isThemeReady,
       }}
     >
       {children}

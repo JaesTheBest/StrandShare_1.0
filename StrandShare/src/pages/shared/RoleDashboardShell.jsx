@@ -18,10 +18,11 @@ export default function RoleDashboardShell({
   }, [currentPage, navItems]);
 
   const ActivePage = pageComponents[currentPage] || pageComponents[defaultPage] || null;
+  const hasSettingsPage = Boolean(pageComponents.settings) || navItems.some((item) => item.id === 'settings');
   const isOverviewPage = currentPage === 'dashboard';
   const pageWrapperClass = isOverviewPage
     ? 'flex-1 overflow-auto'
-    : 'flex-1 overflow-auto p-8 bg-gray-50 dark:bg-gray-950';
+    : 'flex-1 overflow-auto p-8 bg-slate-50';
 
   useEffect(() => {
     if (!currentPage) {
@@ -38,15 +39,20 @@ export default function RoleDashboardShell({
   }, [currentPage, pageTitle, userProfile]);
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-slate-50">
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} items={navItems} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header onSignOut={onSignOut} userProfile={userProfile} pageTitle={pageTitle} />
+        <Header
+          onSignOut={onSignOut}
+          onOpenSettings={hasSettingsPage ? () => setCurrentPage('settings') : undefined}
+          userProfile={userProfile}
+          pageTitle={pageTitle}
+        />
         <div className={pageWrapperClass}>
           {ActivePage ? (
             <ActivePage userProfile={userProfile} />
           ) : (
-            <div className="p-8 text-gray-600 dark:text-gray-300">Page not available.</div>
+            <div className="p-8 text-slate-600">Page not available.</div>
           )}
         </div>
       </div>

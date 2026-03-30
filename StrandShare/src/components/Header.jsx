@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Search, Bell, MessageSquare, LogOut, ChevronDown } from 'lucide-react';
+import { Search, Bell, MessageSquare, LogOut, ChevronDown, Settings } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 const DEFAULT_PROFILE_AVATAR =
@@ -76,7 +76,7 @@ function resolveDisplayRole(roleValue) {
   return roleValue;
 }
 
-export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' }) {
+export default function Header({ onSignOut, onOpenSettings, userProfile, pageTitle = 'Overview' }) {
   const { theme } = useTheme();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -99,19 +99,27 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
     setShowProfileDropdown(false);
   };
 
+  const handleOpenSettings = () => {
+    if (onOpenSettings) {
+      onOpenSettings();
+    }
+    setShowSignOutConfirm(false);
+    setShowProfileDropdown(false);
+  };
+
   return (
-    <div className="h-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-8 flex items-center justify-between">
+    <div className="h-20 bg-white border-b border-gray-200 px-8 flex items-center justify-between">
       {/* Left - Title */}
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{pageTitle}</h1>
+      <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
 
       {/* Middle - Search Bar */}
       <div className="flex-1 max-w-xs mx-6 ml-10">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             placeholder="Search systems..."
-            className="w-full pl-12 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+            className="w-full pl-12 pr-4 py-2.5 border border-gray-300 rounded-full bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-offset-2"
             style={{ '--tw-ring-color': theme.primaryColor }}
           />
         </div>
@@ -121,19 +129,19 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
       <div className="flex items-center gap-6">
         {/* Bell Icon */}
         <button className="relative hover:opacity-80 transition-opacity">
-          <Bell size={24} className="text-gray-600 dark:text-gray-400" />
+          <Bell size={24} className="text-gray-600" />
           <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>
         </button>
 
         {/* Message Icon */}
         <button className="hover:opacity-80 transition-opacity">
-          <MessageSquare size={24} className="text-gray-600 dark:text-gray-400" />
+          <MessageSquare size={24} className="text-gray-600" />
         </button>
 
         {/* Profile Section */}
-        <div className="flex items-center gap-3 pl-6 border-l border-gray-200 dark:border-gray-700 relative">
+        <div className="flex items-center gap-3 pl-6 border-l border-gray-200 relative">
           <div className="text-right">
-            <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
+            <p className="text-sm font-medium text-gray-900">{displayName}</p>
             <p className="text-xs" style={{ color: theme.primaryColor }}>
               {displayRole}
             </p>
@@ -154,22 +162,43 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
             />
             <ChevronDown
               size={16}
-              className="absolute -bottom-1 -right-1 bg-white dark:bg-gray-800 rounded-full p-0.5 text-gray-600 dark:text-gray-300"
+              className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 text-gray-600"
             />
           </button>
 
           {/* Dropdown Menu */}
           {showProfileDropdown && (
-            <div className="absolute right-0 top-16 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                <p className="text-base font-semibold text-gray-900 dark:text-white leading-snug break-words">{displayName}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 break-all">{displayEmail}</p>
+            <div className="absolute right-0 top-16 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-start gap-3">
+                  <img
+                    src={avatarSrc}
+                    alt="Profile"
+                    className="w-12 h-12 rounded-full object-cover border border-gray-200"
+                    onError={() => setAvatarHasError(true)}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-gray-900 leading-snug break-words">{displayName}</p>
+                    <p className="text-xs font-semibold" style={{ color: theme.primaryColor }}>
+                      {displayRole}
+                    </p>
+                    <p className="text-sm text-gray-500 break-all">{displayEmail}</p>
+                  </div>
+                </div>
               </div>
               <div className="p-3">
+                <button
+                  onClick={handleOpenSettings}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-gray-100 rounded-lg transition-colors text-gray-700"
+                >
+                  <Settings size={16} />
+                  Settings
+                </button>
+
                 {!showSignOutConfirm && (
                   <button
                     onClick={() => setShowSignOutConfirm(true)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-red-600 dark:text-red-400"
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-gray-100 rounded-lg transition-colors text-red-600"
                   >
                     <LogOut size={16} />
                     Sign Out
@@ -177,8 +206,8 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
                 )}
 
                 {showSignOutConfirm && (
-                  <div className="space-y-3 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
-                    <p className="text-sm text-gray-700 dark:text-gray-300">Are you sure you want to sign out?</p>
+                  <div className="space-y-3 px-3 py-3 rounded-lg bg-gray-50 border border-gray-200">
+                    <p className="text-sm text-gray-700">Are you sure you want to sign out?</p>
                     <div className="flex gap-2">
                       <button
                         onClick={handleSignOut}
@@ -189,7 +218,7 @@ export default function Header({ onSignOut, userProfile, pageTitle = 'Overview' 
                       </button>
                       <button
                         onClick={() => setShowSignOutConfirm(false)}
-                        className="flex-1 py-2 rounded-md text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                        className="flex-1 py-2 rounded-md text-sm font-semibold border border-gray-300 text-gray-700"
                       >
                         Cancel
                       </button>

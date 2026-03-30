@@ -16,38 +16,38 @@ export default function ManageWigInventoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Manage Wig Inventory</h1>
-        <p className="text-gray-600 dark:text-gray-400">Track available wigs, stock levels, and allocation history to keep inventory up to date.</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Manage Wig Inventory</h1>
+        <p className="text-gray-600">Track available wigs, stock levels, and allocation history to keep inventory up to date.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {mockStats.map((item) => (
-          <div key={item.label} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">{item.label}</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{item.value}</p>
+          <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-500">{item.label}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{item.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Preview Data</h2>
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Preview Data</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-900/40">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Name</th>
-                <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Status</th>
-                <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Last Updated</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Name</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Last Updated</th>
               </tr>
             </thead>
             <tbody>
               {mockRows.map((row) => (
-                <tr key={row.name} className="border-t border-gray-200 dark:border-gray-700">
-                  <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{row.name}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{row.status}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{row.updated}</td>
+                <tr key={row.name} className="border-t border-gray-200">
+                  <td className="px-4 py-3 text-gray-800">{row.name}</td>
+                  <td className="px-4 py-3 text-gray-700">{row.status}</td>
+                  <td className="px-4 py-3 text-gray-600">{row.updated}</td>
                 </tr>
               ))}
             </tbody>

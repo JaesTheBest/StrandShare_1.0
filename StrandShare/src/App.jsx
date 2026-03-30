@@ -3,7 +3,6 @@ import { ThemeProvider } from './context/ThemeContext';
 import LoginPage from './pages/shared/auth/LoginPage';
 import CompleteAccountPage from './pages/shared/auth/CompleteAccountPage';
 import ResetPasswordPage from './pages/shared/auth/ResetPasswordPage';
-import ChangeSettingsPage from './pages/shared/auth/ChangeSettingsPage';
 import SuperAdminRole from './pages/roles/super-admin/SuperAdminRole';
 import HospitalRole from './pages/roles/hospital/HospitalRole';
 import PartnerRole from './pages/roles/partner/PartnerRole';
@@ -281,7 +280,6 @@ export default function App() {
   const ActiveDashboard = resolveDashboardByRole(activeRole);
   const isCompleteAccountRoute = window.location.pathname === '/complete-account';
   const isResetPasswordRoute = window.location.pathname === '/reset-password';
-  const isChangeSettingsRoute = window.location.pathname === '/change-settings';
   const showLoginPage = !isLoadingAuth && !session;
   const showDashboard = !isLoadingAuth && Boolean(session) && Boolean(activeRole);
   const showHydratingScreen =
@@ -289,12 +287,11 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-white dark:bg-gray-900">
+      <div className="min-h-screen">
         {isCompleteAccountRoute && <CompleteAccountPage />}
         {isResetPasswordRoute && <ResetPasswordPage />}
-        {isChangeSettingsRoute && <ChangeSettingsPage />}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && !isChangeSettingsRoute && showLoginPage && (
+        {!isCompleteAccountRoute && !isResetPasswordRoute && showLoginPage && (
           <LoginPage
             authNotice={
               authNotice ||
@@ -306,7 +303,7 @@ export default function App() {
           />
         )}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && !isChangeSettingsRoute && showDashboard && (
+        {!isCompleteAccountRoute && !isResetPasswordRoute && showDashboard && (
           <ActiveDashboard
             onSignOut={handleSignOut}
             userProfile={
@@ -318,8 +315,8 @@ export default function App() {
           />
         )}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && !isChangeSettingsRoute && showHydratingScreen && (
-          <div className="min-h-screen flex items-center justify-center text-gray-700 dark:text-gray-300">
+        {!isCompleteAccountRoute && !isResetPasswordRoute && showHydratingScreen && (
+          <div className="min-h-screen flex items-center justify-center">
             Finalizing your account access...
           </div>
         )}

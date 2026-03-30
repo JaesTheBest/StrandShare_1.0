@@ -7,11 +7,14 @@ create table if not exists public."UI_Settings" (
   "Primary_Color" varchar(20),
   "Secondary_Color" varchar(20),
   "Tertiary_Color" varchar(20),
+  "Background_Color" varchar(20),
   "Primary_Text_Color" varchar(20),
   "Secondary_Text_Color" varchar(20),
   "Tertiary_Text_Color" varchar(20),
   "Font_Family" varchar(100),
   "Secondary_Font_Family" varchar(100),
+  "Brand_Name" varchar(120),
+  "Brand_Tagline" varchar(255),
   "Logo_Icon" varchar(255),
   "Login_Background_Photo" varchar(255),
   "Updated_By" int references public.users(user_id),
@@ -20,6 +23,15 @@ create table if not exists public."UI_Settings" (
 
 alter table if exists public."UI_Settings"
   add column if not exists "Secondary_Font_Family" varchar(100);
+
+alter table if exists public."UI_Settings"
+  add column if not exists "Background_Color" varchar(20);
+
+alter table if exists public."UI_Settings"
+  add column if not exists "Brand_Name" varchar(120);
+
+alter table if exists public."UI_Settings"
+  add column if not exists "Brand_Tagline" varchar(255);
 
 create unique index if not exists "UI_Settings_single_row_idx"
   on public."UI_Settings" ((true));
@@ -30,6 +42,7 @@ create table if not exists public."Theme_Presets" (
   "Primary_Color" varchar(20),
   "Secondary_Color" varchar(20),
   "Tertiary_Color" varchar(20),
+  "Background_Color" varchar(20),
   "Primary_Text_Color" varchar(20),
   "Secondary_Text_Color" varchar(20),
   "Tertiary_Text_Color" varchar(20),
@@ -42,6 +55,9 @@ create table if not exists public."Theme_Presets" (
 
 alter table if exists public."Theme_Presets"
   add column if not exists "Secondary_Font_Family" varchar(100);
+
+alter table if exists public."Theme_Presets"
+  add column if not exists "Background_Color" varchar(20);
 
 create unique index if not exists "Theme_Presets_default_unique_idx"
   on public."Theme_Presets" ("Is_Default")
@@ -132,6 +148,7 @@ insert into public."Theme_Presets" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
@@ -146,6 +163,7 @@ values (
   '#0275d8',
   '#6B7280',
   '#10b981',
+  '#f4f7fb',
   '#0f172a',
   '#64748b',
   '#94a3b8',
@@ -162,6 +180,7 @@ insert into public."Theme_Presets" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
@@ -176,6 +195,7 @@ select
   '#0f4c81',
   '#1d7874',
   '#7ed6df',
+  '#f2f7fb',
   '#0b132b',
   '#1c2541',
   '#3a506b',
@@ -193,6 +213,7 @@ insert into public."Theme_Presets" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
@@ -207,6 +228,7 @@ select
   '#c44536',
   '#e58e26',
   '#f8c291',
+  '#fdf4ee',
   '#2f1b12',
   '#5d4037',
   '#8d6e63',
@@ -224,6 +246,7 @@ insert into public."Theme_Presets" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
@@ -238,6 +261,7 @@ select
   '#2d6a4f',
   '#40916c',
   '#95d5b2',
+  '#eef8f2',
   '#081c15',
   '#1b4332',
   '#2d6a4f',
@@ -255,6 +279,7 @@ insert into public."Theme_Presets" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
@@ -269,6 +294,7 @@ select
   '#334155',
   '#475569',
   '#f59e0b',
+  '#f2f5f8',
   '#0f172a',
   '#334155',
   '#64748b',
@@ -285,11 +311,14 @@ insert into public."UI_Settings" (
   "Primary_Color",
   "Secondary_Color",
   "Tertiary_Color",
+  "Background_Color",
   "Primary_Text_Color",
   "Secondary_Text_Color",
   "Tertiary_Text_Color",
   "Font_Family",
   "Secondary_Font_Family",
+  "Brand_Name",
+  "Brand_Tagline",
   "Logo_Icon",
   "Login_Background_Photo",
   "Updated_By",
@@ -299,11 +328,14 @@ values (
   '#0275d8',
   '#6B7280',
   '#10b981',
+  '#f4f7fb',
   '#0f172a',
   '#64748b',
   '#94a3b8',
   'Poppins',
   'Poppins',
+  'StrandShare',
+  'Every Strand Counts',
   '',
   '',
   null,

@@ -47,9 +47,9 @@ export default function SuperAdminOverviewPage() {
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Super Admin Overview</h2>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Centralized control for accounts, reports, logs, and data protection.</p>
-        <div className="mt-3 inline-flex items-center rounded-full border border-dashed border-gray-300 dark:border-gray-600 px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
+        <h2 className="text-2xl font-bold text-gray-900">Super Admin Overview</h2>
+        <p className="text-gray-600 mt-1">Centralized control for accounts, reports, logs, and data protection.</p>
+        <div className="mt-3 inline-flex items-center rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs font-semibold text-gray-500">
           Placeholder Visualization Mode
         </div>
       </div>
@@ -58,13 +58,13 @@ export default function SuperAdminOverviewPage() {
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.label} className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
+            <div key={card.label} className="rounded-xl bg-white border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-gray-600 dark:text-gray-400">{card.label}</p>
+                <p className="text-sm text-gray-600">{card.label}</p>
                 <Icon size={18} style={{ color: theme.primaryColor }} />
               </div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{card.value}</p>
-              <p className="mt-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
+              <p className="text-3xl font-bold text-gray-900">{card.value}</p>
+              <p className="mt-2 text-sm font-semibold text-emerald-600 inline-flex items-center gap-1">
                 {card.trend}
                 <ArrowUpRight size={14} />
               </p>
@@ -74,19 +74,19 @@ export default function SuperAdminOverviewPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <section className="xl:col-span-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
+        <section className="xl:col-span-2 rounded-xl bg-white border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Workflow size={17} style={{ color: theme.primaryColor }} />
-            <h3 className="font-bold text-gray-900 dark:text-white">Governance Automation Pipeline</h3>
+            <h3 className="font-bold text-gray-900">Governance Automation Pipeline</h3>
           </div>
           <div className="space-y-4">
             {mockGovernancePipeline.map((item) => (
               <div key={item.name}>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="font-medium text-gray-700 dark:text-gray-200">{item.name}</span>
-                  <span className="text-gray-500 dark:text-gray-400">{item.progress}% • {item.status}</span>
+                  <span className="font-medium text-gray-700">{item.name}</span>
+                  <span className="text-gray-500">{item.progress}% • {item.status}</span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-gray-200 dark:bg-gray-700">
+                <div className="w-full h-2 rounded-full bg-gray-200">
                   <div
                     className="h-2 rounded-full"
                     style={{ width: `${item.progress}%`, backgroundColor: theme.primaryColor }}
@@ -97,10 +97,10 @@ export default function SuperAdminOverviewPage() {
           </div>
         </section>
 
-        <section className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
+        <section className="rounded-xl bg-white border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Clock3 size={17} style={{ color: theme.primaryColor }} />
-            <h3 className="font-bold text-gray-900 dark:text-white">Ops Timeline</h3>
+            <h3 className="font-bold text-gray-900">Ops Timeline</h3>
           </div>
           <div className="space-y-3">
             {mockActivityTimeline.map((event) => (
@@ -110,8 +110,8 @@ export default function SuperAdminOverviewPage() {
                   style={{ backgroundColor: event.state === 'done' ? '#10b981' : '#f59e0b' }}
                 />
                 <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{event.time}</p>
-                  <p className="text-sm text-gray-800 dark:text-gray-200">{event.label}</p>
+                  <p className="text-xs text-gray-500">{event.time}</p>
+                  <p className="text-sm text-gray-800">{event.label}</p>
                 </div>
               </div>
             ))}
@@ -120,10 +120,10 @@ export default function SuperAdminOverviewPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <section className="xl:col-span-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
+        <section className="xl:col-span-2 rounded-xl bg-white border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={17} style={{ color: theme.primaryColor }} />
-            <h3 className="font-bold text-gray-900 dark:text-white">90-Day H-Staff Capacity Forecast</h3>
+            <h3 className="font-bold text-gray-900">90-Day H-Staff Capacity Forecast</h3>
           </div>
           <div className="h-40 flex items-end gap-2">
             {mockForecast.map((value, index) => (
@@ -138,21 +138,21 @@ export default function SuperAdminOverviewPage() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-3 text-xs text-gray-500">
             Mock trend for future predictive analytics integration.
           </p>
         </section>
 
-        <section className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5">
+        <section className="rounded-xl bg-white border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Database size={17} style={{ color: theme.primaryColor }} />
-            <h3 className="font-bold text-gray-900 dark:text-white">Processing Queues</h3>
+            <h3 className="font-bold text-gray-900">Processing Queues</h3>
           </div>
           <div className="space-y-3">
             {mockQueues.map((item) => (
-              <div key={item.queue} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{item.queue}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <div key={item.queue} className="rounded-lg border border-gray-200 p-3">
+                <p className="text-sm font-semibold text-gray-800">{item.queue}</p>
+                <p className="text-xs text-gray-500 mt-1">
                   Waiting: {item.waiting} • ETA: {item.eta}
                 </p>
               </div>

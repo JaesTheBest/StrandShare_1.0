@@ -100,27 +100,27 @@ export default function AuditTrailsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Audit Trails</h1>
-        <p className="text-gray-600 dark:text-gray-400">Track account and security-sensitive actions across the platform.</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Audit Trails</h1>
+        <p className="text-gray-600">Track account and security-sensitive actions across the platform.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Events Today</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{eventsToday}</p>
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <p className="text-sm text-gray-500">Events Today</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{eventsToday}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Failed Actions</p>
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <p className="text-sm text-gray-500">Failed Actions</p>
           <p className="text-2xl font-bold text-red-600 mt-1">{failedActions}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Unique Users</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{uniqueUsers}</p>
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <p className="text-sm text-gray-500">Unique Users</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{uniqueUsers}</p>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex items-center gap-2 mb-4 text-gray-700 dark:text-gray-300">
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center gap-2 mb-4 text-gray-700">
           <Search size={16} />
           <input
             type="text"
@@ -135,19 +135,19 @@ export default function AuditTrailsPage() {
           <table className="w-full min-w-[980px]">
             <thead style={{ backgroundColor: `${theme.primaryColor}15` }}>
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Time</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">User Name</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">User Email</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Action</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Resource</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 dark:text-white">Description</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">Time</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">User Name</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">User Email</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">Action</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">Resource</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">Status</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-900">Description</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400" colSpan={7}>
+                  <td className="px-4 py-3 text-sm text-gray-600" colSpan={7}>
                     Loading audit logs...
                   </td>
                 </tr>
@@ -163,25 +163,25 @@ export default function AuditTrailsPage() {
 
               {!isLoading && !loadError && filteredLogs.length === 0 && (
                 <tr>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400" colSpan={7}>
+                  <td className="px-4 py-3 text-sm text-gray-600" colSpan={7}>
                     No matching logs.
                   </td>
                 </tr>
               )}
 
               {filteredLogs.map((row) => (
-                <tr key={row.logId} className="border-t border-gray-200 dark:border-gray-700">
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.time}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{row.userName}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.userEmail}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.action}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.resource}</td>
+                <tr key={row.logId} className="border-t border-gray-200">
+                  <td className="px-4 py-3 text-sm text-gray-700">{row.time}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{row.userName}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{row.userEmail}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{row.action}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{row.resource}</td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${String(row.status).toLowerCase() === 'failed' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.description}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{row.description}</td>
                 </tr>
               ))}
             </tbody>

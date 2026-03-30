@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
 import { Check, Eye, EyeOff, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { HexColorPicker } from 'react-colorful';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 import { logAuditAction } from '../../../lib/auditLogger';
 
@@ -142,15 +143,19 @@ function mapStorageUploadError(rawMessage) {
   return message;
 }
 
-function colorValueToHex(value) {
+function colorValueToHex(value, expandShortHex = false) {
   const input = String(value || '').trim();
   if (!input) return '#000000';
 
   if (/^#[0-9a-f]{6}$/i.test(input)) {
-    return input;
+    return input.toLowerCase();
   }
 
   if (/^#[0-9a-f]{3}$/i.test(input)) {
+    if (!expandShortHex) {
+      return input.toLowerCase();
+    }
+
     const r = input[1];
     const g = input[2];
     const b = input[3];
@@ -184,7 +189,7 @@ function colorValueToRgb(value) {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  const hex = colorValueToHex(input);
+  const hex = colorValueToHex(input, true);
   const hexMatch = hex.match(/^#([0-9a-f]{6})$/i);
   if (!hexMatch) {
     return input;
@@ -212,6 +217,27 @@ function Toggle({ checked, onChange, activeColor }) {
         }`}
       />
     </button>
+  );
+}
+
+function ColorPickerPanel({ color, onColorChange, onEnter }) {
+  return (
+    <div className="brand-picker-dropdown relative w-[272px] rounded-2xl border border-slate-300 bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.20)]">
+      <span className="absolute -top-1.5 left-4 h-3 w-3 rotate-45 border-l border-t border-slate-300 bg-white" aria-hidden="true" />
+      <HexColorPicker color={color} onChange={onColorChange} className="!w-full" />
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1 text-sm font-bold uppercase tracking-wide text-slate-700">
+          {colorValueToHex(color, true)}
+        </span>
+        <button
+          type="button"
+          onClick={onEnter}
+          className="rounded-md border border-slate-400 bg-white px-4 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+        >
+          Enter
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -454,6 +480,7 @@ export default function SettingsPage() {
     tertiary: theme.tertiaryColor,
     tertiaryDark: theme.tertiaryColorDark,
     tertiaryLight: theme.tertiaryColorLight,
+    background: theme.backgroundColor || '#f4f7fb',
     fontPrimary: theme.primaryTextColor || '#0f172a',
     fontSecondary: theme.secondaryTextColor || '#64748b',
     fontTertiary: theme.tertiaryTextColor || '#94a3b8',
@@ -482,12 +509,53 @@ export default function SettingsPage() {
     loginBackgroundImage: false,
   });
   const [colorInputMode, setColorInputMode] = useState('hex');
+  const [activeColorPickerKey, setActiveColorPickerKey] = useState('');
+  const [pickerDraftColor, setPickerDraftColor] = useState('#000000');
   const [showAllPresets, setShowAllPresets] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1536 : window.innerWidth));
 
+  const openColorPicker = useCallback((colorKey) => {
+    setColorInputMode('hex');
+    const nextHex = colorValueToHex(tempColors[colorKey], true);
+    setPickerDraftColor(/^#[0-9a-f]{6}$/i.test(nextHex) ? nextHex : '#000000');
+    setActiveColorPickerKey((prev) => (prev === colorKey ? '' : colorKey));
+  }, [tempColors]);
+
+  const applyPickerColor = useCallback((colorKey) => {
+    setTempColors((prev) => ({ ...prev, [colorKey]: colorValueToHex(pickerDraftColor, true) }));
+    setActiveColorPickerKey('');
+  }, [pickerDraftColor]);
+
+  useEffect(() => {
+    if (!activeColorPickerKey) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (event.target instanceof Element && event.target.closest('[data-color-dropdown-root="true"]')) {
+        return;
+      }
+      setActiveColorPickerKey('');
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setActiveColorPickerKey('');
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [activeColorPickerKey]);
+
   const previewStyle = useMemo(
     () => ({
-      background: `linear-gradient(130deg, ${tempColors.primaryLight}20, ${tempColors.primary}12, ${tempColors.secondary}14)`,
+      background: `linear-gradient(130deg, ${tempColors.primaryLight}20, ${tempColors.primary}12, ${tempColors.secondary}14), ${tempColors.background}`,
     }),
     [tempColors],
   );
@@ -508,6 +576,7 @@ export default function SettingsPage() {
         primary: preset.Primary_Color,
         secondary: preset.Secondary_Color,
         tertiary: preset.Tertiary_Color,
+        background: preset.Background_Color || '#f4f7fb',
         fontPrimary: preset.Primary_Text_Color,
         fontSecondary: preset.Secondary_Text_Color,
         fontTertiary: preset.Tertiary_Text_Color,
@@ -1329,6 +1398,7 @@ export default function SettingsPage() {
         tertiaryColor: tempColors.tertiary,
         tertiaryColorDark: tempColors.tertiaryDark,
         tertiaryColorLight: tempColors.tertiaryLight,
+        backgroundColor: tempColors.background,
         primaryTextColor: tempColors.fontPrimary,
         secondaryTextColor: tempColors.fontSecondary,
         tertiaryTextColor: tempColors.fontTertiary || tempColors.fontSecondary,
@@ -1460,6 +1530,7 @@ export default function SettingsPage() {
         tertiary: theme.tertiaryColor,
         tertiaryDark: theme.tertiaryColorDark,
         tertiaryLight: theme.tertiaryColorLight,
+        background: theme.backgroundColor || '#f4f7fb',
         fontPrimary: theme.primaryTextColor || '#0f172a',
         fontSecondary: theme.secondaryTextColor || '#64748b',
         fontTertiary: theme.tertiaryTextColor || '#94a3b8',
@@ -1505,7 +1576,7 @@ export default function SettingsPage() {
     if (!preset.colors) {
       return;
     }
-    setTempColors({ ...preset.colors });
+    setTempColors((prev) => ({ ...prev, ...preset.colors }));
     setBrandingMeta((prev) => ({
       ...prev,
       primaryFontFamily: preset.fontFamily || prev.primaryFontFamily,
@@ -1575,7 +1646,7 @@ export default function SettingsPage() {
       return;
     }
 
-    setTempColors({ ...defaultPreset.colors });
+    setTempColors((prev) => ({ ...prev, ...defaultPreset.colors }));
     setBrandingMeta((prev) => ({
       ...prev,
       brandName: 'StrandShare',
@@ -1595,22 +1666,22 @@ export default function SettingsPage() {
 
   return (
     <div className="w-full">
-      <div className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 md:p-8">
+      <div className="w-full rounded-xl border border-slate-200 bg-white p-6 md:p-8">
         <div className="mb-8">
           <div>
-            <h2 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white">System Settings</h2>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">Configure global platform parameters and visual identity.</p>
+            <h2 className="text-4xl font-bold tracking-tight text-slate-900">System Settings</h2>
+            <p className="text-slate-500 mt-1">Configure global platform parameters and visual identity.</p>
           </div>
         </div>
 
-        <div className="mb-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto tab-strip-scroll">
+        <div className="mb-6 border-b border-slate-200 overflow-x-auto tab-strip-scroll">
           <nav className="flex gap-8 min-w-max pr-6">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className="pb-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 whitespace-nowrap"
+                className="pb-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 whitespace-nowrap"
                 style={activeTabStyle(tab.id)}
               >
                 {tab.label}
@@ -1620,9 +1691,9 @@ export default function SettingsPage() {
         </div>
 
         {activeTab === 'profile' && (
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Profile Settings</h3>
+          <section className="rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h3 className="text-xl font-bold text-slate-900">Profile Settings</h3>
             </div>
 
             <div className="p-5 grid grid-cols-12 gap-4">
@@ -1649,7 +1720,7 @@ export default function SettingsPage() {
                   <input
                     value={profile.firstName}
                     onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   />
                 </div>
                 <div>
@@ -1657,7 +1728,7 @@ export default function SettingsPage() {
                   <input
                     value={profile.middleName}
                     onChange={(e) => setProfile({ ...profile, middleName: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   />
                 </div>
                 <div>
@@ -1665,7 +1736,7 @@ export default function SettingsPage() {
                   <input
                     value={profile.lastName}
                     onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   />
                 </div>
                 <div>
@@ -1673,7 +1744,7 @@ export default function SettingsPage() {
                   <input
                     value={profile.suffix}
                     onChange={(e) => setProfile({ ...profile, suffix: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   />
                 </div>
                 <div>
@@ -1681,7 +1752,7 @@ export default function SettingsPage() {
                   <select
                     value={profile.gender}
                     onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   >
                     <option value="male">Male</option>
                     <option value="female">Female</option>
@@ -1691,7 +1762,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-500 mb-1.5">Role</label>
-                  <div className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
                     {formatRoleLabel(profile.role)}
                   </div>
                 </div>
@@ -1700,13 +1771,13 @@ export default function SettingsPage() {
                   <input
                     value={profile.email}
                     onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-4">
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-4">
               <button type="button" onClick={handleDiscard} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
                 Discard Changes
               </button>
@@ -1725,8 +1796,8 @@ export default function SettingsPage() {
 
         {activeTab === 'security' && (
           <div className="space-y-5">
-            <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Update Password</h3>
+            <section className="rounded-xl border border-slate-200 p-5">
+              <h3 className="text-xl font-bold text-slate-900 mb-4">Update Password</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-500 mb-1.5">Current Password</label>
@@ -1735,7 +1806,7 @@ export default function SettingsPage() {
                       type={showCurrentPassword ? 'text' : 'password'}
                       value={security.currentPassword}
                       onChange={(e) => setSecurity({ ...security, currentPassword: e.target.value })}
-                      className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 pr-10 text-sm"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 pr-10 text-sm"
                     />
                     <button
                       type="button"
@@ -1747,7 +1818,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                <div className="rounded-lg border border-slate-200 p-3">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Password Requirements</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                     {[
@@ -1757,7 +1828,7 @@ export default function SettingsPage() {
                       ['One number', passwordRuleChecks.number],
                       ['One special character', passwordRuleChecks.special],
                     ].map(([label, passed]) => (
-                      <div key={label} className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <div key={label} className="flex items-center gap-2 text-slate-600">
                         {passed ? <Check size={14} className="text-emerald-600" /> : <X size={14} className="text-red-500" />}
                         <span>{label}</span>
                       </div>
@@ -1773,7 +1844,7 @@ export default function SettingsPage() {
                         type={showPassword ? 'text' : 'password'}
                         value={security.newPassword}
                         onChange={(e) => setSecurity({ ...security, newPassword: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 pr-10 text-sm"
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 pr-10 text-sm"
                       />
                       <button
                         type="button"
@@ -1792,7 +1863,7 @@ export default function SettingsPage() {
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={security.confirmPassword}
                         onChange={(e) => setSecurity({ ...security, confirmPassword: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 pr-10 text-sm"
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 pr-10 text-sm"
                       />
                       <button
                         type="button"
@@ -1835,7 +1906,7 @@ export default function SettingsPage() {
                       onChange={(e) => setSecurity({ ...security, passwordOtp: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                       inputMode="numeric"
                       placeholder="Enter 6-digit OTP"
-                      className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm tracking-[0.3em]"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm tracking-[0.3em]"
                     />
                     {isVerifyingPasswordOtp && <p className="text-xs mt-2 text-slate-500">Verifying OTP...</p>}
                   </div>
@@ -1849,7 +1920,7 @@ export default function SettingsPage() {
                       onChange={(e) => setPasswordMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       inputMode="numeric"
                       placeholder="Enter 6-digit authenticator code"
-                      className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm tracking-[0.3em]"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm tracking-[0.3em]"
                     />
                     {isVerifyingPasswordMfa && <p className="text-xs mt-2 text-slate-500">Verifying authenticator code...</p>}
                   </div>
@@ -1857,11 +1928,11 @@ export default function SettingsPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+            <section className="rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white">Two-Factor Authentication</h4>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Require OTP verification on sign in.</p>
+                  <h4 className="font-bold text-slate-900">Two-Factor Authentication</h4>
+                  <p className="text-sm text-slate-500">Require OTP verification on sign in.</p>
                 </div>
                 <Toggle
                   checked={security.twoFactorEnabled}
@@ -1871,14 +1942,14 @@ export default function SettingsPage() {
               </div>
 
               {mfaSetup.enrolling && (
-                <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Google Authenticator Setup</p>
+                <div className="mt-4 rounded-lg border border-slate-200 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-slate-700">Google Authenticator Setup</p>
                   {mfaSetup.qrSvg && (
                     <div className="bg-white inline-block p-2 rounded border border-slate-200" dangerouslySetInnerHTML={{ __html: mfaSetup.qrSvg }} />
                   )}
                   {mfaSetup.secret && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Manual key: <span className="font-mono text-slate-700 dark:text-slate-200">{mfaSetup.secret}</span>
+                    <p className="text-xs text-slate-500">
+                      Manual key: <span className="font-mono text-slate-700">{mfaSetup.secret}</span>
                     </p>
                   )}
                   <input
@@ -1890,26 +1961,26 @@ export default function SettingsPage() {
                       }))
                     }
                     placeholder="Enter 6-digit code"
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm tracking-[0.3em]"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm tracking-[0.3em]"
                   />
                   {isVerifyingMfaCode && <p className="text-xs text-slate-500">Verifying authenticator code...</p>}
                 </div>
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-              <h4 className="font-bold text-slate-900 dark:text-white mb-3">Active Sessions</h4>
+            <section className="rounded-xl border border-slate-200 p-5">
+              <h4 className="font-bold text-slate-900 mb-3">Active Sessions</h4>
               <div className="space-y-3">
                 {security.activeSessions.length === 0 && (
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-sm text-slate-500 dark:text-slate-400">
+                  <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">
                     No active sessions recorded yet.
                   </div>
                 )}
                 {security.activeSessions.map((session) => (
-                  <div key={session.device + session.lastActive} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
+                  <div key={session.device + session.lastActive} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">{session.device}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{session.location} • {session.lastActive}</p>
+                      <p className="font-semibold text-slate-900">{session.device}</p>
+                      <p className="text-xs text-slate-500">{session.location} • {session.lastActive}</p>
                     </div>
                     {session.current && (
                       <span className="px-2 py-1 rounded-full text-[10px] font-bold" style={{ backgroundColor: `${theme.primaryColor}22`, color: theme.primaryColor }}>
@@ -1921,8 +1992,8 @@ export default function SettingsPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-              <h4 className="font-bold text-slate-900 dark:text-white mb-3">Log Sessions</h4>
+            <section className="rounded-xl border border-slate-200 p-5">
+              <h4 className="font-bold text-slate-900 mb-3">Log Sessions</h4>
               <div className="overflow-x-auto max-h-56 overflow-y-auto">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -1934,17 +2005,17 @@ export default function SettingsPage() {
                   </thead>
                   <tbody>
                     {security.loginSessions.length === 0 && (
-                      <tr className="border-t border-slate-200 dark:border-slate-800">
-                        <td className="py-2 pr-3 text-slate-500 dark:text-slate-400" colSpan={3}>
+                      <tr className="border-t border-slate-200">
+                        <td className="py-2 pr-3 text-slate-500" colSpan={3}>
                           No security activity logs yet.
                         </td>
                       </tr>
                     )}
                     {security.loginSessions.map((log) => (
-                      <tr key={log.time + log.action} className="border-t border-slate-200 dark:border-slate-800">
-                        <td className="py-2 pr-3 text-slate-700 dark:text-slate-300">{log.time}</td>
-                        <td className="py-2 pr-3 text-slate-700 dark:text-slate-300">{log.action}</td>
-                        <td className="py-2 text-slate-700 dark:text-slate-300">{log.ip}</td>
+                      <tr key={log.time + log.action} className="border-t border-slate-200">
+                        <td className="py-2 pr-3 text-slate-700">{log.time}</td>
+                        <td className="py-2 pr-3 text-slate-700">{log.action}</td>
+                        <td className="py-2 text-slate-700">{log.ip}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1956,15 +2027,15 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'system' && (
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">System Preferences</h3>
+          <section className="rounded-xl border border-slate-200 p-5">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">System Preferences</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-500 mb-1.5">Language</label>
                 <select
                   value={systemPreferences.language}
                   onChange={(e) => setSystemPreferences({ ...systemPreferences, language: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                 >
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
@@ -1977,7 +2048,7 @@ export default function SettingsPage() {
                 <select
                   value={systemPreferences.timezone}
                   onChange={(e) => setSystemPreferences({ ...systemPreferences, timezone: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                 >
                   <option value="Asia/Manila">Asia/Manila</option>
                   <option value="UTC">UTC</option>
@@ -1986,10 +2057,10 @@ export default function SettingsPage() {
                 </select>
               </div>
               <div className="md:col-span-2 mt-1">
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">Maintenance Mode</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                    <p className="font-semibold text-slate-900">Maintenance Mode</p>
+                    <p className="text-sm text-slate-500">
                       Temporarily disable user access while admins perform updates.
                     </p>
                   </div>
@@ -2007,7 +2078,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
               <button type="button" onClick={handleDiscard} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
                 Discard System Changes
               </button>
@@ -2025,13 +2096,13 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'notifications' && (
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Notifications</h3>
+          <section className="rounded-xl border border-slate-200 p-5">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Notifications</h3>
             <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                 <div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">Email Notifications</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Receive updates through email.</p>
+                  <p className="font-semibold text-slate-900">Email Notifications</p>
+                  <p className="text-sm text-slate-500">Receive updates through email.</p>
                 </div>
                 <Toggle
                   checked={notifications.email}
@@ -2040,10 +2111,10 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                 <div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">Push Notifications</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Receive browser and mobile push notifications.</p>
+                  <p className="font-semibold text-slate-900">Push Notifications</p>
+                  <p className="text-sm text-slate-500">Receive browser and mobile push notifications.</p>
                 </div>
                 <Toggle
                   checked={notifications.push}
@@ -2053,7 +2124,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
               <button type="button" onClick={handleDiscard} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
                 Discard Notification Changes
               </button>
@@ -2071,242 +2142,317 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'branding' && (
-          <div className="grid grid-cols-12 gap-6 xl:gap-8">
-            <div className="col-span-12 xl:col-span-8 space-y-6">
-              <section className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Available Themes</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Apply, save, and manage visual presets for the whole platform.</p>
-                  </div>
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{themePresetCards.length} presets</span>
+          <div className="w-full space-y-5 xl:flex xl:items-start xl:gap-6 xl:space-y-0">
+            <div className="space-y-6 xl:w-7/12">
+            <section className="rounded-xl border border-slate-200 bg-white p-5 md:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900">Theme Presets</h3>
+                  <p className="text-sm text-slate-500">Quickly apply pre-curated color directions.</p>
                 </div>
-                <div className="p-6">
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-                    {visiblePresetCards.map((preset) => {
-                      const isActive = preset.id === selectedThemeId;
-                      return (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => {
-                            if (preset.isCustom) {
-                              setSelectedThemeId('custom');
-                              return;
-                            }
-                            applyPreset(preset);
-                          }}
-                          className="group relative h-44 rounded-3xl border-2 p-3 overflow-hidden transition-all text-left"
-                          style={
-                            isActive
-                              ? {
-                                  borderColor: presetHighlightColor,
-                                  backgroundColor: `${presetHighlightColor}0d`,
-                                  boxShadow: `0 0 0 2px ${presetHighlightColor}33`,
-                                }
-                              : { borderColor: '#dce3ea', backgroundColor: '#f2f6fb' }
+                {selectedThemeId === 'custom' && (
+                  <button
+                    type="button"
+                    onClick={handleSaveCustomPreset}
+                    disabled={isSavingPreset}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-wider text-slate-700 disabled:opacity-60"
+                  >
+                    <Plus size={14} />
+                    {isSavingPreset ? 'Saving...' : 'Save As Preset'}
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
+                {visiblePresetCards.map((preset) => {
+                  const isActive = preset.id === selectedThemeId;
+                  return (
+                    <div
+                      key={preset.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (preset.isCustom) {
+                          setSelectedThemeId('custom');
+                          return;
+                        }
+                        applyPreset(preset);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          if (preset.isCustom) {
+                            setSelectedThemeId('custom');
+                            return;
                           }
-                        >
-                          {!preset.isCustom ? (
-                            <div className="w-full h-full rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 flex flex-col p-3 gap-3">
-                              <div className="flex gap-2 h-16">
-                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.primary }} />
-                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.secondary }} />
-                                <div className="flex-1 rounded-lg" style={{ backgroundColor: preset.colors.tertiary }} />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="h-2.5 rounded" style={{ backgroundColor: preset.colors.fontPrimary }} />
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div className="h-6 rounded" style={{ backgroundColor: preset.colors.fontSecondary }} />
-                                  <div className="h-6 rounded" style={{ backgroundColor: preset.colors.fontTertiary }} />
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="w-full h-full rounded-2xl border border-dashed border-slate-300 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-slate-500 text-[10px] font-bold uppercase">
-                              Custom
-                            </div>
-                          )}
-                          {isActive && (
-                            <span className="absolute right-4 top-4 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white">Active</span>
-                          )}
-                          {!preset.isCustom && !preset.isDefault && (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleSoftDeletePreset(preset);
-                              }}
-                              title="Delete preset"
-                              aria-label="Delete preset"
-                              className={`absolute right-3 top-3 h-7 w-7 inline-flex items-center justify-center rounded-full border border-red-200 bg-white/95 text-red-600 shadow-sm transition hover:bg-red-50 ${isDeletingPresetId === preset.rawPresetId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                          <div className="absolute inset-x-4 bottom-3 text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                          applyPreset(preset);
+                        }
+                      }}
+                      aria-pressed={isActive}
+                      className="relative rounded-lg border p-2.5 text-left transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
+                      style={
+                        isActive
+                          ? {
+                              borderColor: presetHighlightColor,
+                              boxShadow: `0 0 0 2px ${presetHighlightColor}33`,
+                              backgroundColor: '#f8fafc',
+                            }
+                          : { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }
+                      }
+                    >
+                      {!preset.isCustom ? (
+                        <div className="space-y-2">
+                          <div className="h-10 rounded border border-slate-200 bg-white p-1 flex gap-1.5">
+                            <div className="h-full flex-1 rounded" style={{ backgroundColor: preset.colors.primary }} />
+                            <div className="h-full flex-1 rounded" style={{ backgroundColor: preset.colors.secondary }} />
+                            <div className="h-full flex-1 rounded" style={{ backgroundColor: preset.colors.tertiary }} />
+                          </div>
+                          <div className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
                             {preset.name}
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {hasMorePresetRows && (
-                    <div className="mt-4 flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => setShowAllPresets((prev) => !prev)}
-                        className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50"
-                      >
-                        {showAllPresets ? 'View Less' : 'View More'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center gap-3">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Custom Theme Settings</h3>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                    {BRANDING_EDITOR_TABS.map((tab) => {
-                      const isActive = brandingEditorTab === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setBrandingEditorTab(tab.id)}
-                          className={`px-3 py-1 text-xs rounded ${isActive ? 'font-bold bg-white dark:bg-slate-700 shadow-sm' : 'font-medium text-slate-500 dark:text-slate-400'}`}
-                        >
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="p-6 space-y-6">
-                  {brandingEditorTab === 'appearance' && (
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-950/60 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Color Mode</label>
-                        <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1">
-                          <button
-                            type="button"
-                            onClick={() => setColorInputMode('hex')}
-                            className={`px-2 py-0.5 text-[10px] rounded ${colorInputMode === 'hex' ? 'font-bold bg-slate-100 dark:bg-slate-800' : 'text-slate-500'}`}
-                          >
-                            HEX
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setColorInputMode('rgb')}
-                            className={`px-2 py-0.5 text-[10px] rounded ${colorInputMode === 'rgb' ? 'font-bold bg-slate-100 dark:bg-slate-800' : 'text-slate-500'}`}
-                          >
-                            RGB
-                          </button>
                         </div>
-                      </div>
-
-                      {selectedThemeId === 'custom' && (
-                        <div className="space-y-2">
-                          <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Custom Preset Name</label>
-                          <input
-                            value={newPresetName}
-                            onChange={(event) => setNewPresetName(event.target.value)}
-                            placeholder="Name this custom preset"
-                            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                          />
+                      ) : (
+                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          Custom
                         </div>
                       )}
+
+                      {isActive && (
+                        <span className="absolute right-2 top-2 rounded bg-slate-900 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                          Active
+                        </span>
+                      )}
+
+                      {!preset.isCustom && !preset.isDefault && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleSoftDeletePreset(preset);
+                          }}
+                          title="Delete preset"
+                          aria-label="Delete preset"
+                          className={`absolute bottom-2 right-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 ${isDeletingPresetId === preset.rawPresetId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-red-50'}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
-                  )}
+                  );
+                })}
+              </div>
 
-                  {brandingEditorTab === 'appearance' && (
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-                          <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Theme Colors</h4>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Primary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.primary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.primary) : colorValueToHex(tempColors.primary)}
-                                onChange={(e) => setTempColors({ ...tempColors, primary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
+              {hasMorePresetRows && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPresets((prev) => !prev)}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+                  >
+                    {showAllPresets ? 'View Less' : 'View More'}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5 md:p-6 space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  {BRANDING_EDITOR_TABS.map((tab) => {
+                    const isActive = brandingEditorTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setBrandingEditorTab(tab.id)}
+                        className={`rounded px-3 py-1.5 text-xs ${isActive ? 'bg-white font-bold text-slate-900 shadow-sm' : 'font-medium text-slate-500'}`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setColorInputMode('hex')}
+                    className={`rounded px-2 py-0.5 text-[10px] ${colorInputMode === 'hex' ? 'bg-slate-100 font-bold text-slate-900' : 'text-slate-500'}`}
+                  >
+                    HEX
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setColorInputMode('rgb')}
+                    className={`rounded px-2 py-0.5 text-[10px] ${colorInputMode === 'rgb' ? 'bg-slate-100 font-bold text-slate-900' : 'text-slate-500'}`}
+                  >
+                    RGB
+                  </button>
+                </div>
+              </div>
+
+              {brandingEditorTab === 'appearance' && (
+                <div className="space-y-6">
+                  <article className="space-y-3">
+                    <div>
+                      <h4 className="text-3xl font-bold text-slate-800">Atmosphere</h4>
+                      <p className="text-sm text-slate-500">Define the foundational canvas of your environment.</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Background Layer</p>
+                      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="relative" data-color-dropdown-root="true">
+                            <button
+                              type="button"
+                              onClick={() => openColorPicker('background')}
+                              className="h-9 w-9 rounded-md border border-slate-300"
+                              style={{ backgroundColor: tempColors.background }}
+                              title="Choose background color"
+                              aria-label="Choose background color"
+                            />
+                            {activeColorPickerKey === 'background' && (
+                              <div className="absolute left-0 top-11 z-50">
+                                <ColorPickerPanel
+                                  color={pickerDraftColor}
+                                  onColorChange={setPickerDraftColor}
+                                  onEnter={() => applyPickerColor('background')}
+                                />
+                              </div>
+                            )}
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Secondary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.secondary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.secondary) : colorValueToHex(tempColors.secondary)}
-                                onChange={(e) => setTempColors({ ...tempColors, secondary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Tertiary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.tertiary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.tertiary) : colorValueToHex(tempColors.tertiary)}
-                                onChange={(e) => setTempColors({ ...tempColors, tertiary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-700">Base Surface</p>
+                            <p className="text-[11px] text-slate-500">Global page background</p>
                           </div>
                         </div>
-
-                        <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-                          <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Font Colors</h4>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Primary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontPrimary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontPrimary) : colorValueToHex(tempColors.fontPrimary)}
-                                onChange={(e) => setTempColors({ ...tempColors, fontPrimary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Secondary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontSecondary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontSecondary) : colorValueToHex(tempColors.fontSecondary)}
-                                onChange={(e) => setTempColors({ ...tempColors, fontSecondary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Font Tertiary Color</label>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg border border-slate-200" style={{ backgroundColor: tempColors.fontTertiary }} />
-                              <input
-                                value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.fontTertiary) : colorValueToHex(tempColors.fontTertiary)}
-                                onChange={(e) => setTempColors({ ...tempColors, fontTertiary: colorInputMode === 'rgb' ? colorValueToRgb(e.target.value) : colorValueToHex(e.target.value) })}
-                                className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                              />
-                            </div>
-                          </div>
-                        </div>
+                        <input
+                          value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors.background) : colorValueToHex(tempColors.background)}
+                          onChange={(event) =>
+                            setTempColors({
+                              ...tempColors,
+                              background: colorInputMode === 'rgb' ? colorValueToRgb(event.target.value) : colorValueToHex(event.target.value),
+                            })
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:max-w-xs"
+                        />
                       </div>
+                    </div>
+                  </article>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <article className="space-y-3">
+                    <div>
+                      <h4 className="text-3xl font-bold text-slate-800">Brand Spectrum</h4>
+                      <p className="text-sm text-slate-500">Synchronize your core identity across all components.</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      {[
+                        { key: 'primary', label: 'Primary', hint: 'Primary actions and highlights' },
+                        { key: 'secondary', label: 'Secondary', hint: 'Supporting panels and controls' },
+                        { key: 'tertiary', label: 'Tertiary', hint: 'Accents and emphasis states' },
+                      ].map((item) => (
+                        <div key={item.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
+                          <div className="relative my-2" data-color-dropdown-root="true">
+                            <button
+                              type="button"
+                              onClick={() => openColorPicker(item.key)}
+                              className="h-16 w-full rounded-md border border-slate-300"
+                              style={{ backgroundColor: tempColors[item.key] }}
+                              title={`Choose ${item.label.toLowerCase()} color`}
+                              aria-label={`Choose ${item.label.toLowerCase()} color`}
+                            />
+                            {activeColorPickerKey === item.key && (
+                              <div className="absolute left-0 top-[calc(100%+8px)] z-50">
+                                <ColorPickerPanel
+                                  color={pickerDraftColor}
+                                  onColorChange={setPickerDraftColor}
+                                  onEnter={() => applyPickerColor(item.key)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors[item.key]) : colorValueToHex(tempColors[item.key])}
+                            onChange={(event) =>
+                              setTempColors({
+                                ...tempColors,
+                                [item.key]: colorInputMode === 'rgb' ? colorValueToRgb(event.target.value) : colorValueToHex(event.target.value),
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                          />
+                          <p className="mt-2 text-[11px] text-slate-500">{item.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="space-y-3">
+                    <div>
+                      <h4 className="text-3xl font-bold text-slate-800">Typography Palette</h4>
+                      <p className="text-sm text-slate-500">Editorial legibility and tonal hierarchy.</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200">
+                      {[
+                        { key: 'fontPrimary', label: 'Heading Color', icon: 'T', hint: 'Used for page titles and section headers' },
+                        { key: 'fontSecondary', label: 'Body Text', icon: 'F', hint: 'Used for primary paragraph content' },
+                        { key: 'fontTertiary', label: 'Meta & Details', icon: 'D', hint: 'Used for helper text and metadata labels' },
+                      ].map((item) => (
+                        <div key={item.key} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-start gap-3">
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-xs font-bold text-slate-600">
+                              {item.icon}
+                            </span>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700">{item.label}</p>
+                              <p className="text-[11px] text-slate-500">{item.hint}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex w-full items-center gap-2 sm:max-w-sm">
+                            <input
+                              value={colorInputMode === 'rgb' ? colorValueToRgb(tempColors[item.key]) : colorValueToHex(tempColors[item.key])}
+                              onChange={(event) =>
+                                setTempColors({
+                                  ...tempColors,
+                                  [item.key]: colorInputMode === 'rgb' ? colorValueToRgb(event.target.value) : colorValueToHex(event.target.value),
+                                })
+                              }
+                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            />
+                            <div className="relative" data-color-dropdown-root="true">
+                              <button
+                                type="button"
+                                onClick={() => openColorPicker(item.key)}
+                                className="h-6 w-6 rounded-full border border-slate-300"
+                                style={{ backgroundColor: tempColors[item.key] }}
+                                title={`Choose ${item.label.toLowerCase()}`}
+                                aria-label={`Choose ${item.label.toLowerCase()}`}
+                              />
+                              {activeColorPickerKey === item.key && (
+                                <div className="absolute right-0 top-8 z-50">
+                                  <ColorPickerPanel
+                                    color={pickerDraftColor}
+                                    onColorChange={setPickerDraftColor}
+                                    onEnter={() => applyPickerColor(item.key)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-2">
                         <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Primary Font Family</label>
                         <select
                           value={brandingMeta.primaryFontFamily}
-                          onChange={(e) => setBrandingMeta({ ...brandingMeta, primaryFontFamily: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                          onChange={(event) => setBrandingMeta({ ...brandingMeta, primaryFontFamily: event.target.value })}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
                         >
                           {(googleFonts || []).map((fontName) => (
                             <option key={fontName} value={fontName}>{fontName}</option>
@@ -2317,250 +2463,251 @@ export default function SettingsPage() {
                         <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Secondary Font Family</label>
                         <select
                           value={brandingMeta.secondaryFontFamily}
-                          onChange={(e) => setBrandingMeta({ ...brandingMeta, secondaryFontFamily: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
+                          onChange={(event) => setBrandingMeta({ ...brandingMeta, secondaryFontFamily: event.target.value })}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
                         >
                           {(googleFonts || []).map((fontName) => (
                             <option key={fontName} value={fontName}>{fontName}</option>
                           ))}
                         </select>
                       </div>
-                      </div>
-
-                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Typography Preview</p>
-                        <h4 className="text-lg font-bold" style={{ color: tempColors.fontPrimary, fontFamily: brandingMeta.primaryFontFamily }}>
-                          Analytics Overview
-                        </h4>
-                        <p className="text-sm mt-1" style={{ color: tempColors.fontSecondary, fontFamily: brandingMeta.secondaryFontFamily }}>
-                          Real-time performance data and engagement metrics
-                        </p>
-                        <p className="text-xs mt-2" style={{ color: tempColors.fontTertiary, fontFamily: brandingMeta.secondaryFontFamily }}>
-                          Supporting helper text style
-                        </p>
-                      </div>
                     </div>
-                  )}
+                  </article>
+                </div>
+              )}
 
-                  {brandingEditorTab === 'branding' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Brand Name</label>
-                        <input
-                          value={brandingMeta.brandName}
-                          onChange={(e) => setBrandingMeta({ ...brandingMeta, brandName: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Brand Tagline</label>
-                        <input
-                          value={brandingMeta.brandTagline}
-                          onChange={(e) => setBrandingMeta({ ...brandingMeta, brandTagline: e.target.value })}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
+              {brandingEditorTab === 'branding' && (
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Brand Name</label>
+                    <input
+                      value={brandingMeta.brandName}
+                      onChange={(event) => setBrandingMeta({ ...brandingMeta, brandName: event.target.value })}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Brand Tagline</label>
+                    <input
+                      value={brandingMeta.brandTagline}
+                      onChange={(event) => setBrandingMeta({ ...brandingMeta, brandTagline: event.target.value })}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Upload Logo Image</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => handleBrandingAssetFileChange('logoImage', event)}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Upload Login Background</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => handleBrandingAssetFileChange('loginBackgroundImage', event)}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:col-span-2 md:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-500">Current Logo</p>
+                      <img
+                        src={brandingAssets.logoImage || theme.logoImage || DEFAULT_AVATAR}
+                        alt="Logo preview"
+                        className="h-24 w-24 rounded-lg border border-slate-200 object-cover"
+                      />
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-500">Current Login Background</p>
+                      <img
+                        src={brandingAssets.loginBackgroundImage || theme.loginBackgroundImage || DEFAULT_AVATAR}
+                        alt="Login background preview"
+                        className="h-24 w-full rounded-lg border border-slate-200 object-cover"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedThemeId === 'custom' && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">Custom Preset Name</label>
+                  <input
+                    value={newPresetName}
+                    onChange={(event) => setNewPresetName(event.target.value)}
+                    placeholder="Name this custom preset"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              )}
+            </section>
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleResetBrandingToDefault}
+                className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500"
+              >
+                Reset To Default
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider text-white"
+                style={{ backgroundColor: theme.primaryColor }}
+              >
+                <Save size={14} />
+                Save Branding Now
+              </button>
+            </div>
+            </div>
+
+            <div className="branding-preview-rail xl:w-5/12">
+            <section className="rounded-xl border border-slate-200 bg-white p-4 md:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                  <Eye size={16} />
+                  Live Theme Preview
+                </h4>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView('login')}
+                    className="px-3 py-1.5 text-[11px] font-bold"
+                    style={previewView === 'login' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView('home')}
+                    className="px-3 py-1.5 text-[11px] font-bold"
+                    style={previewView === 'home' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
+                  >
+                    Home
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 rounded-2xl p-1.5 shadow-xl overflow-hidden border-[10px] border-slate-800 w-full">
+                {previewView === 'login' ? (
+                  <div className="bg-white rounded-lg aspect-[4/3] overflow-hidden" style={previewStyle}>
+                    <div className="h-full w-full grid grid-cols-12">
+                      <div
+                        className="col-span-5 hidden sm:flex items-center justify-center p-3"
+                        style={{
+                          background: `linear-gradient(135deg, ${tempColors.primaryLight}15 0%, ${tempColors.primary}10 50%, ${tempColors.primaryDark}15 100%)`,
+                        }}
+                      >
+                        <div className="w-full max-w-[170px]">
+                          <div className="rounded-xl overflow-hidden shadow-lg border border-slate-200 mb-3">
+                            <img
+                              src={brandingAssets.loginBackgroundImage || theme.loginBackgroundImage || DEFAULT_AVATAR}
+                              alt="Login preview background"
+                              className="w-full h-24 object-cover"
+                            />
+                          </div>
+                          <h4 className="text-[10px] font-bold text-center" style={{ color: tempColors.primary }}>
+                            {brandingMeta.brandTagline || theme.brandTagline || 'Every Strand Counts'}
+                          </h4>
+                        </div>
                       </div>
 
-                      <div className="space-y-2 sm:col-span-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Upload Logo Image</label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleBrandingAssetFileChange('logoImage', e)}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
-                      </div>
-
-                      <div className="space-y-2 sm:col-span-2">
-                        <label className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Upload Login Background</label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleBrandingAssetFileChange('loginBackgroundImage', e)}
-                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-950">
-                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">Current Logo</p>
+                      <div className="col-span-12 sm:col-span-7 p-3 bg-white">
+                        <div className="flex items-center gap-2 mb-3">
                           <img
                             src={brandingAssets.logoImage || theme.logoImage || DEFAULT_AVATAR}
                             alt="Logo preview"
-                            className="w-24 h-24 rounded-lg object-cover border border-slate-200"
+                            className="w-7 h-7 rounded object-cover border border-slate-200"
                           />
+                          <span className="text-[11px] font-bold text-slate-900">
+                            {brandingMeta.brandName || theme.brandName || 'StrandShare'}
+                          </span>
                         </div>
-                        <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-950">
-                          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">Current Login Background</p>
-                          <img
-                            src={brandingAssets.loginBackgroundImage || theme.loginBackgroundImage || DEFAULT_AVATAR}
-                            alt="Login background preview"
-                            className="w-full h-24 rounded-lg object-cover border border-slate-200"
-                          />
+
+                        <div className="h-2 w-24 rounded mb-1" style={{ backgroundColor: tempColors.fontPrimary }} />
+                        <div className="h-1.5 w-32 rounded mb-3" style={{ backgroundColor: tempColors.fontSecondary }} />
+
+                        <div className="space-y-2">
+                          <div className="h-6 rounded border border-slate-200 bg-slate-50" />
+                          <div className="h-6 rounded border border-slate-200 bg-slate-50" />
+                          <div className="h-6 rounded" style={{ backgroundColor: tempColors.primary }} />
                         </div>
                       </div>
                     </div>
-                  )}
-
-                  {selectedThemeId === 'custom' && (
-                    <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-end">
-                        <button
-                          type="button"
-                          onClick={handleSaveCustomPreset}
-                          disabled={isSavingPreset}
-                          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider text-white disabled:opacity-60"
-                          style={{ backgroundColor: theme.primaryColor }}
-                        >
-                          <Plus size={14} />
-                          {isSavingPreset ? 'Saving...' : 'Save As Preset'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <div className="col-span-12 xl:col-span-4">
-              <div className="sticky top-24">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Eye size={16} />
-                    Live Theme Preview
-                  </h4>
-                  <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewView('login')}
-                      className="px-3 py-1.5 text-[11px] font-bold"
-                      style={previewView === 'login' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
-                    >
-                      Login
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewView('home')}
-                      className="px-3 py-1.5 text-[11px] font-bold"
-                      style={previewView === 'home' ? { backgroundColor: `${presetHighlightColor}20`, color: presetHighlightColor } : { color: '#64748b' }}
-                    >
-                      Home
-                    </button>
                   </div>
-                </div>
-
-                <div className="bg-slate-900 rounded-2xl p-1 shadow-2xl overflow-hidden border-8 border-slate-800">
-                  {previewView === 'login' ? (
-                    <div className="bg-white dark:bg-slate-900 rounded-lg aspect-[16/10] overflow-hidden" style={previewStyle}>
-                      <div className="h-full w-full grid grid-cols-12">
-                        <div
-                          className="col-span-5 hidden sm:flex items-center justify-center p-3"
-                          style={{
-                            background: `linear-gradient(135deg, ${tempColors.primaryLight}15 0%, ${tempColors.primary}10 50%, ${tempColors.primaryDark}15 100%)`,
-                          }}
-                        >
-                          <div className="w-full max-w-[170px]">
-                            <div className="rounded-xl overflow-hidden shadow-lg border border-slate-200 mb-3">
-                              <img
-                                src={brandingAssets.loginBackgroundImage || theme.loginBackgroundImage || DEFAULT_AVATAR}
-                                alt="Login preview background"
-                                className="w-full h-24 object-cover"
-                              />
-                            </div>
-                            <h4 className="text-[10px] font-bold text-center" style={{ color: tempColors.primary }}>
-                              {brandingMeta.brandTagline || theme.brandTagline || 'Every Strand Counts'}
-                            </h4>
-                          </div>
+                ) : (
+                  <div className="bg-[#f4f7fb] rounded-lg aspect-[4/3] overflow-hidden border border-slate-200 flex text-[8px]">
+                    <div className="w-[30%] bg-white border-r border-slate-200 flex flex-col">
+                      <div className="h-8 px-2.5 flex items-center gap-2 border-b border-slate-100">
+                        <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: tempColors.primary }} />
+                        <div className="h-1.5 w-12 rounded" style={{ backgroundColor: tempColors.fontPrimary }} />
+                      </div>
+                      <div className="p-2.5 space-y-2">
+                        <div className="h-3.5 rounded-md flex items-center px-1.5" style={{ backgroundColor: `${tempColors.primary}20` }}>
+                          <div className="h-1.5 w-8 rounded" style={{ backgroundColor: tempColors.primary }} />
                         </div>
-
-                        <div className="col-span-12 sm:col-span-7 p-3 bg-white">
-                          <div className="flex items-center gap-2 mb-3">
-                            <img
-                              src={brandingAssets.logoImage || theme.logoImage || DEFAULT_AVATAR}
-                              alt="Logo preview"
-                              className="w-7 h-7 rounded object-cover border border-slate-200"
-                            />
-                            <span className="text-[11px] font-bold text-slate-900">
-                              {brandingMeta.brandName || theme.brandName || 'StrandShare'}
-                            </span>
-                          </div>
-
-                          <div className="h-2 w-24 rounded mb-1" style={{ backgroundColor: tempColors.fontPrimary }} />
-                          <div className="h-1.5 w-32 rounded mb-3" style={{ backgroundColor: tempColors.fontSecondary }} />
-
-                          <div className="space-y-2">
-                            <div className="h-6 rounded border border-slate-200 bg-slate-50" />
-                            <div className="h-6 rounded border border-slate-200 bg-slate-50" />
-                            <div className="h-6 rounded" style={{ backgroundColor: tempColors.primary }} />
-                          </div>
-                        </div>
+                        <div className="h-3.5 rounded-md bg-slate-100" />
+                        <div className="h-3.5 rounded-md bg-slate-100" />
                       </div>
                     </div>
-                  ) : (
-                    <div className="bg-[#f4f7fb] rounded-lg aspect-[16/10] overflow-hidden border border-slate-200 flex text-[8px]">
-                      <div className="w-[30%] bg-white border-r border-slate-200 flex flex-col">
-                        <div className="h-8 px-2.5 flex items-center gap-2 border-b border-slate-100">
-                          <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: tempColors.primary }} />
-                          <div className="h-1.5 w-12 rounded" style={{ backgroundColor: tempColors.fontPrimary }} />
+
+                    <div className="flex-1 p-3">
+                      <div className="h-5 flex items-center justify-between mb-3">
+                        <div>
+                          <div className="h-2 w-16 rounded mb-1" style={{ backgroundColor: tempColors.fontPrimary }} />
+                          <div className="h-1.5 w-20 rounded" style={{ backgroundColor: tempColors.fontSecondary }} />
                         </div>
-                        <div className="p-2.5 space-y-2">
-                          <div className="h-3.5 rounded-md flex items-center px-1.5" style={{ backgroundColor: `${tempColors.primary}20` }}>
-                            <div className="h-1.5 w-8 rounded" style={{ backgroundColor: tempColors.primary }} />
-                          </div>
-                          <div className="h-3.5 rounded-md bg-slate-100" />
-                          <div className="h-3.5 rounded-md bg-slate-100" />
-                        </div>
+                        <div className="h-3.5 w-12 rounded-md" style={{ backgroundColor: tempColors.primary }} />
                       </div>
 
-                      <div className="flex-1 p-3">
-                        <div className="h-5 flex items-center justify-between mb-3">
-                          <div>
-                            <div className="h-2 w-16 rounded mb-1" style={{ backgroundColor: tempColors.fontPrimary }} />
-                            <div className="h-1.5 w-20 rounded" style={{ backgroundColor: tempColors.fontSecondary }} />
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {[tempColors.primary, tempColors.secondary, '#f59e0b'].map((cardColor) => (
+                          <div key={cardColor} className="bg-white border border-slate-200 rounded-lg p-2">
+                            <div className="h-2 w-2 rounded mb-2" style={{ backgroundColor: `${cardColor}33` }} />
+                            <div className="h-1.5 w-10 rounded mb-1" style={{ backgroundColor: tempColors.fontSecondary }} />
+                            <div className="h-2.5 w-8 rounded" style={{ backgroundColor: cardColor }} />
                           </div>
-                          <div className="h-3.5 w-12 rounded-md" style={{ backgroundColor: tempColors.primary }} />
-                        </div>
+                        ))}
+                      </div>
 
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                          {[tempColors.primary, tempColors.secondary, '#f59e0b'].map((cardColor) => (
-                            <div key={cardColor} className="bg-white border border-slate-200 rounded-lg p-2">
-                              <div className="h-2 w-2 rounded mb-2" style={{ backgroundColor: `${cardColor}33` }} />
-                              <div className="h-1.5 w-10 rounded mb-1" style={{ backgroundColor: tempColors.fontSecondary }} />
-                              <div className="h-2.5 w-8 rounded" style={{ backgroundColor: cardColor }} />
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="bg-white border border-slate-200 rounded-lg p-2">
-                          <div className="h-1.5 w-12 rounded mb-2" style={{ backgroundColor: tempColors.fontPrimary }} />
-                          <div className="h-4 rounded bg-slate-100 mb-2" />
-                          <div className="h-4 rounded bg-slate-100" />
-                        </div>
+                      <div className="bg-white border border-slate-200 rounded-lg p-2">
+                        <div className="h-1.5 w-12 rounded mb-2" style={{ backgroundColor: tempColors.fontPrimary }} />
+                        <div className="h-4 rounded bg-slate-100 mb-2" />
+                        <div className="h-4 rounded bg-slate-100" />
                       </div>
                     </div>
-                  )}
-                </div>
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleResetBrandingToDefault}
-                    className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500"
-                  >
-                    Reset To Default
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider text-white"
-                    style={{ backgroundColor: theme.primaryColor }}
-                  >
-                    <Save size={14} />
-                    Save Branding Now
-                  </button>
                   </div>
+                )}
+              </div>
+
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Selected Fonts</p>
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-slate-600">
+                    Heading: <span className="font-semibold text-slate-800">{brandingMeta.primaryFontFamily || theme.selectedFont || theme.fontFamily}</span>
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Body: <span className="font-semibold text-slate-800">{brandingMeta.secondaryFontFamily || brandingMeta.primaryFontFamily || theme.secondaryFontFamily || theme.fontFamily}</span>
+                  </p>
+                </div>
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm font-bold text-slate-800" style={{ fontFamily: brandingMeta.primaryFontFamily || theme.selectedFont || theme.fontFamily }}>
+                    Heading sample preview
+                  </p>
+                  <p className="text-xs text-slate-600" style={{ fontFamily: brandingMeta.secondaryFontFamily || brandingMeta.primaryFontFamily || theme.secondaryFontFamily || theme.fontFamily }}>
+                    Body sample preview text using your current font selection.
+                  </p>
                 </div>
               </div>
+            </section>
             </div>
           </div>
         )}
@@ -2568,9 +2715,9 @@ export default function SettingsPage() {
 
       {showPasswordSuccessModal && (
         <div className="fixed inset-0 bg-black/45 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6">
-            <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Password Updated</h4>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
+          <div className="w-full max-w-md rounded-xl bg-white border border-slate-200 p-6">
+            <h4 className="text-xl font-bold text-slate-900 mb-2">Password Updated</h4>
+            <p className="text-sm text-slate-600 mb-5">
               Your password was changed successfully after OTP verification.
             </p>
             <button
@@ -2586,7 +2733,7 @@ export default function SettingsPage() {
       )}
 
       {toast && (
-        <div className="fixed right-6 bottom-6 z-50 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 px-4 py-2.5 text-sm font-semibold shadow-lg dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-100">
+        <div className="fixed right-6 bottom-6 z-50 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 px-4 py-2.5 text-sm font-semibold shadow-lg">
           {toast}
         </div>
       )}
@@ -2595,6 +2742,15 @@ export default function SettingsPage() {
         .tab-strip-scroll {
           scrollbar-width: thin;
           scrollbar-color: #94a3b8 transparent;
+        }
+
+        @media (min-width: 1024px) {
+          .branding-preview-rail {
+            position: sticky;
+            position: -webkit-sticky;
+            top: 1.5rem;
+            align-self: flex-start;
+          }
         }
 
         .tab-strip-scroll::-webkit-scrollbar {
