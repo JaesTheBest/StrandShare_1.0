@@ -8,6 +8,45 @@ const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
 const EMAIL_OTP_COOLDOWN_SECONDS = 60;
 
+function withAlpha(colorValue, alpha) {
+  const input = String(colorValue || '').trim();
+  if (!input) {
+    return `rgba(2, 117, 216, ${alpha})`;
+  }
+
+  const clampedAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  const normalizedAlpha = Number(clampedAlpha.toFixed(3));
+
+  const hex6 = input.match(/^#([0-9a-f]{6})$/i);
+  if (hex6) {
+    const hex = hex6[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+  }
+
+  const hex3 = input.match(/^#([0-9a-f]{3})$/i);
+  if (hex3) {
+    const hex = hex3[1];
+    const r = parseInt(`${hex[0]}${hex[0]}`, 16);
+    const g = parseInt(`${hex[1]}${hex[1]}`, 16);
+    const b = parseInt(`${hex[2]}${hex[2]}`, 16);
+    return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+  }
+
+  const rgb = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (rgb) {
+    const [r, g, b] = rgb.slice(1, 4).map((part) => {
+      const n = Number(part);
+      return Math.max(0, Math.min(255, Number.isFinite(n) ? n : 0));
+    });
+    return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+  }
+
+  return input;
+}
+
 export default function LoginPage({ authNotice, onClearNotice }) {
   const { theme } = useTheme();
   const [mode, setMode] = useState('login');
@@ -483,7 +522,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
       <div
         className="hidden lg:flex w-1/2 items-center justify-center p-12"
         style={{
-          background: `linear-gradient(135deg, ${theme.primaryColorLight}15 0%, ${theme.primaryColor}10 50%, ${theme.primaryColorDark}15 100%)`,
+          background: `linear-gradient(135deg, ${withAlpha(theme.primaryColorLight || theme.primaryColor, 0.15)} 0%, ${withAlpha(theme.primaryColor, 0.1)} 50%, ${withAlpha(theme.primaryColorDark || theme.primaryColor, 0.15)} 100%)`,
           backdropFilter: 'blur(10px)',
         }}
       >
