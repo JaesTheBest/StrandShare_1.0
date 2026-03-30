@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 const ThemeContext = createContext();
@@ -284,7 +284,7 @@ export function ThemeProvider({ children }) {
     }
   };
 
-  const ensureDefaultPreset = async () => {
+  const ensureDefaultPreset = useCallback(async () => {
     const { data, error } = await supabase
       .from(THEME_PRESETS_TABLE)
       .select('Preset_ID')
@@ -299,9 +299,9 @@ export function ThemeProvider({ children }) {
     if ((data || []).length === 0) {
       await supabase.from(THEME_PRESETS_TABLE).insert(DEFAULT_PRESET_PAYLOAD);
     }
-  };
+  }, []);
 
-  const ensureStarterPresets = async () => {
+  const ensureStarterPresets = useCallback(async () => {
     const starterNames = STARTER_PRESETS.map((preset) => preset.Preset_Name);
     if (starterNames.length === 0) {
       return;
@@ -327,9 +327,9 @@ export function ThemeProvider({ children }) {
     if (missingPresets.length > 0) {
       await supabase.from(THEME_PRESETS_TABLE).insert(missingPresets);
     }
-  };
+  }, []);
 
-  const refreshThemePresets = async () => {
+  const refreshThemePresets = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
       setThemePresets([]);
       return [];
@@ -352,7 +352,7 @@ export function ThemeProvider({ children }) {
     const list = data || [];
     setThemePresets(list);
     return list;
-  };
+  }, [ensureDefaultPreset, ensureStarterPresets]);
 
   const createThemePreset = async ({ presetName, colors, fontFamily, secondaryFontFamily }) => {
     const payload = {

@@ -882,7 +882,7 @@ export default function SettingsPage() {
 
     setUserId(createdOrExistingUser.user_id);
     return createdOrExistingUser.user_id;
-  }, [userId, supabase, authUserId, profile.email, authEmail, profile.role]);
+  }, [userId, authUserId, profile.email, authEmail, profile.role]);
 
   const appendSecurityLog = async (action, description, resource = 'security/settings') => {
     const targetUserId = userId || await ensureUserRow();
