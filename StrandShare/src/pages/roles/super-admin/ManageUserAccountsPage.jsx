@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Search,
   Edit2,
   Trash2,
+  Info,
   Shield,
   X,
   Calendar,
@@ -106,6 +108,7 @@ export default function ManageUserAccountsPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [inviteNoAccessTime, setInviteNoAccessTime] = useState(false);
+  const [detailsUserId, setDetailsUserId] = useState(null);
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -398,6 +401,19 @@ export default function ManageUserAccountsPage() {
     [users, roleFilter, statusFilter],
   );
 
+  const detailsUser = useMemo(
+    () => (detailsUserId ? users.find((user) => Number(user.id) === Number(detailsUserId)) || null : null),
+    [users, detailsUserId],
+  );
+
+  const openUserDetails = (user) => {
+    setDetailsUserId(user?.id || null);
+  };
+
+  const closeUserDetails = () => {
+    setDetailsUserId(null);
+  };
+
   const roleOptions = allRoles.map((role) => ({ value: role, label: toRoleLabel(role) }));
   const statusOptions = ['Active', 'Inactive'].map((status) => ({ value: status, label: status }));
 
@@ -541,11 +557,32 @@ export default function ManageUserAccountsPage() {
                     </td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-2">
-                        <button className="p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-full transition-all" aria-label="Edit user">
-                          <Edit2 size={16} />
+                        <button
+                          type="button"
+                          onClick={() => openUserDetails(user)}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                          title="View user details"
+                        >
+                          <Info size={13} /> Info
                         </button>
-                        <button className="p-2 text-red-700 bg-red-50 border border-red-100 hover:bg-red-100 rounded-full transition-all" aria-label="Delete user">
-                          <Trash2 size={16} />
+
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold"
+                          style={{
+                            borderColor: `${theme.primaryColor}33`,
+                            backgroundColor: `${theme.primaryColor}12`,
+                            color: theme.primaryColor,
+                          }}
+                        >
+                          <Edit2 size={13} /> Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                        >
+                          <Trash2 size={13} /> Delete
                         </button>
                       </div>
                     </td>
@@ -556,6 +593,93 @@ export default function ManageUserAccountsPage() {
           </table>
         )}
       </div>
+
+      {detailsUser && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[70] m-0 p-0">
+          <button
+            type="button"
+            aria-label="Close user details panel"
+            className="absolute inset-0 m-0 p-0 border-0 appearance-none bg-black bg-opacity-50 backdrop-blur-sm"
+            onClick={closeUserDetails}
+          />
+
+          <aside
+            className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-2xl overflow-y-auto"
+            style={{ animation: 'userDetailsSlideIn 0.25s ease-out' }}
+          >
+            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">User Account Details</h3>
+                <p className="text-xs text-gray-500 mt-0.5">View account role, access, and profile details.</p>
+              </div>
+              <button type="button" onClick={closeUserDetails} className="text-gray-400 hover:text-red-500">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="h-14 w-14 rounded-full border border-gray-200 bg-white flex items-center justify-center text-lg font-semibold"
+                    style={{ color: theme.primaryColor }}
+                  >
+                    {`${String(detailsUser.firstName || '').charAt(0)}${String(detailsUser.lastName || '').charAt(0)}`.trim() || 'U'}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 break-words">{detailsUser.firstName} {detailsUser.lastName}</p>
+                    <p className="text-xs text-gray-500 mt-1 break-all">{detailsUser.email || 'N/A'}</p>
+                    <p className="text-xs text-gray-600 mt-2">User ID: {detailsUser.id}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium"
+                    style={{
+                      backgroundColor: `${theme.primaryColor}18`,
+                      color: theme.primaryColor,
+                      borderColor: `${theme.primaryColor}33`,
+                    }}
+                  >
+                    <Shield size={12} /> {toRoleLabel(detailsUser.role)}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${detailsUser.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {detailsUser.status}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">Role Access Window</p>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p><span className="font-medium text-gray-900">Access Start:</span> {detailsUser.accessStart || 'N/A'}</p>
+                  <p><span className="font-medium text-gray-900">Access End:</span> {detailsUser.accessEnd || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">Profile Metadata</p>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>
+                    <span className="font-medium text-gray-900">Joined Date:</span>{' '}
+                    {detailsUser.joinedDate
+                      ? new Date(detailsUser.joinedDate).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : 'N/A'}
+                  </p>
+                  <p><span className="font-medium text-gray-900">Raw Role:</span> {detailsUser.role || 'N/A'}</p>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>,
+        document.body,
+      )}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] backdrop-blur-sm">
@@ -857,6 +981,17 @@ export default function ManageUserAccountsPage() {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes userDetailsSlideIn {
+          from {
+            transform: translateX(100%);
+          }
+          to {
+            transform: translateX(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

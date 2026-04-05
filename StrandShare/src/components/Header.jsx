@@ -76,7 +76,12 @@ function resolveDisplayRole(roleValue) {
   return roleValue;
 }
 
-export default function Header({ onSignOut, onOpenSettings, userProfile, pageTitle = 'Overview' }) {
+export default function Header({
+  onSignOut,
+  onOpenSettings,
+  userProfile,
+  pageTitle = 'Overview',
+}) {
   const { theme } = useTheme();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -110,10 +115,12 @@ export default function Header({ onSignOut, onOpenSettings, userProfile, pageTit
   return (
     <div className="h-20 bg-white border-b border-gray-200 px-8 flex items-center justify-between">
       {/* Left - Title */}
-      <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
+      <div className="flex min-w-0 items-center">
+        <h1 className="truncate text-2xl font-bold text-gray-900">{pageTitle}</h1>
+      </div>
 
       {/* Middle - Search Bar */}
-      <div className="flex-1 max-w-xs mx-6 ml-10">
+      <div className="mx-6 flex-1 max-w-xs">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input

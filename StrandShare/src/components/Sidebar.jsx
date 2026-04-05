@@ -6,6 +6,8 @@ import {
   Database,
   Shield,
   Settings,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 const navItems = [
@@ -16,37 +18,64 @@ const navItems = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
+export default function Sidebar({
+  currentPage,
+  onNavigate,
+  items = navItems,
+  isCollapsed = false,
+  onToggleSidebar,
+}) {
   const { theme } = useTheme();
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <div
+      className={`h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-200 ${
+        isCollapsed ? 'w-20' : 'w-64'
+      }`}
+    >
       {/* Logo Section */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center gap-3 mb-2">
+      <div className={`group relative h-20 border-b border-gray-200 px-4 flex items-center ${isCollapsed ? 'justify-center' : ''}`}>
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className={`pointer-events-none absolute top-1/2 z-10 -translate-y-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-700 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 ${
+              isCollapsed ? '-right-3 opacity-0' : 'right-3 opacity-0'
+            }`}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        )}
+
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
           {theme.logoImage ? (
             <img
               src={theme.logoImage}
               alt="Brand logo"
-              className="w-10 h-10 rounded-lg object-cover border border-gray-200"
+              className="h-10 w-10 rounded-lg object-cover border border-gray-200"
             />
           ) : (
             <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+              className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-lg"
               style={{ backgroundColor: theme.primaryColor }}
             >
               A
             </div>
           )}
-          <div>
-            <h2 className="font-bold text-gray-900">{theme.brandName}</h2>
-            <p className="text-xs text-gray-500">{theme.brandTagline}</p>
-          </div>
+
+          {!isCollapsed && (
+            <div className="min-w-0">
+              <h2 className="truncate font-bold text-gray-900">{theme.brandName}</h2>
+              <p className="truncate text-xs text-gray-500">{theme.brandTagline}</p>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+      <nav className={`flex-1 overflow-y-auto space-y-2 ${isCollapsed ? 'p-2' : 'p-3'}`}>
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -55,24 +84,29 @@ export default function Sidebar({ currentPage, onNavigate, items = navItems }) {
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              className={`w-full flex items-center rounded-lg transition-colors ${
+                isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-2.5'
+              } ${
                 isActive
                   ? 'bg-blue-50'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              title={item.label}
             >
               <Icon
-                size={20}
+                size={19}
+                className="shrink-0"
                 style={isActive ? { color: theme.primaryColor } : {}}
               />
-              <span
-                className={`text-sm font-medium ${
-                  isActive ? 'text-gray-600' : 'text-gray-600'
-                }`}
-                style={isActive ? { color: theme.primaryColor } : {}}
-              >
-                {item.label}
-              </span>
+
+              {!isCollapsed && (
+                <span
+                  className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium"
+                  style={isActive ? { color: theme.primaryColor } : {}}
+                >
+                  {item.label}
+                </span>
+              )}
             </button>
           );
         })}

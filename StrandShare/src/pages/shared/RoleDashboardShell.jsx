@@ -3,6 +3,20 @@ import Sidebar from '../../components/Sidebar';
 import Header from '../../components/Header';
 import { logAuditAction } from '../../lib/auditLogger';
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'strandshare.sidebar.collapsed';
+
+function getInitialSidebarCollapsed() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export default function RoleDashboardShell({
   onSignOut,
   userProfile,
@@ -11,6 +25,7 @@ export default function RoleDashboardShell({
   pageComponents = {},
 }) {
   const [currentPage, setCurrentPage] = useState(defaultPage);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
 
   const pageTitle = useMemo(() => {
     const activeNavItem = navItems.find((item) => item.id === currentPage);
@@ -19,10 +34,15 @@ export default function RoleDashboardShell({
 
   const ActivePage = pageComponents[currentPage] || pageComponents[defaultPage] || null;
   const hasSettingsPage = Boolean(pageComponents.settings) || navItems.some((item) => item.id === 'settings');
-  const isOverviewPage = currentPage === 'dashboard';
-  const pageWrapperClass = isOverviewPage
-    ? 'flex-1 overflow-auto'
-    : 'flex-1 overflow-auto p-8 bg-slate-50';
+  const pageWrapperClass = 'flex-1 overflow-auto bg-slate-50 p-6 md:p-8';
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
+    } catch {
+      // Ignore localStorage write failures.
+    }
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     if (!currentPage) {
@@ -40,8 +60,14 @@ export default function RoleDashboardShell({
 
   return (
     <div className="flex h-screen bg-slate-50">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} items={navItems} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <Sidebar
+        currentPage={currentPage}
+        onNavigate={setCurrentPage}
+        items={navItems}
+        isCollapsed={isSidebarCollapsed}
+        onToggleSidebar={() => setIsSidebarCollapsed((previous) => !previous)}
+      />
+      <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
         <Header
           onSignOut={onSignOut}
           onOpenSettings={hasSettingsPage ? () => setCurrentPage('settings') : undefined}

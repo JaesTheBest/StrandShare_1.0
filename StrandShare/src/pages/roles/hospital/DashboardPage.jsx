@@ -20,7 +20,7 @@ const kpiCards = [
   { label: 'Pending Review', value: '9' },
   { label: 'For Matching', value: '13' },
   { label: 'In Production', value: '9' },
-  { label: 'Ready For Fitting', value: '7' },
+  { label: 'To Be Release', value: '7' },
   { label: 'Released', value: '45' },
 ];
 
@@ -35,7 +35,7 @@ const stageBreakdownData = [
   { name: 'Pending Review', value: 9 },
   { name: 'For Matching', value: 13 },
   { name: 'In Production', value: 9 },
-  { name: 'Ready For Fitting', value: 7 },
+  { name: 'To Be Release', value: 7 },
   { name: 'In Transit', value: 3 },
   { name: 'Released', value: 45 },
 ];
@@ -43,14 +43,14 @@ const stageBreakdownData = [
 const moduleSnapshotData = [
   { module: 'Request Wig', count: 6 },
   { module: 'Track Status', count: 13 },
-  { module: 'Fitting/Release', count: 14 },
+  { module: 'Release Date Approval', count: 14 },
   { module: 'Reports', count: 5 },
 ];
 
 const activeRequests = [
   { requestId: 'WR-2104', patient: 'Anne Delos Reyes', stage: 'For Matching', nextStep: 'Donor compatibility check', eta: 'Apr 02' },
   { requestId: 'WR-2106', patient: 'Lena Cruz', stage: 'In Production', nextStep: 'Hair ventilating in progress', eta: 'Apr 04' },
-  { requestId: 'WR-2108', patient: 'Mika Santos', stage: 'Ready For Fitting', nextStep: 'Confirm fitting date', eta: 'Apr 01' },
+  { requestId: 'WR-2108', patient: 'Mika Santos', stage: 'To Be Release', nextStep: 'Confirm release date', eta: 'Apr 01' },
 ];
 
 const actionQueue = [
@@ -61,7 +61,7 @@ const actionQueue = [
 
 const recentUpdates = [
   { time: '08:20 AM', update: 'WR-2106 moved to In Production', source: 'Track Status' },
-  { time: '10:05 AM', update: 'WR-2108 marked Ready For Fitting', source: 'Fitting & Release' },
+  { time: '10:05 AM', update: 'WR-2108 moved to To Be Release', source: 'Release Date Approval' },
   { time: '01:40 PM', update: 'WR-2110 release confirmed by patient', source: 'Track Status' },
   { time: '03:10 PM', update: 'Daily partner report generated', source: 'Reports' },
 ];
@@ -82,7 +82,7 @@ function hexToRgba(hexValue, alpha = 1) {
 
 function stageClass(stage) {
   if (stage === 'Released') return 'bg-emerald-100 text-emerald-700';
-  if (stage === 'Ready For Fitting') return 'bg-sky-100 text-sky-700';
+  if (stage === 'To Be Release') return 'bg-sky-100 text-sky-700';
   if (stage === 'In Production') return 'bg-indigo-100 text-indigo-700';
   return 'bg-amber-100 text-amber-700';
 }
@@ -114,7 +114,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-bold" style={{ color: theme.primaryTextColor }}>H-Staff Command Overview</h1>
             <p className="text-xs" style={{ color: theme.secondaryTextColor }}>
-              One-look summary of request, tracking, fitting/release, and reports.
+              One-look summary of request, tracking, release date approvals, and reports.
             </p>
           </div>
           <div className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: hexToRgba(theme.primaryColor, 0.15), color: theme.primaryColor }}>
