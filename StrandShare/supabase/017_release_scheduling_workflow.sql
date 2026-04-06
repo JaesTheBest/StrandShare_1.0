@@ -64,7 +64,7 @@ begin
     alter table public."Release_Schedules"
       add constraint "Release_Schedules_Hospital_ID_fkey"
       foreign key ("Hospital_ID")
-      references public."Hospitals" ("Hospital_ID");
+      references public."H-Representatives" ("Hospital_ID");
   end if;
 
   if not exists (

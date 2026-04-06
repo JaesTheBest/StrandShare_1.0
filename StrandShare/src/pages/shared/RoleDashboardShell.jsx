@@ -76,7 +76,12 @@ export default function RoleDashboardShell({
         />
         <div className={pageWrapperClass}>
           {ActivePage ? (
-            <ActivePage userProfile={userProfile} />
+            <ActivePage
+              userProfile={userProfile}
+              onNavigate={setCurrentPage}
+              navItems={navItems}
+              currentPage={currentPage}
+            />
           ) : (
             <div className="p-8 text-slate-600">Page not available.</div>
           )}

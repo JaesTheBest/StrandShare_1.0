@@ -5,7 +5,7 @@ insert into storage.buckets (id, name, public)
 values ('patient_assets', 'patient_assets', true)
 on conflict (id) do update set public = excluded.public;
 
--- INSERT: H-Staff/Super Admin can upload only inside <auth.uid()>/patient-picture|medical-document/... paths.
+-- INSERT: H-Representative/Super Admin can upload only inside <auth.uid()>/patient-picture|medical-document/... paths.
 do $$
 begin
   if not exists (
@@ -33,7 +33,7 @@ begin
 end
 $$;
 
--- UPDATE: H-Staff/Super Admin can update only their own patient asset paths.
+-- UPDATE: H-Representative/Super Admin can update only their own patient asset paths.
 do $$
 begin
   if not exists (
@@ -72,7 +72,7 @@ begin
 end
 $$;
 
--- DELETE: H-Staff/Super Admin can delete only their own patient asset paths.
+-- DELETE: H-Representative/Super Admin can delete only their own patient asset paths.
 do $$
 begin
   if not exists (

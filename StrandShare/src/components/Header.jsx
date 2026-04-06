@@ -57,8 +57,14 @@ function resolveDisplayRole(roleValue) {
     return 'User';
   }
 
-  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
-    return 'H-Staff';
+  if (
+    normalizedRole === 'hospital'
+    || normalizedRole === 'h staff'
+    || normalizedRole === 'hstaff'
+    || normalizedRole === 'h representative'
+    || normalizedRole === 'hrepresentative'
+  ) {
+    return 'H-Representative';
   }
 
   if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {

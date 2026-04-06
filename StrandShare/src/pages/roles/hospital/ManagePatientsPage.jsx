@@ -188,7 +188,7 @@ function mapPatientInsertError(rawMessage) {
   }
 
   if (lowerMessage.includes('row-level security')) {
-    return 'Action blocked by database policy. Make sure your account has H-Staff permissions.';
+    return 'Action blocked by database policy. Make sure your account has H-Representative permissions.';
   }
 
   return message;
@@ -206,7 +206,7 @@ function formatRoleLabel(roleValue) {
   const roleSlug = normalizeRoleSlug(roleValue);
   if (roleSlug === 'patient') return 'Patient';
   if (roleSlug === 'superadmin') return 'Super Admin';
-  if (roleSlug === 'hospital' || roleSlug === 'hstaff') return 'H-Staff';
+  if (roleSlug === 'hospital' || roleSlug === 'hstaff' || roleSlug === 'hrepresentative') return 'H-Representative';
   if (roleSlug === 'partner') return 'Partner';
   if (roleSlug === 'staff') return 'Staff';
   return roleValue || 'N/A';
@@ -416,14 +416,14 @@ export default function ManagePatientsPage({ userProfile }) {
       setIsResolvingHospital(true);
       const { data, error } = await supabase
         .from(HOSPITAL_STAFF_TABLE)
-        .select('Hospital_ID, Hospitals:Hospitals(Hospital_Name)')
+        .select('Hospital_ID, hRepresentatives:H-Representatives(Hospital_Name)')
         .eq('User_ID', activeUserId)
         .maybeSingle();
 
       if (error) throw error;
 
       const nextHospitalId = Number(data?.Hospital_ID || 0) || null;
-      const linkedHospital = Array.isArray(data?.Hospitals) ? data.Hospitals[0] : data?.Hospitals;
+        const linkedHospital = Array.isArray(data?.hRepresentatives) ? data.hRepresentatives[0] : data?.hRepresentatives;
 
       setHospitalId(nextHospitalId);
       setHospitalName(linkedHospital?.Hospital_Name || '');
@@ -431,7 +431,7 @@ export default function ManagePatientsPage({ userProfile }) {
       if (!nextHospitalId) {
         setNotice({
           kind: 'error',
-          text: 'No hospital assignment found for your H-Staff account. Ask Super Admin to assign your account to a hospital first.',
+          text: 'No hospital assignment found for your H-Representative account. Ask Super Admin to assign your account to a hospital first.',
         });
       }
     } catch (error) {
@@ -1132,15 +1132,15 @@ export default function ManagePatientsPage({ userProfile }) {
       <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Hospital Assignment</h2>
-            <p className="text-xs text-gray-500 mt-1">Hospital_ID is auto-filled from Hospital_Staff based on your H-Staff account.</p>
+            <h2 className="text-base font-semibold text-gray-900">H-Representative Assignment</h2>
+            <p className="text-xs text-gray-500 mt-1">Hospital_ID is auto-filled from Hospital_Staff based on your H-Representative account.</p>
           </div>
           <div className="text-xs text-gray-600">
             {isResolvingHospital ? (
               <span className="inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Resolving hospital...</span>
             ) : hospitalId ? (
               <span>
-                Hospital: <span className="font-semibold text-gray-800">{hospitalName || `Hospital #${hospitalId}`}</span> (ID: {hospitalId})
+                H-Representative: <span className="font-semibold text-gray-800">{hospitalName || `H-Representative #${hospitalId}`}</span> (ID: {hospitalId})
               </span>
             ) : (
               <span className="text-red-700 font-medium">No hospital assignment found</span>
@@ -1455,7 +1455,7 @@ export default function ManagePatientsPage({ userProfile }) {
 
                 <div className="flex items-end">
                   <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                    Hospital ID for save: <span className="font-semibold text-gray-800">{hospitalId || 'N/A'}</span>
+                    H-Representative ID for save: <span className="font-semibold text-gray-800">{hospitalId || 'N/A'}</span>
                   </div>
                 </div>
               </div>

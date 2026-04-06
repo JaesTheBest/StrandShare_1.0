@@ -19,15 +19,15 @@ import {
 import { useTheme } from '../../../context/ThemeContext';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
-const HOSPITALS_TABLE = 'Hospitals';
+const HOSPITALS_TABLE = 'H-Representatives';
 const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
 const USERS_TABLE = 'users';
 const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';
 
 const PAGE_TABS = [
-  { id: 'manage', label: 'Manage Hospitals' },
-  { id: 'assign', label: 'Assign H-Staff' },
+  { id: 'manage', label: 'Manage H-Representatives' },
+  { id: 'assign', label: 'Assign H-Representative' },
 ];
 
 const EMPTY_FORM = {
@@ -85,7 +85,7 @@ function normalizeRoleSlug(roleValue) {
 
 function isHStaffRole(roleValue) {
   const roleSlug = normalizeRoleSlug(roleValue);
-  return roleSlug === 'hospital' || roleSlug === 'hstaff';
+  return roleSlug === 'hospital' || roleSlug === 'hstaff' || roleSlug === 'hrepresentative';
 }
 
 function mapHospitalStaffError(rawMessage) {
@@ -93,7 +93,7 @@ function mapHospitalStaffError(rawMessage) {
   const lowerMessage = message.toLowerCase();
 
   if (lowerMessage.includes('duplicate key value')) {
-    return 'This H-Staff is already assigned to a hospital.';
+    return 'This H-Representative is already assigned to a hospital.';
   }
 
   if (lowerMessage.includes('row-level security')) {
@@ -455,7 +455,7 @@ export default function ManageHospitalAccountsPage() {
 
       setHStaffUsers(hStaffList);
     } catch (error) {
-      setErrorMessage(error.message || 'Unable to load available H-Staff users.');
+      setErrorMessage(error.message || 'Unable to load available H-Representative users.');
     }
   }, []);
 
@@ -527,7 +527,7 @@ export default function ManageHospitalAccountsPage() {
     const userId = Number(userIdValue);
 
     if (!hospitalId || !userId) {
-      setErrorMessage('Please select both a hospital and an H-Staff user.');
+      setErrorMessage('Please select both a hospital and an H-Representative user.');
       return;
     }
 
@@ -535,9 +535,9 @@ export default function ManageHospitalAccountsPage() {
     if (existingUserLink) {
       const linkedHospital = hospitalsById.get(Number(existingUserLink.Hospital_ID));
       if (Number(existingUserLink.Hospital_ID) === hospitalId) {
-        setErrorMessage('This H-Staff is already assigned to the selected hospital.');
+        setErrorMessage('This H-Representative is already assigned to the selected hospital.');
       } else {
-        setErrorMessage(`This H-Staff is already assigned to ${linkedHospital?.Hospital_Name || 'another hospital'}.`);
+        setErrorMessage(`This H-Representative is already assigned to ${linkedHospital?.Hospital_Name || 'another hospital'}.`);
       }
       return;
     }
@@ -553,7 +553,7 @@ export default function ManageHospitalAccountsPage() {
 
       if (error) throw error;
 
-      setSuccessMessage('H-Staff assigned to hospital successfully.');
+      setSuccessMessage('H-Representative assigned to hospital successfully.');
       setAssignmentUserId('');
       setPanelAssignUserId('');
       await fetchHospitalStaffLinks();
@@ -585,7 +585,7 @@ export default function ManageHospitalAccountsPage() {
 
       if (error) throw error;
 
-      setSuccessMessage('H-Staff assignment removed successfully.');
+      setSuccessMessage('H-Representative assignment removed successfully.');
       await fetchHospitalStaffLinks();
     } catch (error) {
       setErrorMessage(mapHospitalStaffError(error.message));
@@ -652,7 +652,7 @@ export default function ManageHospitalAccountsPage() {
 
       if (error) throw error;
 
-      setSuccessMessage('H-Staff reassigned successfully.');
+      setSuccessMessage('H-Representative reassigned successfully.');
       setIsReassignModalOpen(false);
       setReassignHospitalId('');
       setReassigningLink(null);
@@ -824,7 +824,7 @@ export default function ManageHospitalAccountsPage() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setErrorMessage('Hospital logo must be an image file.');
+      setErrorMessage('H-Representative logo must be an image file.');
       resetLogoInput();
       return;
     }
@@ -894,7 +894,7 @@ export default function ManageHospitalAccountsPage() {
     const hasBarangayValue = Boolean(String(form.barangay || '').trim());
 
     if (!form.hospitalName.trim()) {
-      setErrorMessage('Hospital name is required.');
+      setErrorMessage('H-Representative name is required.');
       return;
     }
 
@@ -975,7 +975,7 @@ export default function ManageHospitalAccountsPage() {
             await supabase.storage.from(HOSPITAL_LOGOS_BUCKET).remove([previousLogoPath]);
         }
 
-        setSuccessMessage('Hospital updated successfully.');
+        setSuccessMessage('H-Representative updated successfully.');
       } else {
         const { error } = await supabase
           .from(HOSPITALS_TABLE)
@@ -983,7 +983,7 @@ export default function ManageHospitalAccountsPage() {
 
         if (error) throw error;
 
-        setSuccessMessage('Hospital added successfully.');
+        setSuccessMessage('H-Representative added successfully.');
       }
 
       setErrorMessage('');
@@ -1130,7 +1130,7 @@ export default function ManageHospitalAccountsPage() {
         }
       }
 
-      setSuccessMessage('Hospital deleted successfully.');
+      setSuccessMessage('H-Representative deleted successfully.');
       setErrorMessage('');
       await fetchHospitals();
       await fetchHospitalStaffLinks();
@@ -1149,9 +1149,9 @@ export default function ManageHospitalAccountsPage() {
     <div className="p-6 space-y-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Manage Hospital Accounts</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Manage H-Representative Accounts</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Add and maintain hospital records used by H-Staff, patients, and wig request routing.
+            Add and maintain hospital records used by H-Representative, patients, and wig request routing.
           </p>
         </div>
 
@@ -1165,7 +1165,7 @@ export default function ManageHospitalAccountsPage() {
           style={{ backgroundColor: theme.primaryColor }}
         >
           <Plus size={18} />
-          Add Hospital
+          Add H-Representative
         </button>
       </div>
 
@@ -1237,7 +1237,7 @@ export default function ManageHospitalAccountsPage() {
               <table className="min-w-full text-sm text-center">
                 <thead className="text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: tableHeaderTextColor }}>
                   <tr>
-                    <th className="px-4 py-3 text-center font-semibold">Hospital</th>
+                    <th className="px-4 py-3 text-center font-semibold">H-Representative</th>
                     <th className="px-4 py-3 text-center font-semibold">Contact</th>
                     <th className="px-4 py-3 text-center font-semibold">Address</th>
                     <th className="px-4 py-3 text-center font-semibold">Updated</th>
@@ -1252,7 +1252,7 @@ export default function ManageHospitalAccountsPage() {
                           {resolveHospitalLogoUrl(hospital.Hospital_Logo) ? (
                             <img
                               src={resolveHospitalLogoUrl(hospital.Hospital_Logo)}
-                              alt="Hospital logo"
+                              alt="H-Representative logo"
                               className="h-10 w-10 rounded-md border border-gray-200 object-cover"
                             />
                           ) : (
@@ -1325,12 +1325,12 @@ export default function ManageHospitalAccountsPage() {
         <section className={cardClass()} style={{ borderColor: `${theme.secondaryColor}33` }}>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Assign H-Staff To Hospital</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Assign H-Representative To H-Representative</h3>
               <p className="text-xs text-gray-500 mt-1">
-                Source: public.users with linked public.user_details. Role accepted: H-Staff or hospital.
+                Source: public.users with linked public.user_details. Role accepted: H-Representative or hospital.
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Available: {unassignedHStaffUsers.length} | Assigned: {assignedHStaffCount} | Total H-Staff: {hStaffUsers.length}
+                Available: {unassignedHStaffUsers.length} | Assigned: {assignedHStaffCount} | Total H-Representative: {hStaffUsers.length}
               </p>
             </div>
 
@@ -1345,13 +1345,13 @@ export default function ManageHospitalAccountsPage() {
                 color: theme.primaryColor,
               }}
             >
-              <RefreshCw size={14} /> Refresh H-Staff Data
+              <RefreshCw size={14} /> Refresh H-Representative Data
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hospital</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">H-Representative</label>
               <select
                 value={assignmentHospitalId}
                 onChange={(event) => setAssignmentHospitalId(event.target.value)}
@@ -1369,7 +1369,7 @@ export default function ManageHospitalAccountsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">H-Staff</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">H-Representative</label>
               <select
                 value={assignmentUserId}
                 onChange={(event) => setAssignmentUserId(event.target.value)}
@@ -1379,10 +1379,10 @@ export default function ManageHospitalAccountsPage() {
               >
                 <option value="">
                   {hStaffUsers.length === 0
-                    ? 'No H-Staff users found in users/user_details'
+                    ? 'No H-Representative users found in users/user_details'
                     : unassignedHStaffUsers.length === 0
-                      ? 'All H-Staff users are already assigned'
-                      : 'Select H-Staff'}
+                      ? 'All H-Representative users are already assigned'
+                      : 'Select H-Representative'}
                 </option>
                 {unassignedHStaffUsers.map((user) => (
                   <option key={user.user_id} value={user.user_id}>
@@ -1406,14 +1406,14 @@ export default function ManageHospitalAccountsPage() {
                 className="w-full rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: theme.primaryColor }}
               >
-                {isSavingAssignment ? 'Assigning...' : 'Assign H-Staff'}
+                {isSavingAssignment ? 'Assigning...' : 'Assign H-Representative'}
               </button>
             </div>
           </div>
 
           {hStaffUsers.length === 0 && (
             <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              No H-Staff users were found. Check public.users.role values and ensure matching records exist in public.user_details.
+              No H-Representative users were found. Check public.users.role values and ensure matching records exist in public.user_details.
             </div>
           )}
 
@@ -1423,15 +1423,15 @@ export default function ManageHospitalAccountsPage() {
             </div>
           ) : hospitalStaffLinks.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
-              No H-Staff assignments yet.
+              No H-Representative assignments yet.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: tableHeaderTextColor }}>
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Hospital</th>
-                    <th className="px-4 py-3 text-left font-semibold">H-Staff</th>
+                    <th className="px-4 py-3 text-left font-semibold">H-Representative</th>
+                    <th className="px-4 py-3 text-left font-semibold">H-Representative</th>
                     <th className="px-4 py-3 text-left font-semibold">Assigned Date</th>
                     <th className="px-4 py-3 text-center font-semibold">Action</th>
                   </tr>
@@ -1443,7 +1443,7 @@ export default function ManageHospitalAccountsPage() {
 
                     return (
                       <tr key={link.Link_ID} className="border-t border-gray-200">
-                        <td className="px-4 py-3 text-gray-800">{linkedHospital?.Hospital_Name || `Hospital #${link.Hospital_ID}`}</td>
+                        <td className="px-4 py-3 text-gray-800">{linkedHospital?.Hospital_Name || `H-Representative #${link.Hospital_ID}`}</td>
                         <td className="px-4 py-3 text-gray-700">{getHStaffDisplayName(linkedUser)}</td>
                         <td className="px-4 py-3 text-gray-700">{formatDateTime(link.Assigned_Date)}</td>
                         <td className="px-4 py-3 text-center">
@@ -1484,7 +1484,7 @@ export default function ManageHospitalAccountsPage() {
           <div className="w-full max-w-md rounded-xl bg-white shadow-2xl border border-gray-200">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Reassign H-Staff</h3>
+                <h3 className="text-base font-semibold text-gray-900">Reassign H-Representative</h3>
                 <p className="mt-1 text-xs text-gray-500">Move this staff member to a different hospital.</p>
               </div>
               <button
@@ -1501,7 +1501,7 @@ export default function ManageHospitalAccountsPage() {
               <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
                 <p className="font-medium text-gray-900">{getHStaffDisplayName(hStaffUsersById.get(Number(reassigningLink.User_ID)))}</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Current hospital: {hospitalsById.get(Number(reassigningLink.Hospital_ID))?.Hospital_Name || `Hospital #${reassigningLink.Hospital_ID}`}
+                  Current hospital: {hospitalsById.get(Number(reassigningLink.Hospital_ID))?.Hospital_Name || `H-Representative #${reassigningLink.Hospital_ID}`}
                 </p>
               </div>
 
@@ -1570,8 +1570,8 @@ export default function ManageHospitalAccountsPage() {
           >
             <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Hospital Details</h3>
-                <p className="text-xs text-gray-500 mt-0.5">View and manage assigned H-Staff.</p>
+                <h3 className="text-lg font-semibold text-gray-900">H-Representative Details</h3>
+                <p className="text-xs text-gray-500 mt-0.5">View and manage assigned H-Representative.</p>
               </div>
               <button type="button" onClick={closeHospitalDetails} className="text-gray-400 hover:text-red-500">
                 <X size={22} />
@@ -1584,7 +1584,7 @@ export default function ManageHospitalAccountsPage() {
                   {resolveHospitalLogoUrl(detailsHospital.Hospital_Logo) ? (
                     <img
                       src={resolveHospitalLogoUrl(detailsHospital.Hospital_Logo)}
-                      alt="Hospital logo"
+                      alt="H-Representative logo"
                       className="h-14 w-14 rounded-lg border border-gray-200 object-cover bg-white"
                     />
                   ) : (
@@ -1595,7 +1595,7 @@ export default function ManageHospitalAccountsPage() {
 
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-900 break-words">{detailsHospital.Hospital_Name || 'N/A'}</p>
-                    <p className="text-xs text-gray-500 mt-1">Hospital ID: {detailsHospital.Hospital_ID}</p>
+                    <p className="text-xs text-gray-500 mt-1">H-Representative ID: {detailsHospital.Hospital_ID}</p>
                     <p className="text-xs text-gray-600 mt-2">Contact: {detailsHospital.Contact_Number || 'N/A'}</p>
                   </div>
                 </div>
@@ -1608,7 +1608,7 @@ export default function ManageHospitalAccountsPage() {
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Quick Assign H-Staff</p>
+                <p className="text-sm font-semibold text-gray-900 mb-3">Quick Assign H-Representative</p>
                 <div className="space-y-2">
                   <select
                     value={panelAssignUserId}
@@ -1619,10 +1619,10 @@ export default function ManageHospitalAccountsPage() {
                   >
                     <option value="">
                       {hStaffUsers.length === 0
-                        ? 'No H-Staff users found in users/user_details'
+                        ? 'No H-Representative users found in users/user_details'
                         : unassignedHStaffUsers.length === 0
-                          ? 'All H-Staff users are already assigned'
-                          : 'Select unassigned H-Staff'}
+                          ? 'All H-Representative users are already assigned'
+                          : 'Select unassigned H-Representative'}
                     </option>
                     {unassignedHStaffUsers.map((user) => (
                       <option key={user.user_id} value={user.user_id}>
@@ -1638,16 +1638,16 @@ export default function ManageHospitalAccountsPage() {
                     className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     style={{ backgroundColor: theme.primaryColor }}
                   >
-                    {isSavingAssignment ? 'Assigning...' : 'Assign To This Hospital'}
+                    {isSavingAssignment ? 'Assigning...' : 'Assign To This H-Representative'}
                   </button>
                 </div>
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Assigned H-Staff</p>
+                <p className="text-sm font-semibold text-gray-900 mb-3">Assigned H-Representative</p>
 
                 {detailsHospitalStaffLinks.length === 0 ? (
-                  <p className="text-sm text-gray-500">No H-Staff assigned yet.</p>
+                  <p className="text-sm text-gray-500">No H-Representative assigned yet.</p>
                 ) : (
                   <div className="space-y-2">
                     {detailsHospitalStaffLinks.map((link) => {
@@ -1697,7 +1697,7 @@ export default function ManageHospitalAccountsPage() {
             <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
               <div>
                 <h3 className="text-xl font-bold text-gray-800">
-                  {editingHospitalId ? 'Edit Hospital' : 'Add New Hospital'}
+                  {editingHospitalId ? 'Edit H-Representative' : 'Add New H-Representative'}
                 </h3>
                 <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
                   <MapPin size={14} />
@@ -1712,14 +1712,14 @@ export default function ManageHospitalAccountsPage() {
             <form onSubmit={handleSubmit} className="space-y-4" style={{ '--tw-ring-color': theme.primaryColor }}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">H-Representative Name</label>
                   <input
                     name="hospitalName"
                     value={form.hospitalName}
                     onChange={handleInputChange}
                     required
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                    placeholder="e.g., Jose B. Lingad Memorial General Hospital"
+                    placeholder="e.g., Jose B. Lingad Memorial General H-Representative"
                   />
                 </div>
 
@@ -1737,7 +1737,7 @@ export default function ManageHospitalAccountsPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Logo</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">H-Representative Logo</label>
                   <input
                     key={logoInputKey}
                     type="file"
@@ -1778,7 +1778,7 @@ export default function ManageHospitalAccountsPage() {
                   <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
                     <img
                       src={currentLogoPreview}
-                      alt="Hospital logo preview"
+                      alt="H-Representative logo preview"
                       className="h-56 w-full object-contain bg-white"
                     />
                   </div>
@@ -1949,8 +1949,8 @@ export default function ManageHospitalAccountsPage() {
                   {isSaving
                     ? (isUploadingLogo ? 'Uploading...' : 'Saving...')
                     : editingHospitalId
-                      ? 'Update Hospital'
-                      : 'Add Hospital'}
+                      ? 'Update H-Representative'
+                      : 'Add H-Representative'}
                 </button>
               </div>
             </form>

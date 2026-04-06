@@ -28,7 +28,13 @@ function resolveDashboardByRole(roleValue) {
     return SuperAdminRole;
   }
 
-  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
+  if (
+    normalizedRole === 'hospital'
+    || normalizedRole === 'h staff'
+    || normalizedRole === 'hstaff'
+    || normalizedRole === 'h representative'
+    || normalizedRole === 'hrepresentative'
+  ) {
     return HospitalRole;
   }
 

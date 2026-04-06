@@ -7,7 +7,7 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
 const PATIENTS_TABLE = 'Patients';
-const HOSPITALS_TABLE = 'Hospitals';
+const HOSPITALS_TABLE = 'H-Representatives';
 const RELEASE_SCHEDULES_TABLE = 'Release_Schedules';
 const WIG_REQUEST_PREVIEWS_BUCKET = 'wig_request_previews';
 
@@ -92,9 +92,9 @@ function normalizeReleaseWorkflowKey(value) {
 function getReleaseWorkflowLabel(value) {
   const key = normalizeReleaseWorkflowKey(value);
 
-  if (key === 'pending_hospital_approval') return 'Pending Hospital Approval';
-  if (key === 'hospital_approved') return 'Hospital Approved';
-  if (key === 'hospital_reschedule_requested') return 'Hospital Reschedule Requested';
+  if (key === 'pending_hospital_approval') return 'Pending H-Representative Approval';
+  if (key === 'hospital_approved') return 'H-Representative Approved';
+  if (key === 'hospital_reschedule_requested') return 'H-Representative Reschedule Requested';
   return 'N/A';
 }
 
@@ -478,7 +478,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
           requestId: formatRequestCode(reqId),
           patientId,
           hospitalId,
-          hospitalName: String(hospital?.Hospital_Name || `Hospital #${hospitalId || 'N/A'}`),
+          hospitalName: String(hospital?.Hospital_Name || `H-Representative #${hospitalId || 'N/A'}`),
           patientName: getPatientFullName(patient),
           patientCode: String(patient?.Patient_Code || ''),
           medicalCondition: String(patient?.Medical_Condition || requestRow.Medical_Condition || '').trim() || 'N/A',
@@ -931,7 +931,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Request ID</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Hospital</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">H-Representative</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Patient</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Medical Condition</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Specifications</th>
@@ -1018,7 +1018,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
             <div className="space-y-4 p-5">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                <p><span className="font-semibold text-slate-900">Hospital:</span> {selectedRow.hospitalName}</p>
+                <p><span className="font-semibold text-slate-900">H-Representative:</span> {selectedRow.hospitalName}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Patient:</span> {selectedRow.patientName}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Medical Condition:</span> {selectedRow.medicalCondition}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Request Date:</span> {formatDateTime(selectedRow.requestDate)}</p>
@@ -1049,7 +1049,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
                   </p>
                   <p><span className="font-semibold text-slate-900">Flow Status:</span> {selectedRow.releaseWorkflowLabel}</p>
                   {selectedRow.releaseDecisionReason && (
-                    <p className="whitespace-pre-line"><span className="font-semibold text-slate-900">Hospital Reason:</span> {selectedRow.releaseDecisionReason}</p>
+                    <p className="whitespace-pre-line"><span className="font-semibold text-slate-900">H-Representative Reason:</span> {selectedRow.releaseDecisionReason}</p>
                   )}
                   {selectedRow.statusReason && (
                     <p className="whitespace-pre-line"><span className="font-semibold text-slate-900">Status Reason:</span> {selectedRow.statusReason}</p>

@@ -53,7 +53,7 @@ const releasedWigLocations = [
   {
     requestId: 'WR-2099',
     patient: 'Ana Prieto',
-    deliveryMode: 'Hospital Pickup',
+    deliveryMode: 'H-Representative Pickup',
     currentLocation: 'Released at StrandShare Main Center',
     lastPing: 'Mar 30, 2026 03:26 PM',
     status: 'Delivered',

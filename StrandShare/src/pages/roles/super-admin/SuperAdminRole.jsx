@@ -20,7 +20,7 @@ import SettingsPage from './SettingsPage';
 const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'manage-user-accounts', label: 'Manage User Accounts', icon: Users },
-  { id: 'manage-hospital-accounts', label: 'Manage Hospital Accounts', icon: Building2 },
+  { id: 'manage-hospital-accounts', label: 'Manage H-Representative Accounts', icon: Building2 },
   { id: 'generate-reports', label: 'Generate Reports', icon: FileText },
   { id: 'audit-trails', label: 'Audit Trails', icon: ClipboardList },
   { id: 'backup', label: 'Backup', icon: HardDrive },

@@ -1,7 +1,7 @@
 -- 009_hospital_patient_wig_management.sql
--- Hospital, patient, wig request, and inventory tables.
+-- H-Representative, patient, wig request, and inventory tables.
 
-create table if not exists public."Hospitals" (
+create table if not exists public."H-Representatives" (
   "Hospital_ID" serial primary key,
   "Hospital_Name" varchar(255),
   "Hospital_Logo" varchar(255),
@@ -22,7 +22,7 @@ create table if not exists public."Hospital_Staff" (
   "Assigned_Date" timestamp default now(),
   constraint "Hospital_Staff_Hospital_ID_fkey"
     foreign key ("Hospital_ID")
-    references public."Hospitals" ("Hospital_ID"),
+    references public."H-Representatives" ("Hospital_ID"),
   constraint "Hospital_Staff_User_ID_fkey"
     foreign key ("User_ID")
     references public.users(user_id),
@@ -50,7 +50,7 @@ create table if not exists public."Patients" (
     references public.users(user_id),
   constraint "Patients_Hospital_ID_fkey"
     foreign key ("Hospital_ID")
-    references public."Hospitals" ("Hospital_ID")
+    references public."H-Representatives" ("Hospital_ID")
 );
 
 create table if not exists public."Wig_Requests" (
@@ -74,7 +74,7 @@ create table if not exists public."Wig_Requests" (
     references public."Patients" ("Patient_ID"),
   constraint "Wig_Requests_Hospital_ID_fkey"
     foreign key ("Hospital_ID")
-    references public."Hospitals" ("Hospital_ID")
+    references public."H-Representatives" ("Hospital_ID")
 );
 
 create table if not exists public."Wig_Request_Specifications" (
@@ -185,7 +185,7 @@ begin
     alter table public."Hospital_Staff"
       add constraint "Hospital_Staff_Hospital_ID_fkey"
       foreign key ("Hospital_ID")
-      references public."Hospitals" ("Hospital_ID");
+      references public."H-Representatives" ("Hospital_ID");
   end if;
 
   if not exists (
@@ -194,7 +194,7 @@ begin
     alter table public."Patients"
       add constraint "Patients_Hospital_ID_fkey"
       foreign key ("Hospital_ID")
-      references public."Hospitals" ("Hospital_ID");
+      references public."H-Representatives" ("Hospital_ID");
   end if;
 
   if not exists (
@@ -212,7 +212,7 @@ begin
     alter table public."Wig_Requests"
       add constraint "Wig_Requests_Hospital_ID_fkey"
       foreign key ("Hospital_ID")
-      references public."Hospitals" ("Hospital_ID");
+      references public."H-Representatives" ("Hospital_ID");
   end if;
 
   if not exists (

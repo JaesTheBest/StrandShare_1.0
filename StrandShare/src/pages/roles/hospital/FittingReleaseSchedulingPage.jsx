@@ -5,7 +5,7 @@ import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
 const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
-const HOSPITALS_TABLE = 'Hospitals';
+const HOSPITALS_TABLE = 'H-Representatives';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
 const PATIENTS_TABLE = 'Patients';
@@ -57,9 +57,9 @@ function normalizeReleaseWorkflowKey(value) {
 function getReleaseWorkflowLabel(value) {
   const key = normalizeReleaseWorkflowKey(value);
 
-  if (key === 'pending_hospital_approval') return 'Pending Hospital Approval';
-  if (key === 'hospital_approved') return 'Hospital Approved';
-  if (key === 'hospital_reschedule_requested') return 'Hospital Reschedule Requested';
+  if (key === 'pending_hospital_approval') return 'Pending H-Representative Approval';
+  if (key === 'hospital_approved') return 'H-Representative Approved';
+  if (key === 'hospital_reschedule_requested') return 'H-Representative Reschedule Requested';
   return 'N/A';
 }
 
@@ -815,7 +815,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
           Review proposed release dates from staff, approve or request reschedule, and complete releases.
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          Hospital scope: {hospitalName || (hospitalId ? `Hospital #${hospitalId}` : 'Not assigned')}
+          H-Representative scope: {hospitalName || (hospitalId ? `H-Representative #${hospitalId}` : 'Not assigned')}
         </p>
       </div>
 
@@ -1110,7 +1110,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
             <div className="space-y-4 p-5">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                <p><span className="font-semibold text-slate-900">Hospital:</span> {hospitalName || `Hospital #${hospitalId}`}</p>
+                <p><span className="font-semibold text-slate-900">H-Representative:</span> {hospitalName || `H-Representative #${hospitalId}`}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Patient:</span> {selectedRow.patientName}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Medical Condition:</span> {selectedRow.medicalCondition}</p>
                 <p className="mt-1"><span className="font-semibold text-slate-900">Current Status:</span> {selectedRow.statusLabel}</p>
@@ -1141,7 +1141,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-semibold text-slate-900">Hospital Decision</p>
+                <p className="text-sm font-semibold text-slate-900">H-Representative Decision</p>
                 {selectedCanApprove ? (
                   <div className="mt-3 space-y-3">
                     <button

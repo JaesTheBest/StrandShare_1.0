@@ -291,7 +291,7 @@ function getJourneyPath(statusKey) {
     {
       id: 'releasing',
       title: REQUEST_STATUS.releasing,
-      note: 'Hospital approved schedule and release processing is ongoing.',
+      note: 'H-Representative approved schedule and release processing is ongoing.',
     },
     {
       id: 'completed',
@@ -324,7 +324,7 @@ function getJourneyPath(statusKey) {
     {
       id: 'releasing',
       title: REQUEST_STATUS.releasing,
-      note: 'Hospital approved schedule and release processing is ongoing.',
+      note: 'H-Representative approved schedule and release processing is ongoing.',
     },
     {
       id: 'completed',
@@ -399,7 +399,7 @@ function mapWigRequestInsertError(rawMessage) {
   const lowerMessage = message.toLowerCase();
 
   if (lowerMessage.includes('row-level security')) {
-    return 'Action blocked by database policy. Make sure your account has H-Staff permissions.';
+    return 'Action blocked by database policy. Make sure your account has H-Representative permissions.';
   }
 
   return message;
@@ -731,7 +731,7 @@ export default function WigRequestPage({ userProfile }) {
   const previewPayload = useMemo(() => {
     return {
       generatedAt: formatPreviewDate(Date.now()),
-      hospitalRef: hospitalId ? `Hospital #${hospitalId}` : 'Unassigned',
+      hospitalRef: hospitalId ? `H-Representative #${hospitalId}` : 'Unassigned',
       patientName: selectedPatientProfile.fullName,
       patientCode: selectedPatientProfile.patientCode,
       age: selectedPatientProfile.age,
@@ -804,7 +804,7 @@ export default function WigRequestPage({ userProfile }) {
       if (!nextHospitalId) {
         setNotice({
           kind: 'error',
-          text: 'No hospital assignment found for your H-Staff account. Ask Super Admin to assign your account to a hospital first.',
+          text: 'No hospital assignment found for your H-Representative account. Ask Super Admin to assign your account to a hospital first.',
         });
       }
     } catch (error) {
@@ -1134,7 +1134,7 @@ export default function WigRequestPage({ userProfile }) {
     addDivider();
 
     addSectionTitle('Submission Metadata');
-    addField('Hospital Reference', previewPayload.hospitalRef);
+    addField('H-Representative Reference', previewPayload.hospitalRef);
     addField('Initial Status', previewPayload.statusOnSubmit);
 
     return doc;
@@ -1328,7 +1328,7 @@ export default function WigRequestPage({ userProfile }) {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Hospital Workflow</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">H-Representative Workflow</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 md:text-3xl">Wig Request Form</h1>
         <p className="mt-1 text-sm text-slate-600">
           Compact layout with live patient photo and right-side PDF preview that auto-uploads on submit.

@@ -21,7 +21,7 @@ import {
   isSupabaseConfigured,
 } from '../../../lib/supabaseClient';
 
-const DEFAULT_ROLES = ['Super Admin', 'hospital', 'Partner', 'Staff'];
+const DEFAULT_ROLES = ['Super Admin', 'H-Representative', 'Partner', 'Staff'];
 
 function toRoleLabel(roleValue) {
   const normalizedRole = String(roleValue || '')
@@ -30,8 +30,14 @@ function toRoleLabel(roleValue) {
     .toLowerCase()
     .replace(/[\s_-]+/g, ' ');
 
-  if (normalizedRole === 'hospital' || normalizedRole === 'h staff' || normalizedRole === 'hstaff') {
-    return 'H-Staff';
+  if (
+    normalizedRole === 'hospital'
+    || normalizedRole === 'h staff'
+    || normalizedRole === 'hstaff'
+    || normalizedRole === 'h representative'
+    || normalizedRole === 'hrepresentative'
+  ) {
+    return 'H-Representative';
   }
 
   if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {
@@ -838,7 +844,7 @@ export default function ManageUserAccountsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                   <select required name="role" value={formData.role} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }}>
                     <option value="Super Admin">Super Admin</option>
-                    <option value="hospital">H-Staff</option>
+                    <option value="H-Representative">H-Representative</option>
                     <option value="Partner">Partner</option>
                     <option value="Staff">Staff</option>
                   </select>
@@ -947,7 +953,7 @@ export default function ManageUserAccountsPage() {
                     style={{ '--tw-ring-color': theme.secondaryColor }}
                   >
                     <option value="Super Admin">Super Admin</option>
-                    <option value="hospital">H-Staff</option>
+                    <option value="H-Representative">H-Representative</option>
                     <option value="Partner">Partner</option>
                     <option value="Staff">Staff</option>
                   </select>

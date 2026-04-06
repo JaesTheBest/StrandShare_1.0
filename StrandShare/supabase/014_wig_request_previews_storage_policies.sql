@@ -5,7 +5,7 @@ insert into storage.buckets (id, name, public)
 values ('wig_request_previews', 'wig_request_previews', true)
 on conflict (id) do update set public = excluded.public;
 
--- INSERT: H-Staff/Super Admin can upload only inside <auth.uid()>/preview-pdf/*.pdf paths.
+-- INSERT: H-Representative/Super Admin can upload only inside <auth.uid()>/preview-pdf/*.pdf paths.
 do $$
 begin
   if not exists (
@@ -34,7 +34,7 @@ begin
 end
 $$;
 
--- UPDATE: H-Staff/Super Admin can update only their own preview PDF paths.
+-- UPDATE: H-Representative/Super Admin can update only their own preview PDF paths.
 do $$
 begin
   if not exists (
@@ -75,7 +75,7 @@ begin
 end
 $$;
 
--- DELETE: H-Staff/Super Admin can delete only their own preview PDF paths.
+-- DELETE: H-Representative/Super Admin can delete only their own preview PDF paths.
 do $$
 begin
   if not exists (
