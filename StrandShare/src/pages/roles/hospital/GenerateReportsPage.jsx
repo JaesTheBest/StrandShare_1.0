@@ -26,10 +26,11 @@ import {
 } from 'recharts';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
-const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
-const HOSPITALS_TABLE = 'H-Representatives';
+const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
+const HOSPITALS_TABLE = 'Hospitals';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const PATIENTS_TABLE = 'Patients';
+const USERS_TABLE = 'users';
 const RELEASE_SCHEDULES_TABLE = 'Release_Schedules';
 
 const SCHEDULES_STORAGE_KEY = 'strandshare.hrep.report.schedules';
@@ -256,18 +257,35 @@ function formatDateTime(value) {
   });
 }
 
-function getPatientFullName(patientRow) {
-  if (!patientRow) {
-    return 'Unknown Patient';
+function getPatientUserName(userRow) {
+  if (!userRow) {
+    return '';
   }
 
-  const fullName = [patientRow.First_Name, patientRow.Middle_Name, patientRow.Last_Name, patientRow.Suffix]
+  const details = Array.isArray(userRow.user_details)
+    ? userRow.user_details[0]
+    : userRow.user_details;
+
+  const fullName = [details?.first_name, details?.middle_name, details?.last_name, details?.suffix]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return fullName || patientRow.Patient_Code || `Patient #${patientRow.Patient_ID}`;
+  return fullName || String(userRow.email || '').trim() || '';
+}
+
+function getPatientFullName(patientRow, linkedUserRow = null) {
+  if (!patientRow) {
+    return 'Unknown Patient';
+  }
+
+  const linkedUserName = getPatientUserName(linkedUserRow);
+  if (linkedUserName) {
+    return linkedUserName;
+  }
+
+  return patientRow.Patient_Code || (patientRow.User_ID ? `User #${patientRow.User_ID}` : `Patient #${patientRow.Patient_ID}`);
 }
 
 function formatRequestCode(reqIdValue) {
@@ -418,6 +436,7 @@ export default function GenerateReportsPage({ userProfile }) {
 
   const [requests, setRequests] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [patientUsersById, setPatientUsersById] = useState({});
   const [schedules, setSchedules] = useState([]);
 
   const [isResolvingHospital, setIsResolvingHospital] = useState(false);
@@ -515,6 +534,7 @@ export default function GenerateReportsPage({ userProfile }) {
     if (!isSupabaseConfigured || !supabase || !hospitalId) {
       setRequests([]);
       setPatients([]);
+      setPatientUsersById({});
       setSchedules([]);
       return;
     }
@@ -526,23 +546,66 @@ export default function GenerateReportsPage({ userProfile }) {
       const [requestsRes, patientsRes] = await Promise.all([
         supabase
           .from(WIG_REQUESTS_TABLE)
-          .select('Req_ID,Patient_ID,Status,Request_Date,Updated_At,Status_Reason,Release_Date')
+          .select('Req_ID,Patient_ID,Status,Request_Date,Updated_At,Status_Reason')
           .eq('Hospital_ID', hospitalId)
           .order('Request_Date', { ascending: false }),
         supabase
           .from(PATIENTS_TABLE)
-          .select('Patient_ID,Patient_Code,First_Name,Middle_Name,Last_Name,Suffix,Medical_Condition')
+          .select('Patient_ID,Patient_Code,Medical_Condition,User_ID')
           .eq('Hospital_ID', hospitalId),
       ]);
 
       if (requestsRes.error) throw requestsRes.error;
       if (patientsRes.error) throw patientsRes.error;
 
-      const schedulesRes = await supabase
-        .from(RELEASE_SCHEDULES_TABLE)
-        .select('Release_Schedule_ID,Req_ID,Proposed_Release_Date,Hospital_Decision,Hospital_Decision_Reason,Is_Current,Created_At,Updated_At')
-        .eq('Hospital_ID', hospitalId)
-        .order('Created_At', { ascending: false });
+      const linkedUserIds = Array.from(
+        new Set(
+          (patientsRes.data || [])
+            .map((row) => Number(row.User_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      let nextPatientUsersById = {};
+
+      if (linkedUserIds.length > 0) {
+        const { data: patientUsers, error: patientUsersError } = await supabase
+          .from(USERS_TABLE)
+          .select(`
+            user_id,
+            email,
+            user_details:user_details (
+              first_name,
+              middle_name,
+              last_name,
+              suffix
+            )
+          `)
+          .in('user_id', linkedUserIds);
+
+        if (patientUsersError) throw patientUsersError;
+
+        nextPatientUsersById = (patientUsers || []).reduce((accumulator, row) => {
+          accumulator[Number(row.user_id)] = row;
+          return accumulator;
+        }, {});
+      }
+
+      const requestIds = Array.from(
+        new Set(
+          (requestsRes.data || [])
+            .map((row) => Number(row.Req_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      const schedulesRes = requestIds.length > 0
+        ? await supabase
+            .from(RELEASE_SCHEDULES_TABLE)
+            .select('Release_Schedule_ID,Req_ID,Proposed_Release_Date,Hospital_Decision,Hospital_Decision_Reason,Is_Current,Created_At,Updated_At')
+            .in('Req_ID', requestIds)
+            .order('Created_At', { ascending: false })
+        : { data: [], error: null };
 
       let releaseWorkflowAvailable = true;
       let fetchedSchedules = [];
@@ -559,6 +622,7 @@ export default function GenerateReportsPage({ userProfile }) {
 
       setRequests(requestsRes.data || []);
       setPatients(patientsRes.data || []);
+      setPatientUsersById(nextPatientUsersById);
       setSchedules(fetchedSchedules);
       setIsReleaseWorkflowAvailable(releaseWorkflowAvailable);
       setLastRefreshedAt(new Date().toISOString());
@@ -584,6 +648,7 @@ export default function GenerateReportsPage({ userProfile }) {
     if (!hospitalId) {
       setRequests([]);
       setPatients([]);
+      setPatientUsersById({});
       setSchedules([]);
       return;
     }
@@ -611,6 +676,7 @@ export default function GenerateReportsPage({ userProfile }) {
     return requests.map((requestRow) => {
       const reqId = Number(requestRow.Req_ID || 0);
       const patient = patientById.get(Number(requestRow.Patient_ID || 0)) || null;
+      const linkedPatientUser = patient ? patientUsersById[Number(patient.User_ID || 0)] : null;
       const statusKey = getCanonicalStatusKey(requestRow.Status);
       const currentSchedule = currentScheduleByReqId.get(reqId) || null;
       const decisionKey = normalizeDecisionKey(currentSchedule?.Hospital_Decision);
@@ -618,21 +684,21 @@ export default function GenerateReportsPage({ userProfile }) {
       return {
         reqId,
         requestId: formatRequestCode(reqId),
-        patientName: getPatientFullName(patient),
+        patientName: getPatientFullName(patient, linkedPatientUser),
         patientCode: String(patient?.Patient_Code || '').trim(),
         medicalCondition: String(patient?.Medical_Condition || '').trim() || 'N/A',
         statusKey,
         statusLabel: STATUS_LABELS[statusKey] || STATUS_LABELS.pending,
         requestDate: requestRow.Request_Date,
         updatedAt: requestRow.Updated_At || requestRow.Request_Date,
-        releaseDate: requestRow.Release_Date || currentSchedule?.Proposed_Release_Date || null,
+        releaseDate: currentSchedule?.Proposed_Release_Date || null,
         statusReason: String(requestRow.Status_Reason || '').trim(),
         releaseDecisionKey: decisionKey,
         releaseDecisionLabel: getDecisionLabel(decisionKey),
         releaseDecisionReason: String(currentSchedule?.Hospital_Decision_Reason || '').trim(),
       };
     });
-  }, [requests, patientById, currentScheduleByReqId]);
+  }, [requests, patientById, patientUsersById, currentScheduleByReqId]);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = normalizeText(searchTerm);
@@ -1622,7 +1688,7 @@ export default function GenerateReportsPage({ userProfile }) {
         </p>
         {!isReleaseWorkflowAvailable && (
           <p className="mt-1 text-amber-700">
-            Release workflow data is partially unavailable until supabase/017_release_scheduling_workflow.sql is applied.
+            Release workflow data is partially unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,38 +9,43 @@ import {
   Search,
   UploadCloud,
 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../../../context/ThemeContext';
-import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
+import {
+  isSupabaseConfigured,
+  supabase,
+  supabaseAnonKey,
+  supabaseUrl,
+} from '../../../lib/supabaseClient';
 
 const PATIENTS_TABLE = 'Patients';
 const USERS_TABLE = 'users';
 const USER_DETAILS_TABLE = 'user_details';
-const LEGACY_USER_DETAILS_TABLE = 'User_Details';
-const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
+const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const PATIENT_ASSETS_BUCKET = 'patient_assets';
 
 const EMPTY_FORM = {
-  userId: '',
+  email: '',
   patientCode: '',
   firstName: '',
   middleName: '',
   lastName: '',
   suffix: '',
-  age: '',
+  birthdate: '',
   gender: '',
+  dateOfDiagnosis: '',
+  guardian: '',
+  guardianContactNumber: '',
+  guardianRelationship: '',
   medicalCondition: '',
 };
 
-function normalizeRoleSlug(roleValue) {
-  return String(roleValue || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function isPatientRole(roleValue) {
-  return normalizeRoleSlug(roleValue) === 'patient';
-}
+const GENDER_OPTIONS = [
+  { id: 'Male', label: 'Male' },
+  { id: 'Female', label: 'Female' },
+  { id: 'Other', label: 'Other' },
+  { id: 'Prefer not to say', label: 'Prefer not to say' },
+];
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
@@ -73,50 +78,7 @@ function pickPreferredUserDetails(detailsValue) {
     return null;
   }
 
-  const scoreDetails = (details) => {
-    let score = 0;
-
-    if (getFirstPresentValue(details, ['birthdate', 'Birthdate', 'birth_date', 'Birth_Date', 'date_of_birth', 'Date_Of_Birth', 'dob', 'DOB'])) {
-      score += 4;
-    }
-
-    if (getFirstPresentValue(details, ['gender', 'Gender'])) {
-      score += 3;
-    }
-
-    if (getFirstPresentValue(details, ['first_name', 'First_Name'])) {
-      score += 1;
-    }
-
-    if (getFirstPresentValue(details, ['last_name', 'Last_Name'])) {
-      score += 1;
-    }
-
-    return score;
-  };
-
-  return detailsArray.reduce((best, current) => {
-    if (!best) {
-      return current;
-    }
-
-    const bestScore = scoreDetails(best);
-    const currentScore = scoreDetails(current);
-
-    return currentScore > bestScore ? current : best;
-  }, null);
-}
-
-function toPositiveInt(value) {
-  const normalized = Number(String(value ?? '').trim());
-  if (!Number.isFinite(normalized) || normalized <= 0) {
-    return null;
-  }
-  return normalized;
-}
-
-function extractPatientLinkedUserId(row) {
-  return toPositiveInt(row?.User_ID ?? row?.user_id ?? row?.userId);
+  return detailsArray[0];
 }
 
 function normalizePatientGender(value) {
@@ -168,64 +130,6 @@ function formatDateTime(value) {
   });
 }
 
-function mapPatientInsertError(rawMessage) {
-  const message = String(rawMessage || 'Unable to save patient record.');
-  const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes('duplicate key value') && lowerMessage.includes('patient_code')) {
-    return 'Patient code already exists. Please use a different patient code.';
-  }
-
-  if (
-    lowerMessage.includes('duplicate key value')
-    && (
-      lowerMessage.includes('patients_user_id_unique')
-      || lowerMessage.includes('patients_user_id_key')
-      || (lowerMessage.includes('patients') && lowerMessage.includes('user_id'))
-    )
-  ) {
-    return 'Selected patient-role user is already linked to another patient record.';
-  }
-
-  if (lowerMessage.includes('row-level security')) {
-    return 'Action blocked by database policy. Make sure your account has H-Representative permissions.';
-  }
-
-  return message;
-}
-
-function mapStorageUploadError(rawMessage) {
-  const message = String(rawMessage || 'Upload failed.');
-  if (message.toLowerCase().includes('row-level security')) {
-    return 'Upload blocked by Storage RLS policy. Apply the patient_assets bucket policies first.';
-  }
-  return message;
-}
-
-function formatRoleLabel(roleValue) {
-  const roleSlug = normalizeRoleSlug(roleValue);
-  if (roleSlug === 'patient') return 'Patient';
-  if (roleSlug === 'superadmin') return 'Super Admin';
-  if (roleSlug === 'hospital' || roleSlug === 'hstaff' || roleSlug === 'hrepresentative') return 'H-Representative';
-  if (roleSlug === 'partner') return 'Partner';
-  if (roleSlug === 'staff') return 'Staff';
-  return roleValue || 'N/A';
-}
-
-function getPatientUserName(user) {
-  if (!user) return 'Unknown user';
-
-  const details = pickPreferredUserDetails(user.user_details);
-
-  const fullName = [details?.first_name, details?.middle_name, details?.last_name, details?.suffix]
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return fullName || user.email || `User #${user.user_id}`;
-}
-
 function computeAgeFromBirthdate(birthdateValue) {
   if (!birthdateValue) {
     return '';
@@ -268,10 +172,53 @@ function computeAgeFromBirthdate(birthdateValue) {
   return years;
 }
 
-function getPatientUserLabel(user) {
-  if (!user) return 'Unknown patient user';
+function shuffleArray(values) {
+  const output = [...values];
 
-  const details = pickPreferredUserDetails(user.user_details);
+  for (let index = output.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const temp = output[index];
+    output[index] = output[swapIndex];
+    output[swapIndex] = temp;
+  }
+
+  return output;
+}
+
+function buildRandomPatientCode() {
+  return `PT${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`;
+}
+
+function normalizePatientCodeInput(value) {
+  const raw = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const digits = raw.replace(/^PT/, '').replace(/\D/g, '').slice(0, 6);
+  return `PT${digits}`;
+}
+
+function isValidPatientCode(value) {
+  return /^PT\d{6}$/.test(String(value || '').trim().toUpperCase());
+}
+
+function generateTemporaryPassword() {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const numbers = '23456789';
+  const symbols = '!@#$%*';
+  const all = `${upper}${lower}${numbers}${symbols}`;
+
+  const required = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    numbers[Math.floor(Math.random() * numbers.length)],
+    symbols[Math.floor(Math.random() * symbols.length)],
+  ];
+
+  const remaining = Array.from({ length: 8 }, () => all[Math.floor(Math.random() * all.length)]);
+  return shuffleArray([...required, ...remaining]).join('');
+}
+
+function getPatientFullName(userRow, patientRow = null) {
+  const details = pickPreferredUserDetails(userRow?.user_details);
 
   const fullName = [details?.first_name, details?.middle_name, details?.last_name, details?.suffix]
     .filter(Boolean)
@@ -279,11 +226,77 @@ function getPatientUserLabel(user) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (fullName && user.email) {
-    return `${fullName} (${user.email})`;
+  if (fullName) {
+    return fullName;
   }
 
-  return fullName || user.email || `User #${user.user_id}`;
+  const email = String(userRow?.email || '').trim();
+  if (email) {
+    return email;
+  }
+
+  if (patientRow?.Patient_Code) {
+    return patientRow.Patient_Code;
+  }
+
+  return `Patient #${patientRow?.Patient_ID || 'N/A'}`;
+}
+
+function mapStorageUploadError(rawMessage) {
+  const message = String(rawMessage || 'Upload failed.');
+  if (message.toLowerCase().includes('row-level security')) {
+    return 'Upload blocked by Storage RLS policy. Apply patient_assets storage policies first.';
+  }
+  return message;
+}
+
+function mapAuthSignupError(rawMessage) {
+  const message = String(rawMessage || 'Unable to create authentication account.');
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('already registered') || lowerMessage.includes('already been registered')) {
+    return 'Email is already registered. Use a different email address.';
+  }
+
+  if (lowerMessage.includes('invalid email')) {
+    return 'Please enter a valid patient email address.';
+  }
+
+  if (lowerMessage.includes('password')) {
+    return 'Unable to create auth account due to password policy. Please retry.';
+  }
+
+  if (lowerMessage.includes('rate limit')) {
+    return 'Too many signup attempts. Please wait a moment and try again.';
+  }
+
+  return message;
+}
+
+function mapPatientInsertError(rawMessage) {
+  const message = String(rawMessage || 'Unable to save patient record.');
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('duplicate key value') && lowerMessage.includes('patient_code')) {
+    return 'Patient code already exists. Please generate a new PT code.';
+  }
+
+  if (
+    lowerMessage.includes('duplicate key value')
+    && (
+      lowerMessage.includes('patients_user_id_unique')
+      || lowerMessage.includes('patients_user_id_key')
+      || (lowerMessage.includes('patients') && lowerMessage.includes('user_id'))
+    )
+  ) {
+    return 'This user is already linked to another patient record.';
+  }
+
+  if (lowerMessage.includes('row-level security')) {
+    return 'Action blocked by database policy. Verify your hospital role permissions.';
+  }
+
+  return message;
 }
 
 export default function ManagePatientsPage({ userProfile }) {
@@ -295,7 +308,11 @@ export default function ManagePatientsPage({ userProfile }) {
   const [patients, setPatients] = useState([]);
   const [patientUsers, setPatientUsers] = useState([]);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_FORM,
+    patientCode: buildRandomPatientCode(),
+  }));
+
   const [patientPictureFile, setPatientPictureFile] = useState(null);
   const [medicalDocumentFile, setMedicalDocumentFile] = useState(null);
   const [patientPicturePreviewUrl, setPatientPicturePreviewUrl] = useState('');
@@ -303,18 +320,25 @@ export default function ManagePatientsPage({ userProfile }) {
 
   const [isResolvingHospital, setIsResolvingHospital] = useState(false);
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
-  const [isLoadingPatientUsers, setIsLoadingPatientUsers] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
-  const [existingUserSearchTerm, setExistingUserSearchTerm] = useState('');
-  const [isSelectingExistingUser, setIsSelectingExistingUser] = useState(false);
-  const [patientLinkedUserIds, setPatientLinkedUserIds] = useState([]);
-  const [existingUserResults, setExistingUserResults] = useState([]);
-  const [isSearchingExistingUsers, setIsSearchingExistingUsers] = useState(false);
-  const [existingUserHasSearched, setExistingUserHasSearched] = useState(false);
-  const existingUserSearchRequestRef = useRef(0);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+
+  const signupClient = useMemo(() => {
+    if (!isSupabaseConfigured || !supabaseUrl || !supabaseAnonKey) {
+      return null;
+    }
+
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  }, []);
 
   const patientUsersById = useMemo(() => {
     const map = new Map();
@@ -324,18 +348,10 @@ export default function ManagePatientsPage({ userProfile }) {
     return map;
   }, [patientUsers]);
 
-  const linkedPatientUserIdSet = useMemo(() => {
-    const set = new Set();
-    patientLinkedUserIds.forEach((id) => {
-      set.add(Number(id));
-    });
-    return set;
-  }, [patientLinkedUserIds]);
-
-  const selectedExistingUser = useMemo(
-    () => (form.userId ? patientUsersById.get(Number(form.userId)) || null : null),
-    [form.userId, patientUsersById],
-  );
+  const computedAgeFromForm = useMemo(() => {
+    const age = computeAgeFromBirthdate(form.birthdate);
+    return age === '' ? '' : String(age);
+  }, [form.birthdate]);
 
   const isMedicalDocumentImage = useMemo(
     () => String(medicalDocumentFile?.type || '').toLowerCase().startsWith('image/'),
@@ -347,40 +363,6 @@ export default function ManagePatientsPage({ userProfile }) {
     const fileName = String(medicalDocumentFile?.name || '').toLowerCase();
     return fileType === 'application/pdf' || fileName.endsWith('.pdf');
   }, [medicalDocumentFile]);
-
-  const linkedPatientsCount = useMemo(
-    () => patients.filter((patient) => Boolean(extractPatientLinkedUserId(patient))).length,
-    [patients],
-  );
-
-  const filteredPatients = useMemo(() => {
-    const query = normalizeText(patientSearchTerm);
-    if (!query) {
-      return patients;
-    }
-
-    return patients.filter((patient) => {
-      const linkedUser = patientUsersById.get(Number(patient.User_ID));
-      const linkedUserLabel = patient.User_ID
-        ? (linkedUser ? getPatientUserLabel(linkedUser) : `User #${patient.User_ID}`)
-        : '';
-
-      const searchableValues = [
-        patient.Patient_Code,
-        patient.First_Name,
-        patient.Middle_Name,
-        patient.Last_Name,
-        patient.Suffix,
-        patient.Gender,
-        patient.Medical_Condition,
-        linkedUserLabel,
-      ]
-        .map((value) => normalizeText(value))
-        .filter(Boolean);
-
-      return searchableValues.some((value) => value.includes(query));
-    });
-  }, [patients, patientSearchTerm, patientUsersById]);
 
   const resolveAssetUrl = useCallback((assetPath) => {
     const path = String(assetPath || '').trim();
@@ -416,22 +398,22 @@ export default function ManagePatientsPage({ userProfile }) {
       setIsResolvingHospital(true);
       const { data, error } = await supabase
         .from(HOSPITAL_STAFF_TABLE)
-        .select('Hospital_ID, hRepresentatives:H-Representatives(Hospital_Name)')
+        .select('Hospital_ID, hRepresentatives:Hospitals(Hospital_Name)')
         .eq('User_ID', activeUserId)
         .maybeSingle();
 
       if (error) throw error;
 
       const nextHospitalId = Number(data?.Hospital_ID || 0) || null;
-        const linkedHospital = Array.isArray(data?.hRepresentatives) ? data.hRepresentatives[0] : data?.hRepresentatives;
+      const linkedHospital = Array.isArray(data?.hRepresentatives) ? data.hRepresentatives[0] : data?.hRepresentatives;
 
       setHospitalId(nextHospitalId);
-      setHospitalName(linkedHospital?.Hospital_Name || '');
+      setHospitalName(String(linkedHospital?.Hospital_Name || '').trim());
 
       if (!nextHospitalId) {
         setNotice({
           kind: 'error',
-          text: 'No hospital assignment found for your H-Representative account. Ask Super Admin to assign your account to a hospital first.',
+          text: 'No hospital assignment found for your account. Ask Super Admin to assign your account first.',
         });
       }
     } catch (error) {
@@ -449,35 +431,38 @@ export default function ManagePatientsPage({ userProfile }) {
   const fetchPatients = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase || !hospitalId) {
       setPatients([]);
-      return;
-    }
-
-    try {
-      setIsLoadingPatients(true);
-      const { data, error } = await supabase
-        .from(PATIENTS_TABLE)
-        .select('*')
-        .eq('Hospital_ID', hospitalId)
-        .order('Created_At', { ascending: false });
-
-      if (error) throw error;
-      setPatients(data || []);
-    } catch (error) {
-      setNotice({ kind: 'error', text: error.message || 'Unable to load patients.' });
-    } finally {
-      setIsLoadingPatients(false);
-    }
-  }, [hospitalId]);
-
-  const fetchPatientUsers = useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase) {
       setPatientUsers([]);
       return;
     }
 
     try {
-      setIsLoadingPatientUsers(true);
-      const { data, error } = await supabase
+      setIsLoadingPatients(true);
+
+      const { data: patientRows, error: patientError } = await supabase
+        .from(PATIENTS_TABLE)
+        .select('*')
+        .eq('Hospital_ID', hospitalId)
+        .order('Created_At', { ascending: false });
+
+      if (patientError) throw patientError;
+
+      const nextPatients = patientRows || [];
+      setPatients(nextPatients);
+
+      const userIds = Array.from(
+        new Set(
+          nextPatients
+            .map((row) => Number(row.User_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      if (userIds.length === 0) {
+        setPatientUsers([]);
+        return;
+      }
+
+      const { data: linkedUsers, error: linkedUsersError } = await supabase
         .from(USERS_TABLE)
         .select(`
           user_id,
@@ -492,54 +477,30 @@ export default function ManagePatientsPage({ userProfile }) {
             gender
           )
         `)
-        .order('email', { ascending: true });
+        .in('user_id', userIds);
 
-      if (error) throw error;
-
-      const patientRoleUsers = (data || [])
-        .filter((user) => isPatientRole(user?.role))
-        .sort((a, b) => getPatientUserLabel(a).localeCompare(getPatientUserLabel(b), 'en', { sensitivity: 'base' }));
-
-      setPatientUsers(patientRoleUsers);
+      if (linkedUsersError) throw linkedUsersError;
+      setPatientUsers(linkedUsers || []);
     } catch (error) {
-      setNotice({ kind: 'error', text: error.message || 'Unable to load existing patient-role users.' });
+      setNotice({ kind: 'error', text: error.message || 'Unable to load patients.' });
     } finally {
-      setIsLoadingPatientUsers(false);
+      setIsLoadingPatients(false);
     }
-  }, []);
-
-  const fetchPatientLinkedUserIds = useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase) {
-      setPatientLinkedUserIds([]);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from(PATIENTS_TABLE)
-        .select('*');
-
-      if (error) throw error;
-
-      const ids = Array.from(
-        new Set(
-          (data || [])
-            .map((row) => extractPatientLinkedUserId(row))
-            .filter((id) => Number.isFinite(id) && id > 0),
-        ),
-      );
-
-      setPatientLinkedUserIds(ids);
-    } catch (error) {
-      setNotice({ kind: 'error', text: error.message || 'Unable to load linked patient user IDs.' });
-    }
-  }, []);
+  }, [hospitalId]);
 
   useEffect(() => {
     resolveAssignedHospital();
-    fetchPatientUsers();
-    fetchPatientLinkedUserIds();
-  }, [resolveAssignedHospital, fetchPatientUsers, fetchPatientLinkedUserIds]);
+  }, [resolveAssignedHospital]);
+
+  useEffect(() => {
+    if (!hospitalId) {
+      setPatients([]);
+      setPatientUsers([]);
+      return;
+    }
+
+    fetchPatients();
+  }, [hospitalId, fetchPatients]);
 
   useEffect(() => {
     if (!patientPictureFile) {
@@ -569,390 +530,82 @@ export default function ManagePatientsPage({ userProfile }) {
     };
   }, [medicalDocumentFile]);
 
-  useEffect(() => {
-    if (!hospitalId) {
-      setPatients([]);
-      return;
+  const enrichedPatients = useMemo(() => {
+    return patients.map((patient) => {
+      const linkedUser = patientUsersById.get(Number(patient.User_ID || 0)) || null;
+      const details = pickPreferredUserDetails(linkedUser?.user_details);
+
+      const birthdateValue = getFirstPresentValue(details, ['birthdate', 'Birthdate']);
+      const ageValue = computeAgeFromBirthdate(birthdateValue);
+      const genderValue = normalizePatientGender(getFirstPresentValue(details, ['gender', 'Gender']));
+
+      return {
+        ...patient,
+        fullName: getPatientFullName(linkedUser, patient),
+        age: ageValue === '' ? 'N/A' : String(ageValue),
+        gender: genderValue || 'N/A',
+        pictureUrl: resolveAssetUrl(patient.Patient_Picture),
+        documentUrl: resolveAssetUrl(patient.Medical_Document),
+      };
+    });
+  }, [patients, patientUsersById, resolveAssetUrl]);
+
+  const filteredPatients = useMemo(() => {
+    const query = normalizeText(patientSearchTerm);
+    if (!query) {
+      return enrichedPatients;
     }
 
-    fetchPatients();
-  }, [hospitalId, fetchPatients]);
+    return enrichedPatients.filter((patient) => {
+      const searchableValues = [
+        patient.fullName,
+        patient.age,
+        patient.gender,
+        patient.Medical_Condition,
+        patient.Patient_Code,
+      ]
+        .map((value) => normalizeText(value))
+        .filter(Boolean);
 
-  useEffect(() => {
-    const term = existingUserSearchTerm.trim();
-    existingUserSearchRequestRef.current += 1;
-    const requestId = existingUserSearchRequestRef.current;
+      return searchableValues.some((value) => value.includes(query));
+    });
+  }, [enrichedPatients, patientSearchTerm]);
 
-    if (!term) {
-      setExistingUserResults([]);
-      setExistingUserHasSearched(false);
-      setIsSearchingExistingUsers(false);
-      return undefined;
-    }
-
-    if (!isSupabaseConfigured || !supabase) {
-      setExistingUserResults([]);
-      setExistingUserHasSearched(true);
-      setIsSearchingExistingUsers(false);
-      return undefined;
-    }
-
-    setIsSearchingExistingUsers(true);
-    const handle = setTimeout(async () => {
-      try {
-        const activeLinkedUserIdSet = linkedPatientUserIdSet;
-
-        const emailQuery = supabase
-          .from(USERS_TABLE)
-          .select(`
-            user_id,
-            email,
-            role,
-            user_details (
-              first_name,
-              middle_name,
-              last_name,
-              suffix,
-              birthdate,
-              gender
-            )
-          `)
-          .ilike('email', `%${term}%`);
-
-        const nameQuery = supabase
-          .from('user_details')
-          .select(`
-            user_id,
-            first_name,
-            middle_name,
-            last_name,
-            suffix,
-            birthdate,
-            gender,
-            users!inner (
-              user_id,
-              email,
-              role
-            )
-          `)
-          .or(`first_name.ilike.%${term}%,middle_name.ilike.%${term}%,last_name.ilike.%${term}%`);
-
-        const [emailRes, nameRes] = await Promise.all([emailQuery, nameQuery]);
-
-        if (existingUserSearchRequestRef.current !== requestId) {
-          return;
-        }
-
-        if (emailRes.error) throw emailRes.error;
-        if (nameRes.error) throw nameRes.error;
-
-        const mergedMap = new Map();
-
-        (emailRes.data || []).forEach((user) => {
-          const details = Array.isArray(user.user_details)
-            ? user.user_details[0]
-            : user.user_details;
-
-          mergedMap.set(Number(user.user_id), {
-            user_id: user.user_id,
-            email: user.email,
-            role: user.role,
-            user_details: details || null,
-          });
-        });
-
-        (nameRes.data || []).forEach((detailRow) => {
-          const userRow = Array.isArray(detailRow.users)
-            ? detailRow.users[0]
-            : detailRow.users;
-
-          if (!userRow?.user_id) {
-            return;
-          }
-
-          mergedMap.set(Number(userRow.user_id), {
-            user_id: userRow.user_id,
-            email: userRow.email,
-            role: userRow.role,
-            user_details: {
-              first_name: detailRow.first_name,
-              middle_name: detailRow.middle_name,
-              last_name: detailRow.last_name,
-              suffix: detailRow.suffix,
-              birthdate: detailRow.birthdate,
-              gender: detailRow.gender,
-            },
-          });
-        });
-
-        const results = Array.from(mergedMap.values())
-          .filter((user) => isPatientRole(user?.role))
-          .filter((user) => !activeLinkedUserIdSet.has(Number(user.user_id)))
-          .sort((a, b) => getPatientUserLabel(a).localeCompare(getPatientUserLabel(b), 'en', { sensitivity: 'base' }));
-
-        if (existingUserSearchRequestRef.current !== requestId) {
-          return;
-        }
-
-        setExistingUserResults(results);
-        setExistingUserHasSearched(true);
-      } catch {
-        if (existingUserSearchRequestRef.current !== requestId) {
-          return;
-        }
-
-        setExistingUserResults([]);
-        setExistingUserHasSearched(true);
-      } finally {
-        if (existingUserSearchRequestRef.current === requestId) {
-          setIsSearchingExistingUsers(false);
-        }
-      }
-    }, 300);
-
-    return () => clearTimeout(handle);
-  }, [existingUserSearchTerm, linkedPatientUserIdSet]);
-
-  const resetForm = () => {
-    setForm(EMPTY_FORM);
+  const resetForm = useCallback(() => {
+    setForm({
+      ...EMPTY_FORM,
+      patientCode: buildRandomPatientCode(),
+    });
     setPatientPictureFile(null);
     setMedicalDocumentFile(null);
-    setExistingUserSearchTerm('');
-  };
+  }, []);
 
-  const handleInputChange = (event) => {
+  const handleInputChange = useCallback((event) => {
     const { name, value } = event.target;
-    setForm((prev) => ({
-      ...prev,
+
+    if (name === 'patientCode') {
+      const normalizedCode = normalizePatientCodeInput(value);
+      setForm((previous) => ({
+        ...previous,
+        patientCode: normalizedCode,
+      }));
+      return;
+    }
+
+    setForm((previous) => ({
+      ...previous,
       [name]: value,
     }));
-  };
-
-  const fetchPatientUserDetailsByUserId = useCallback(async (userIdValue) => {
-    const targetUserId = Number(userIdValue || 0);
-    if (!targetUserId || !supabase) {
-      return null;
-    }
-
-    const detailQueries = [
-      {
-        tableName: USER_DETAILS_TABLE,
-        select: 'first_name,middle_name,last_name,suffix,birthdate,gender',
-        matchColumn: 'user_id',
-      },
-      {
-        tableName: LEGACY_USER_DETAILS_TABLE,
-        select: 'First_Name,Middle_name,Last_Name,Suffix,Birthdate,Gender',
-        matchColumn: 'User_ID',
-      },
-    ];
-
-    for (const queryConfig of detailQueries) {
-      const { data, error } = await supabase
-        .from(queryConfig.tableName)
-        .select(queryConfig.select)
-        .eq(queryConfig.matchColumn, targetUserId);
-
-      if (error || !Array.isArray(data) || data.length === 0) {
-        continue;
-      }
-
-      const prioritized = data.find((item) => {
-        const candidateBirthdate = item?.birthdate ?? item?.Birthdate ?? item?.birth_date ?? item?.Birth_Date ?? item?.date_of_birth ?? item?.Date_Of_Birth ?? item?.dob ?? item?.DOB;
-        const candidateGender = item?.gender ?? item?.Gender;
-        return Boolean(candidateBirthdate || candidateGender);
-      });
-
-      if (prioritized) {
-        return prioritized;
-      }
-
-      return data[0];
-    }
-
-    return null;
   }, []);
 
-  const fetchPatientUserById = useCallback(async (userIdValue) => {
-    const targetUserId = Number(userIdValue || 0);
-    if (!targetUserId || !supabase) {
-      return null;
-    }
-
-    const { data, error } = await supabase
-      .from(USERS_TABLE)
-      .select(`
-        user_id,
-        email,
-        role,
-        user_details:user_details (
-          first_name,
-          middle_name,
-          last_name,
-          suffix,
-          birthdate,
-          gender
-        )
-      `)
-      .eq('user_id', targetUserId)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data) {
-      return null;
-    }
-
-    const rawDetails = pickPreferredUserDetails(data.user_details);
-
-    if (rawDetails) {
-      return {
-        ...data,
-        user_details: rawDetails,
-      };
-    }
-
-    const fallbackDetails = await fetchPatientUserDetailsByUserId(targetUserId);
-    if (!fallbackDetails) {
-      return data;
-    }
-
-    return {
-      ...data,
-      user_details: fallbackDetails,
-    };
-  }, [fetchPatientUserDetailsByUserId]);
-
-  const isPatientUserAlreadyLinked = useCallback(async (userIdValue) => {
-    const targetUserId = Number(userIdValue || 0);
-    if (!targetUserId || !supabase) {
-      return false;
-    }
-
-    const { data, error } = await supabase
-      .from(PATIENTS_TABLE)
-      .select('*');
-
-    if (error) {
-      throw error;
-    }
-
-    return Array.isArray(data)
-      && data.some((row) => extractPatientLinkedUserId(row) === targetUserId);
+  const generatePatientCode = useCallback(() => {
+    setForm((previous) => ({
+      ...previous,
+      patientCode: buildRandomPatientCode(),
+    }));
   }, []);
 
-  const handleSelectExistingUser = async (userIdValue) => {
-    const nextUserId = Number(userIdValue || 0);
-    if (!nextUserId) {
-      return;
-    }
-
-    if (linkedPatientUserIdSet.has(nextUserId)) {
-      setNotice({ kind: 'error', text: 'Selected patient-role user is already linked to another patient record.' });
-      return;
-    }
-
-    try {
-      setIsSelectingExistingUser(true);
-      const latestUser = await fetchPatientUserById(nextUserId);
-
-      if (!latestUser) {
-        setNotice({ kind: 'error', text: 'Selected user was not found. Please refresh and try again.' });
-        return;
-      }
-
-      if (!isPatientRole(latestUser.role)) {
-        setNotice({ kind: 'error', text: 'Selected user is no longer tagged as patient role.' });
-        return;
-      }
-
-      const alreadyLinkedInDb = await isPatientUserAlreadyLinked(latestUser.user_id);
-      if (alreadyLinkedInDb) {
-        setPatientLinkedUserIds((prev) => {
-          const unique = new Set(prev.map((item) => Number(item)));
-          unique.add(Number(latestUser.user_id));
-          return Array.from(unique);
-        });
-        setExistingUserResults((prev) => prev.filter((user) => Number(user.user_id) !== Number(latestUser.user_id)));
-        setNotice({ kind: 'error', text: 'Selected patient-role user is already linked to another patient record.' });
-        return;
-      }
-
-      if (linkedPatientUserIdSet.has(Number(latestUser.user_id))) {
-        setNotice({ kind: 'error', text: 'Selected patient-role user is already linked to another patient record.' });
-        return;
-      }
-
-      let details = pickPreferredUserDetails(latestUser.user_details);
-
-      const hasBirthdateOrGender = Boolean(
-        getFirstPresentValue(details, ['birthdate', 'Birthdate', 'birth_date', 'Birth_Date', 'date_of_birth', 'Date_Of_Birth', 'dob', 'DOB'])
-        || getFirstPresentValue(details, ['gender', 'Gender']),
-      );
-
-      if (!details || !hasBirthdateOrGender) {
-        const fallbackDetails = await fetchPatientUserDetailsByUserId(latestUser.user_id);
-        if (fallbackDetails) {
-          details = fallbackDetails;
-        }
-      }
-
-      const detailFirstName = details?.first_name ?? details?.First_Name ?? '';
-      const detailMiddleName = details?.middle_name ?? details?.Middle_Name ?? details?.Middle_name ?? '';
-      const detailLastName = details?.last_name ?? details?.Last_Name ?? '';
-      const detailSuffix = details?.suffix ?? details?.Suffix ?? '';
-      const detailBirthdate = details?.birthdate
-        ?? details?.Birthdate
-        ?? details?.birth_date
-        ?? details?.Birth_Date
-        ?? details?.date_of_birth
-        ?? details?.Date_Of_Birth
-        ?? details?.dob
-        ?? details?.DOB
-        ?? '';
-      const detailGender = details?.gender ?? details?.Gender ?? '';
-      const computedAge = computeAgeFromBirthdate(detailBirthdate);
-      const normalizedGender = normalizePatientGender(detailGender);
-
-      setForm((prev) => ({
-        ...prev,
-        userId: String(latestUser.user_id),
-        firstName: detailFirstName,
-        middleName: detailMiddleName,
-        lastName: detailLastName,
-        suffix: detailSuffix,
-        age: computedAge !== '' ? String(computedAge) : '',
-        gender: normalizedGender,
-      }));
-
-      setPatientUsers((prev) => {
-        const next = [...prev.filter((item) => Number(item.user_id) !== Number(latestUser.user_id)), latestUser];
-        return next.sort((a, b) => getPatientUserLabel(a).localeCompare(getPatientUserLabel(b), 'en', { sensitivity: 'base' }));
-      });
-
-      setExistingUserSearchTerm(getPatientUserLabel(latestUser));
-      setNotice({ kind: '', text: '' });
-    } catch (error) {
-      setNotice({ kind: 'error', text: error.message || 'Unable to fetch selected patient-role account details.' });
-    } finally {
-      setIsSelectingExistingUser(false);
-    }
-  };
-
-  const handleClearSelectedExistingUser = () => {
-    resetForm();
-    setExistingUserResults([]);
-    setExistingUserHasSearched(false);
-    setNotice({ kind: '', text: '' });
-  };
-
-  const generatePatientCode = () => {
-    const randomPart = Math.floor(1000 + Math.random() * 9000);
-    const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    setForm((prev) => ({ ...prev, patientCode: `PT-${datePart}-${randomPart}` }));
-  };
-
-  const uploadAsset = async (file, subFolder) => {
+  const uploadAsset = useCallback(async (file, subFolder) => {
     if (!file || !supabase) {
       return '';
     }
@@ -980,9 +633,9 @@ export default function ManagePatientsPage({ userProfile }) {
     }
 
     return path;
-  };
+  }, []);
 
-  const cleanupUploadedAssets = async (paths) => {
+  const cleanupUploadedAssets = useCallback(async (paths) => {
     if (!supabase || !Array.isArray(paths) || paths.length === 0) {
       return;
     }
@@ -990,9 +643,222 @@ export default function ManagePatientsPage({ userProfile }) {
     try {
       await supabase.storage.from(PATIENT_ASSETS_BUCKET).remove(paths);
     } catch {
-      // Ignore cleanup failures so we can still show the main insert error.
+      // Ignore cleanup failures so main workflow error is still shown.
     }
-  };
+  }, []);
+
+  const resolveUniquePatientCode = useCallback(async (manualInputValue) => {
+    const manualCode = normalizePatientCodeInput(manualInputValue);
+
+    if (manualCode && manualCode !== 'PT') {
+      if (!isValidPatientCode(manualCode)) {
+        throw new Error('Patient code must follow PT plus 6 digits (example: PT123456).');
+      }
+
+      const { data: duplicateRow, error: duplicateError } = await supabase
+        .from(PATIENTS_TABLE)
+        .select('Patient_ID')
+        .eq('Patient_Code', manualCode)
+        .maybeSingle();
+
+      if (duplicateError) throw duplicateError;
+
+      if (duplicateRow) {
+        throw new Error('Patient code already exists. Generate a new code and try again.');
+      }
+
+      return manualCode;
+    }
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const candidate = buildRandomPatientCode();
+
+      const { data: duplicateRow, error: duplicateError } = await supabase
+        .from(PATIENTS_TABLE)
+        .select('Patient_ID')
+        .eq('Patient_Code', candidate)
+        .maybeSingle();
+
+      if (duplicateError) throw duplicateError;
+
+      if (!duplicateRow) {
+        return candidate;
+      }
+    }
+
+    throw new Error('Unable to generate unique patient code right now. Please try again.');
+  }, []);
+
+  const signupPatientAuthAccount = useCallback(async ({
+    email,
+    temporaryPassword,
+    patientCode,
+    firstName,
+    lastName,
+  }) => {
+    if (!signupClient) {
+      throw new Error('Signup client is not configured.');
+    }
+
+    const emailRedirectTo = typeof window !== 'undefined' ? `${window.location.origin}/` : undefined;
+
+    const { data, error } = await signupClient.auth.signUp({
+      email,
+      password: temporaryPassword,
+      options: {
+        emailRedirectTo,
+        data: {
+          role: 'Patient',
+          patient_code: patientCode,
+          temporary_password: temporaryPassword,
+          first_name: firstName,
+          last_name: lastName,
+        },
+      },
+    });
+
+    if (error) {
+      throw new Error(mapAuthSignupError(error.message));
+    }
+
+    return data?.user?.id || null;
+  }, [signupClient]);
+
+  const resolveOrCreatePublicUser = useCallback(async ({ email, authUserId }) => {
+    let publicUserRow = null;
+
+    if (authUserId) {
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select('user_id,email,role,auth_user_id')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle();
+
+      if (error) throw error;
+      publicUserRow = data || null;
+    }
+
+    if (!publicUserRow) {
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .select('user_id,email,role,auth_user_id')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (error) throw error;
+      publicUserRow = data || null;
+    }
+
+    if (!publicUserRow) {
+      const { data, error } = await supabase
+        .from(USERS_TABLE)
+        .insert({
+          auth_user_id: authUserId,
+          email,
+          role: 'Patient',
+          is_active: true,
+        })
+        .select('user_id,email,role,auth_user_id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data?.user_id) {
+        throw new Error('Unable to create users record for this patient account.');
+      }
+
+      return data;
+    }
+
+    const updatePayload = {};
+    if (!publicUserRow.auth_user_id && authUserId) {
+      updatePayload.auth_user_id = authUserId;
+    }
+
+    if (normalizeText(publicUserRow.role) !== 'patient') {
+      updatePayload.role = 'Patient';
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return publicUserRow;
+    }
+
+    const { data: updatedRow, error: updateError } = await supabase
+      .from(USERS_TABLE)
+      .update(updatePayload)
+      .eq('user_id', publicUserRow.user_id)
+      .select('user_id,email,role,auth_user_id')
+      .maybeSingle();
+
+    if (updateError) throw updateError;
+
+    return updatedRow || {
+      ...publicUserRow,
+      ...updatePayload,
+    };
+  }, []);
+
+  const upsertPublicUserDetails = useCallback(async ({
+    userId,
+    firstName,
+    middleName,
+    lastName,
+    suffix,
+    birthdate,
+    gender,
+  }) => {
+    const payload = {
+      first_name: firstName,
+      middle_name: middleName || null,
+      last_name: lastName,
+      suffix: suffix || null,
+      birthdate,
+      gender,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existingDetailsRows, error: findError } = await supabase
+      .from(USER_DETAILS_TABLE)
+      .select('user_details_id')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (findError) throw findError;
+
+    const existingDetails = Array.isArray(existingDetailsRows) && existingDetailsRows.length > 0
+      ? existingDetailsRows[0]
+      : null;
+
+    if (!existingDetails) {
+      const { error: insertError } = await supabase
+        .from(USER_DETAILS_TABLE)
+        .insert({
+          user_id: userId,
+          ...payload,
+        });
+
+      if (insertError) throw insertError;
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from(USER_DETAILS_TABLE)
+      .update(payload)
+      .eq('user_details_id', existingDetails.user_details_id);
+
+    if (updateError) throw updateError;
+  }, []);
+
+  const isUserAlreadyLinkedAsPatient = useCallback(async (userId) => {
+    const { data, error } = await supabase
+      .from(PATIENTS_TABLE)
+      .select('Patient_ID')
+      .eq('User_ID', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return Boolean(data?.Patient_ID);
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -1013,42 +879,79 @@ export default function ManagePatientsPage({ userProfile }) {
       return;
     }
 
-    if (!String(form.patientCode).trim()) {
-      setNotice({ kind: 'error', text: 'Patient code is required.' });
+    const normalizedEmail = String(form.email || '').trim().toLowerCase();
+    const normalizedFirstName = String(form.firstName || '').trim();
+    const normalizedMiddleName = String(form.middleName || '').trim();
+    const normalizedLastName = String(form.lastName || '').trim();
+    const normalizedSuffix = String(form.suffix || '').trim();
+    const normalizedBirthdate = String(form.birthdate || '').trim();
+    const normalizedGender = normalizePatientGender(form.gender);
+
+    if (!normalizedEmail) {
+      setNotice({ kind: 'error', text: 'Patient email is required for confirm-signup.' });
       return;
     }
 
-    if (!String(form.firstName).trim() || !String(form.lastName).trim()) {
-      setNotice({ kind: 'error', text: 'Patient first name and last name are required.' });
+    if (!normalizedFirstName || !normalizedLastName) {
+      setNotice({ kind: 'error', text: 'First name and last name are required.' });
       return;
     }
 
-    const selectedUserId = Number(form.userId || 0);
-    if (selectedUserId) {
-      try {
-        const linkedInDb = linkedPatientUserIdSet.has(selectedUserId)
-          || await isPatientUserAlreadyLinked(selectedUserId);
+    if (!normalizedBirthdate) {
+      setNotice({ kind: 'error', text: 'Birthdate is required to compute age.' });
+      return;
+    }
 
-        if (linkedInDb) {
-          setPatientLinkedUserIds((prev) => {
-            const unique = new Set(prev.map((item) => Number(item)));
-            unique.add(selectedUserId);
-            return Array.from(unique);
-          });
-          setNotice({ kind: 'error', text: 'Selected patient-role user is already linked to another patient record.' });
-          return;
-        }
-      } catch (error) {
-        setNotice({ kind: 'error', text: error.message || 'Unable to validate selected patient-role user link.' });
-        return;
-      }
+    if (!normalizedGender) {
+      setNotice({ kind: 'error', text: 'Gender is required.' });
+      return;
     }
 
     const uploadedPaths = [];
+    let authAccountCreated = false;
 
     try {
       setIsSaving(true);
       setNotice({ kind: '', text: '' });
+      setCreatedCredentials(null);
+
+      const patientCode = await resolveUniquePatientCode(form.patientCode);
+      const temporaryPassword = generateTemporaryPassword();
+
+      const authUserId = await signupPatientAuthAccount({
+        email: normalizedEmail,
+        temporaryPassword,
+        patientCode,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+      });
+
+      authAccountCreated = Boolean(authUserId);
+
+      const publicUserRow = await resolveOrCreatePublicUser({
+        email: normalizedEmail,
+        authUserId,
+      });
+
+      const publicUserId = Number(publicUserRow?.user_id || 0);
+      if (!publicUserId) {
+        throw new Error('Unable to resolve newly created users record.');
+      }
+
+      const alreadyLinked = await isUserAlreadyLinkedAsPatient(publicUserId);
+      if (alreadyLinked) {
+        throw new Error('This user is already linked to another patient record.');
+      }
+
+      await upsertPublicUserDetails({
+        userId: publicUserId,
+        firstName: normalizedFirstName,
+        middleName: normalizedMiddleName,
+        lastName: normalizedLastName,
+        suffix: normalizedSuffix,
+        birthdate: normalizedBirthdate,
+        gender: normalizedGender,
+      });
 
       const patientPicturePath = patientPictureFile
         ? await uploadAsset(patientPictureFile, 'patient-picture')
@@ -1066,42 +969,58 @@ export default function ManagePatientsPage({ userProfile }) {
         uploadedPaths.push(medicalDocumentPath);
       }
 
-      const payload = {
-        User_ID: selectedUserId || null,
+      const patientPayload = {
+        User_ID: publicUserId,
         Hospital_ID: Number(hospitalId),
-        Patient_Code: String(form.patientCode || '').trim(),
-        First_Name: String(form.firstName || '').trim(),
-        Middle_Name: String(form.middleName || '').trim() || null,
-        Last_Name: String(form.lastName || '').trim(),
-        Suffix: String(form.suffix || '').trim() || null,
-        Age: form.age ? Number(form.age) : null,
-        Gender: String(form.gender || '').trim() || null,
+        Patient_Code: patientCode,
+        Date_of_Diagnosis: String(form.dateOfDiagnosis || '').trim() || null,
+        Guardian: String(form.guardian || '').trim() || null,
+        Guardian_Contact_Number: String(form.guardianContactNumber || '').trim() || null,
+        Guardian_Relationship: String(form.guardianRelationship || '').trim() || null,
         Medical_Condition: String(form.medicalCondition || '').trim() || null,
         Patient_Picture: patientPicturePath || null,
         Medical_Document: medicalDocumentPath || null,
       };
 
-      const { error } = await supabase
+      const { error: patientInsertError } = await supabase
         .from(PATIENTS_TABLE)
-        .insert(payload);
+        .insert(patientPayload);
 
-      if (error) throw error;
+      if (patientInsertError) {
+        throw new Error(mapPatientInsertError(patientInsertError.message));
+      }
+
+      setCreatedCredentials({
+        email: normalizedEmail,
+        patientCode,
+        temporaryPassword,
+      });
 
       resetForm();
-      setNotice({ kind: 'success', text: 'Patient record added successfully.' });
+      setNotice({
+        kind: 'success',
+        text: 'Patient account and patient record were created. Confirm-signup email was sent with PT code and temporary password.',
+      });
+
       await fetchPatients();
-      await fetchPatientUsers();
-      await fetchPatientLinkedUserIds();
     } catch (error) {
       await cleanupUploadedAssets(uploadedPaths);
-      setNotice({ kind: 'error', text: mapPatientInsertError(error.message) });
+
+      const message = String(error?.message || 'Unable to create patient account and record.');
+      const fallback = mapPatientInsertError(message);
+      const suffix = authAccountCreated
+        ? ' Auth account may already exist for this email. Check users and auth records before retrying.'
+        : '';
+
+      setNotice({ kind: 'error', text: `${fallback}${suffix}`.trim() });
     } finally {
       setIsSaving(false);
     }
   };
 
   const refreshPageData = async () => {
-    await Promise.all([resolveAssignedHospital(), fetchPatientUsers(), fetchPatients(), fetchPatientLinkedUserIds()]);
+    await resolveAssignedHospital();
+    await fetchPatients();
   };
 
   return (
@@ -1109,15 +1028,15 @@ export default function ManagePatientsPage({ userProfile }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Manage Patients</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Add patient records for your assigned hospital and optionally link existing patient-role user accounts.
+          <p className="mt-1 text-sm text-gray-600">
+            Create patient account, user details, and patient record in one flow with confirm-signup email delivery.
           </p>
         </div>
 
         <button
           type="button"
           onClick={refreshPageData}
-          disabled={isResolvingHospital || isLoadingPatients || isLoadingPatientUsers || isSaving}
+          disabled={isResolvingHospital || isLoadingPatients || isSaving}
           className="inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
           style={{
             borderColor: `${theme.primaryColor}33`,
@@ -1133,17 +1052,19 @@ export default function ManagePatientsPage({ userProfile }) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-gray-900">H-Representative Assignment</h2>
-            <p className="text-xs text-gray-500 mt-1">Hospital_ID is auto-filled from Hospital_Staff based on your H-Representative account.</p>
+            <p className="mt-1 text-xs text-gray-500">Hospital assignment is automatically resolved from Hospital_Representative.</p>
           </div>
           <div className="text-xs text-gray-600">
             {isResolvingHospital ? (
-              <span className="inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Resolving hospital...</span>
+              <span className="inline-flex items-center gap-1">
+                <Loader2 size={13} className="animate-spin" /> Resolving hospital...
+              </span>
             ) : hospitalId ? (
               <span>
-                H-Representative: <span className="font-semibold text-gray-800">{hospitalName || `H-Representative #${hospitalId}`}</span> (ID: {hospitalId})
+                Hospital: <span className="font-semibold text-gray-800">{hospitalName || `Hospital #${hospitalId}`}</span> (ID: {hospitalId})
               </span>
             ) : (
-              <span className="text-red-700 font-medium">No hospital assignment found</span>
+              <span className="font-medium text-red-700">No hospital assignment found</span>
             )}
           </div>
         </div>
@@ -1151,7 +1072,7 @@ export default function ManagePatientsPage({ userProfile }) {
 
       {notice.text && (
         <div
-          className={`rounded-lg border px-4 py-3 text-sm font-medium flex items-center gap-2 ${
+          className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${
             notice.kind === 'error'
               ? 'border-red-200 bg-red-50 text-red-800'
               : 'border-emerald-200 bg-emerald-50 text-emerald-900'
@@ -1162,113 +1083,97 @@ export default function ManagePatientsPage({ userProfile }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+      {createdCredentials && (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <h3 className="text-sm font-semibold text-emerald-900">Latest Account Credentials (Shown Once)</h3>
+          <p className="mt-1 text-xs text-emerald-800">Share securely with the patient if needed. The same details are included in confirm-signup email metadata template.</p>
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-emerald-900 md:grid-cols-3">
+            <p><span className="font-semibold">Email:</span> {createdCredentials.email}</p>
+            <p><span className="font-semibold">Patient Code:</span> {createdCredentials.patientCode}</p>
+            <p><span className="font-semibold">Temporary Password:</span> {createdCredentials.temporaryPassword}</p>
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
         <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Existing Patients</h2>
-              <p className="text-xs text-gray-500 mt-1">Search current records first to avoid duplicate entries.</p>
+              <p className="mt-1 text-xs text-gray-500">Showing full name, age, and gender from users and user_details.</p>
             </div>
-            <p className="text-xs text-gray-500">Showing {filteredPatients.length} of {patients.length}</p>
+            <p className="text-xs text-gray-500">Showing {filteredPatients.length} of {enrichedPatients.length}</p>
           </div>
 
-          <div className="mb-4 relative">
+          <div className="relative mb-4">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={patientSearchTerm}
               onChange={(event) => setPatientSearchTerm(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm bg-white focus:ring-2 outline-none"
+              className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2"
               style={{ '--tw-ring-color': theme.primaryColor }}
-              placeholder="Search by code, name, condition, gender, or linked user"
+              placeholder="Search by name, age, gender, medical condition, or PT code"
             />
           </div>
 
-          <div className="mb-4 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-700">Total: {patients.length}</span>
-            <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-700">Linked users: {linkedPatientsCount}</span>
-            <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-700">Unlinked: {Math.max(patients.length - linkedPatientsCount, 0)}</span>
-          </div>
-
           {isLoadingPatients ? (
-            <div className="py-10 text-gray-700 flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 py-10 text-gray-700">
               <Loader2 className="animate-spin" size={18} /> Loading patients...
-            </div>
-          ) : patients.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
-              No patient records yet for this hospital.
             </div>
           ) : filteredPatients.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
-              No patients matched your search.
+              No patients matched your current filter.
             </div>
           ) : (
             <div className="max-h-[650px] overflow-auto rounded-lg border border-gray-200">
               <table className="min-w-full text-sm">
-                <thead className="text-sm sticky top-0 z-[1]" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryTextColor || '#111827' }}>
+                <thead className="sticky top-0 z-[1] text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryTextColor || '#111827' }}>
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Code</th>
-                    <th className="px-4 py-3 text-left font-semibold">Patient Name</th>
-                    <th className="px-4 py-3 text-left font-semibold">Linked User</th>
-                    <th className="px-4 py-3 text-left font-semibold">Age/Gender</th>
+                    <th className="px-4 py-3 text-left font-semibold">Patient Full Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Age</th>
+                    <th className="px-4 py-3 text-left font-semibold">Gender</th>
                     <th className="px-4 py-3 text-left font-semibold">Medical Condition</th>
                     <th className="px-4 py-3 text-left font-semibold">Assets</th>
                     <th className="px-4 py-3 text-left font-semibold">Created</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPatients.map((patient) => {
-                    const linkedUser = patientUsersById.get(Number(patient.User_ID));
-                    const pictureUrl = resolveAssetUrl(patient.Patient_Picture);
-                    const documentUrl = resolveAssetUrl(patient.Medical_Document);
-
-                    return (
-                      <tr key={patient.Patient_ID} className="border-t border-gray-200 align-top">
-                        <td className="px-4 py-3 font-semibold text-gray-800">{patient.Patient_Code || `Patient #${patient.Patient_ID}`}</td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {[patient.First_Name, patient.Middle_Name, patient.Last_Name, patient.Suffix]
-                            .filter(Boolean)
-                            .join(' ') || 'N/A'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {patient.User_ID
-                            ? (linkedUser ? getPatientUserLabel(linkedUser) : `User #${patient.User_ID}`)
-                            : 'Not linked'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {patient.Age || 'N/A'} / {patient.Gender || 'N/A'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700 max-w-xs break-words">{patient.Medical_Condition || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">
-                          <div className="flex flex-col gap-1">
-                            {patient.Patient_Picture ? (
-                              pictureUrl ? (
-                                <a href={pictureUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
-                                  View Picture
-                                </a>
-                              ) : (
-                                <span className="text-xs text-gray-500 break-all">{patient.Patient_Picture}</span>
-                              )
+                  {filteredPatients.map((patient) => (
+                    <tr key={patient.Patient_ID} className="border-t border-gray-200 align-top">
+                      <td className="px-4 py-3 text-gray-800">{patient.fullName}</td>
+                      <td className="px-4 py-3 text-gray-700">{patient.age}</td>
+                      <td className="px-4 py-3 text-gray-700">{patient.gender}</td>
+                      <td className="max-w-xs break-words px-4 py-3 text-gray-700">{patient.Medical_Condition || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">
+                        <div className="flex flex-col gap-1">
+                          {patient.Patient_Picture ? (
+                            patient.pictureUrl ? (
+                              <a href={patient.pictureUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
+                                View Picture
+                              </a>
                             ) : (
-                              <span className="text-xs text-gray-400">No picture</span>
-                            )}
+                              <span className="break-all text-xs text-gray-500">{patient.Patient_Picture}</span>
+                            )
+                          ) : (
+                            <span className="text-xs text-gray-400">No picture</span>
+                          )}
 
-                            {patient.Medical_Document ? (
-                              documentUrl ? (
-                                <a href={documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
-                                  View Document
-                                </a>
-                              ) : (
-                                <span className="text-xs text-gray-500 break-all">{patient.Medical_Document}</span>
-                              )
+                          {patient.Medical_Document ? (
+                            patient.documentUrl ? (
+                              <a href={patient.documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
+                                View Document
+                              </a>
                             ) : (
-                              <span className="text-xs text-gray-400">No document</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{formatDateTime(patient.Created_At)}</td>
-                      </tr>
-                    );
-                  })}
+                              <span className="break-all text-xs text-gray-500">{patient.Medical_Document}</span>
+                            )
+                          ) : (
+                            <span className="text-xs text-gray-400">No document</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{formatDateTime(patient.Created_At)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1277,92 +1182,43 @@ export default function ManagePatientsPage({ userProfile }) {
 
         <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Enter New Patient</h2>
-            <p className="text-xs text-gray-500 mt-1">Fill required fields first: Patient Code, First Name, and Last Name.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Create Patient Account And Record</h2>
+            <p className="mt-1 text-xs text-gray-500">This will create auth signup, users, user_details, and patients records in one submit.</p>
           </div>
 
           <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
             <p className="text-xs font-semibold text-gray-800">Quick Guide</p>
-            <p className="mt-1 text-xs text-gray-600">1) Optionally link an existing patient account. 2) Fill identity and medical details. 3) Attach picture/document then click Add Patient.</p>
+            <p className="mt-1 text-xs text-gray-600">1) Enter email and profile details. 2) Confirm PT code format (PT + 6 digits). 3) Submit to send confirm-signup email with PT code and temporary password.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4" style={{ '--tw-ring-color': theme.primaryColor }}>
             <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Identity</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Account Setup</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Existing Patient User (optional)</label>
-                  <div className="relative">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      value={existingUserSearchTerm}
-                      onChange={(event) => {
-                        setExistingUserSearchTerm(event.target.value);
-                        if (!event.target.value.trim() && form.userId) {
-                          handleClearSelectedExistingUser();
-                        }
-                      }}
-                      className="w-full rounded-lg border border-gray-300 pl-8 pr-3 py-2 bg-white focus:ring-2 outline-none"
-                      placeholder="Search patient-role user by name or email"
-                    />
-                  </div>
-
-                  <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-gray-200 bg-white">
-                    {!existingUserSearchTerm.trim() ? (
-                      <p className="px-3 py-2 text-xs text-gray-500">Type to search existing patient-role accounts.</p>
-                    ) : isSearchingExistingUsers || isSelectingExistingUser ? (
-                      <p className="px-3 py-2 text-xs text-gray-500 inline-flex items-center gap-1.5">
-                        <Loader2 size={13} className="animate-spin" /> Loading results...
-                      </p>
-                    ) : existingUserHasSearched && existingUserResults.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-gray-500">No matching available patient-role users.</p>
-                    ) : (
-                      existingUserResults.map((user) => (
-                        <label key={user.user_id} className="flex items-center gap-3 p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="existingPatientUser"
-                            checked={Number(form.userId) === Number(user.user_id)}
-                            onChange={() => handleSelectExistingUser(user.user_id)}
-                            className="text-blue-600"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-gray-900 break-words">{getPatientUserName(user)}</p>
-                            <p className="text-xs text-gray-500 break-all">{user.email || 'No email'}</p>
-                            <p className="mt-0.5 text-[11px] text-gray-500">Current role: {formatRoleLabel(user.role)}</p>
-                            <p className="mt-1 text-[11px] font-semibold text-emerald-700">Available to link</p>
-                          </div>
-                        </label>
-                      ))
-                    )}
-                  </div>
-
-                  {form.userId && (
-                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                      <p className="text-xs font-medium text-emerald-900 break-words">
-                        Selected: {selectedExistingUser ? getPatientUserLabel(selectedExistingUser) : `User #${form.userId}`}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleClearSelectedExistingUser}
-                        className="shrink-0 rounded border border-emerald-300 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  )}
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Email (required)</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={form.email}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="patient@example.com"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Patient Code</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Code (PT + 6 digits)</label>
                   <div className="flex gap-2">
                     <input
                       name="patientCode"
                       value={form.patientCode}
                       onChange={handleInputChange}
+                      maxLength={8}
                       required
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                      placeholder="e.g., PT-250404-4821"
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 uppercase outline-none focus:ring-2"
+                      placeholder="PT123456"
                     />
                     <button
                       type="button"
@@ -1372,102 +1228,158 @@ export default function ManagePatientsPage({ userProfile }) {
                       Auto
                     </button>
                   </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input
-                    name="firstName"
-                    value={form.firstName}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
-                  <input
-                    name="middleName"
-                    value={form.middleName}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input
-                    name="lastName"
-                    value={form.lastName}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Suffix</label>
-                  <input
-                    name="suffix"
-                    value={form.suffix}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
-                    placeholder="e.g., Jr., III"
-                  />
+                  <p className="mt-1 text-[11px] text-gray-500">Temporary password is generated automatically during save.</p>
                 </div>
               </div>
             </div>
 
             <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Clinical Details</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Identity Details</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">First Name (required)</label>
                   <input
-                    name="age"
-                    value={form.age}
+                    name="firstName"
+                    value={form.firstName}
                     onChange={handleInputChange}
-                    type="number"
-                    min="0"
-                    max="130"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="First name"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Middle Name</label>
+                  <input
+                    name="middleName"
+                    value={form.middleName}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="Middle name"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Last Name (required)</label>
+                  <input
+                    name="lastName"
+                    value={form.lastName}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="Last name"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Suffix</label>
+                  <input
+                    name="suffix"
+                    value={form.suffix}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="Jr, Sr, III"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Birthdate (required)</label>
+                  <input
+                    type="date"
+                    name="birthdate"
+                    value={form.birthdate}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Gender (required)</label>
                   <select
                     name="gender"
                     value={form.gender}
                     onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
                   >
                     <option value="">Select gender</option>
-                    <option value="Female">Female</option>
-                    <option value="Male">Male</option>
-                    <option value="Other">Other</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
+                    {GENDER_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
                   </select>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                Computed Age Preview: <span className="font-semibold text-gray-900">{computedAgeFromForm || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-3">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Clinical Details</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Date of Diagnosis</label>
+                  <input
+                    name="dateOfDiagnosis"
+                    value={form.dateOfDiagnosis}
+                    onChange={handleInputChange}
+                    type="date"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian</label>
+                  <input
+                    name="guardian"
+                    value={form.guardian}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="Guardian full name"
+                  />
                 </div>
 
                 <div className="flex items-end">
                   <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                    H-Representative ID for save: <span className="font-semibold text-gray-800">{hospitalId || 'N/A'}</span>
+                    Hospital ID for save: <span className="font-semibold text-gray-800">{hospitalId || 'N/A'}</span>
                   </div>
                 </div>
               </div>
 
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Contact Number</label>
+                  <input
+                    name="guardianContactNumber"
+                    value={form.guardianContactNumber}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="e.g., +63 912 345 6789"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Relationship</label>
+                  <input
+                    name="guardianRelationship"
+                    value={form.guardianRelationship}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="e.g., Mother"
+                  />
+                </div>
+              </div>
+
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Medical Condition</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Medical Condition</label>
                 <textarea
                   name="medicalCondition"
                   value={form.medicalCondition}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white focus:ring-2 outline-none"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
                   placeholder="Medical condition summary"
                 />
               </div>
@@ -1475,10 +1387,10 @@ export default function ManagePatientsPage({ userProfile }) {
 
             <div className="rounded-lg border border-gray-200 p-3">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Attachments</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Patient Picture</label>
-                  <label className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 cursor-pointer hover:bg-gray-100">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Picture</label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
                     <UploadCloud size={15} className="text-gray-600" />
                     <span className="text-sm text-gray-700">Choose image</span>
                     <input
@@ -1488,7 +1400,7 @@ export default function ManagePatientsPage({ userProfile }) {
                       className="hidden"
                     />
                   </label>
-                  <p className="mt-1 text-xs text-gray-500 break-all">{patientPictureFile?.name || 'No file selected.'}</p>
+                  <p className="mt-1 break-all text-xs text-gray-500">{patientPictureFile?.name || 'No file selected.'}</p>
 
                   {patientPicturePreviewUrl && (
                     <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -1502,8 +1414,8 @@ export default function ManagePatientsPage({ userProfile }) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Medical Document</label>
-                  <label className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 cursor-pointer hover:bg-gray-100">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Medical Document</label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
                     <FileText size={15} className="text-gray-600" />
                     <span className="text-sm text-gray-700">Choose file (PDF/image)</span>
                     <input
@@ -1513,7 +1425,7 @@ export default function ManagePatientsPage({ userProfile }) {
                       className="hidden"
                     />
                   </label>
-                  <p className="mt-1 text-xs text-gray-500 break-all">{medicalDocumentFile?.name || 'No file selected.'}</p>
+                  <p className="mt-1 break-all text-xs text-gray-500">{medicalDocumentFile?.name || 'No file selected.'}</p>
 
                   {medicalDocumentPreviewUrl && isMedicalDocumentImage && (
                     <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -1567,13 +1479,12 @@ export default function ManagePatientsPage({ userProfile }) {
                 style={{ backgroundColor: theme.primaryColor }}
               >
                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                {isSaving ? 'Saving...' : 'Add Patient'}
+                {isSaving ? 'Saving...' : 'Create Patient Account'}
               </button>
             </div>
           </form>
         </section>
       </div>
-
     </div>
   );
 }

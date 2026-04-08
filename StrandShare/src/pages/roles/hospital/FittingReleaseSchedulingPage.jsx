@@ -4,11 +4,12 @@ import { CalendarDays, Info, Loader2, RefreshCw, Search, X } from 'lucide-react'
 import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
-const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
-const HOSPITALS_TABLE = 'H-Representatives';
+const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
+const HOSPITALS_TABLE = 'Hospitals';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
 const PATIENTS_TABLE = 'Patients';
+const USERS_TABLE = 'users';
 const RELEASE_SCHEDULES_TABLE = 'Release_Schedules';
 const WIG_REQUEST_PREVIEWS_BUCKET = 'wig_request_previews';
 
@@ -157,18 +158,35 @@ function formatDateTime(value) {
   });
 }
 
-function getPatientFullName(patientRow) {
-  if (!patientRow) {
-    return 'Unknown Patient';
+function getPatientUserName(userRow) {
+  if (!userRow) {
+    return '';
   }
 
-  const fullName = [patientRow.First_Name, patientRow.Middle_Name, patientRow.Last_Name, patientRow.Suffix]
+  const details = Array.isArray(userRow.user_details)
+    ? userRow.user_details[0]
+    : userRow.user_details;
+
+  const fullName = [details?.first_name, details?.middle_name, details?.last_name, details?.suffix]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return fullName || patientRow.Patient_Code || `Patient #${patientRow.Patient_ID}`;
+  return fullName || String(userRow.email || '').trim() || '';
+}
+
+function getPatientFullName(patientRow, linkedUserRow = null) {
+  if (!patientRow) {
+    return 'Unknown Patient';
+  }
+
+  const linkedUserName = getPatientUserName(linkedUserRow);
+  if (linkedUserName) {
+    return linkedUserName;
+  }
+
+  return patientRow.Patient_Code || (patientRow.User_ID ? `User #${patientRow.User_ID}` : `Patient #${patientRow.Patient_ID}`);
 }
 
 function parseSpecialNotes(value) {
@@ -225,7 +243,7 @@ function mapLoadError(rawMessage) {
   }
 
   if (lowerMessage.includes('release_schedules') && (lowerMessage.includes('relation') || lowerMessage.includes('does not exist'))) {
-    return 'Release schedule table is missing. Run supabase/017_release_scheduling_workflow.sql first.';
+    return 'Release scheduling data is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.';
   }
 
   return message;
@@ -235,15 +253,8 @@ function mapActionError(rawMessage) {
   const message = String(rawMessage || 'Unable to apply decision.');
   const lowerMessage = message.toLowerCase();
 
-  if (
-    (lowerMessage.includes('release_date') || lowerMessage.includes('release_requested'))
-    && lowerMessage.includes('column')
-  ) {
-    return 'Release columns are missing in Wig_Requests. Run supabase/017_release_scheduling_workflow.sql first.';
-  }
-
   if (lowerMessage.includes('release_schedules') && (lowerMessage.includes('relation') || lowerMessage.includes('does not exist'))) {
-    return 'Release schedule table is missing. Run supabase/017_release_scheduling_workflow.sql first.';
+    return 'Release scheduling data is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.';
   }
 
   if (lowerMessage.includes('row-level security')) {
@@ -368,7 +379,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
         supabase.from(WIG_REQUEST_SPECS_TABLE).select('*'),
         supabase
           .from(PATIENTS_TABLE)
-          .select('Patient_ID,Patient_Code,First_Name,Middle_Name,Last_Name,Suffix,Medical_Condition')
+          .select('Patient_ID,Patient_Code,Medical_Condition,User_ID')
           .eq('Hospital_ID', hospitalId),
       ]);
 
@@ -376,31 +387,74 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
       if (specsRes.error) throw specsRes.error;
       if (patientsRes.error) throw patientsRes.error;
 
+      const requestIds = Array.from(
+        new Set(
+          (requestsRes.data || [])
+            .map((row) => Number(row.Req_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      const linkedUserIds = Array.from(
+        new Set(
+          (patientsRes.data || [])
+            .map((row) => Number(row.User_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      let nextPatientUsersById = {};
+
+      if (linkedUserIds.length > 0) {
+        const { data: patientUsers, error: patientUsersError } = await supabase
+          .from(USERS_TABLE)
+          .select(`
+            user_id,
+            email,
+            user_details:user_details (
+              first_name,
+              middle_name,
+              last_name,
+              suffix
+            )
+          `)
+          .in('user_id', linkedUserIds);
+
+        if (patientUsersError) throw patientUsersError;
+
+        nextPatientUsersById = (patientUsers || []).reduce((accumulator, row) => {
+          accumulator[Number(row.user_id)] = row;
+          return accumulator;
+        }, {});
+      }
+
       let currentSchedules = [];
       let allSchedules = [];
       let releaseWorkflowAvailable = true;
 
-      const currentScheduleRes = await supabase
-        .from(RELEASE_SCHEDULES_TABLE)
-        .select('*')
-        .eq('Hospital_ID', hospitalId)
-        .eq('Is_Current', true);
+      if (requestIds.length > 0) {
+        const currentScheduleRes = await supabase
+          .from(RELEASE_SCHEDULES_TABLE)
+          .select('*')
+          .in('Req_ID', requestIds)
+          .eq('Is_Current', true);
 
-      if (currentScheduleRes.error) {
-        if (isMissingRelationError(currentScheduleRes.error.message)) {
-          releaseWorkflowAvailable = false;
+        if (currentScheduleRes.error) {
+          if (isMissingRelationError(currentScheduleRes.error.message)) {
+            releaseWorkflowAvailable = false;
+          } else {
+            throw currentScheduleRes.error;
+          }
         } else {
-          throw currentScheduleRes.error;
+          currentSchedules = currentScheduleRes.data || [];
         }
-      } else {
-        currentSchedules = currentScheduleRes.data || [];
       }
 
-      if (releaseWorkflowAvailable) {
+      if (releaseWorkflowAvailable && requestIds.length > 0) {
         const historyRes = await supabase
           .from(RELEASE_SCHEDULES_TABLE)
           .select('*')
-          .eq('Hospital_ID', hospitalId)
+          .in('Req_ID', requestIds)
           .order('Created_At', { ascending: false });
 
         if (historyRes.error) {
@@ -423,6 +477,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
       const mappedRows = (requestsRes.data || []).map((requestRow) => {
         const reqId = Number(requestRow.Req_ID || 0);
         const patient = patientById.get(Number(requestRow.Patient_ID || 0)) || null;
+        const linkedPatientUser = patient ? nextPatientUsersById[Number(patient.User_ID || 0)] : null;
         const spec = specByReqId.get(reqId) || {};
         const currentSchedule = currentScheduleByReqId.get(reqId) || null;
 
@@ -435,7 +490,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
           reqId,
           requestId: formatRequestCode(reqId),
           patientId: Number(requestRow.Patient_ID || 0),
-          patientName: getPatientFullName(patient),
+          patientName: getPatientFullName(patient, linkedPatientUser),
           patientCode: String(patient?.Patient_Code || '').trim(),
           medicalCondition: String(patient?.Medical_Condition || '').trim() || 'N/A',
           requestDate: requestRow.Request_Date,
@@ -444,7 +499,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
           statusKey: getCanonicalStatusKey(statusRaw),
           statusLabel: getStatusLabel(statusRaw),
           statusReason: String(requestRow.Status_Reason || '').trim(),
-          releaseDate: requestRow.Release_Date || currentSchedule?.Proposed_Release_Date || null,
+          releaseDate: currentSchedule?.Proposed_Release_Date || null,
           releaseWorkflowStatus: releaseWorkflowRaw,
           releaseWorkflowKey: normalizeReleaseWorkflowKey(releaseWorkflowRaw),
           releaseWorkflowLabel: getReleaseWorkflowLabel(releaseWorkflowRaw),
@@ -502,7 +557,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
           return {
             kind: 'warning',
-            text: 'Release scheduling is partially disabled. Run supabase/017_release_scheduling_workflow.sql to enable approvals and reschedules.',
+            text: 'Release scheduling is partially disabled. Ensure Release_Schedules exists and refresh Supabase schema cache.',
           };
         });
       }
@@ -1176,7 +1231,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
                     {!isReleaseWorkflowAvailable && (
                       <p className="text-xs text-red-700">
-                        Release workflow database objects are missing. Apply supabase/017_release_scheduling_workflow.sql.
+                        Release workflow data is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.
                       </p>
                     )}
                   </div>

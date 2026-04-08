@@ -10,7 +10,7 @@ const USERS_TABLE = 'users';
 const LEGACY_USERS_TABLE = 'Users';
 const USER_DETAILS_TABLE = 'user_details';
 const LEGACY_USER_DETAILS_TABLE = 'User_Details';
-const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
+const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
 
@@ -164,16 +164,36 @@ function formatRequestCode(reqId) {
   return `WR-${String(safeId).padStart(4, '0')}`;
 }
 
-function getPatientFullName(patient) {
+function getPatientFullName(patient, linkedDetails = null) {
   if (!patient) return 'Unknown Patient';
 
-  const fullName = [patient.First_Name, patient.Middle_Name, patient.Last_Name, patient.Suffix]
+  const legacyFullName = [patient.First_Name, patient.Middle_Name, patient.Last_Name, patient.Suffix]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return fullName || patient.Patient_Code || `Patient #${patient.Patient_ID}`;
+  if (legacyFullName) {
+    return legacyFullName;
+  }
+
+  const linkedFullName = [
+    getFirstPresentValue(linkedDetails, ['first_name', 'First_Name']),
+    getFirstPresentValue(linkedDetails, ['middle_name', 'Middle_Name', 'Middle_name']),
+    getFirstPresentValue(linkedDetails, ['last_name', 'Last_Name']),
+    getFirstPresentValue(linkedDetails, ['suffix', 'Suffix']),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (linkedFullName) {
+    return linkedFullName;
+  }
+
+  return patient.Patient_Code || (patient.User_ID ? `User #${patient.User_ID}` : `Patient #${patient.Patient_ID}`);
 }
 
 function isSameDay(timestampValue, dateValue = new Date()) {
@@ -592,11 +612,9 @@ export default function WigRequestPage({ userProfile }) {
     const linkedUser = linkedUserId ? usersById[linkedUserId] : null;
     const linkedUserDetails = linkedUserId ? userDetailsByUserId[linkedUserId] : null;
 
-    const patientAge = String(selectedPatient.Age || '').trim();
     const birthdate = getFirstPresentValue(linkedUserDetails, ['birthdate', 'Birthdate']);
-    const resolvedAge = patientAge || computeAgeFromBirthdate(birthdate);
+    const resolvedAge = computeAgeFromBirthdate(birthdate);
 
-    const patientGender = String(selectedPatient.Gender || '').trim();
     const detailsGender = String(getFirstPresentValue(linkedUserDetails, ['gender', 'Gender']) || '').trim();
 
     const patientPicturePath = String(selectedPatient.Patient_Picture || '').trim();
@@ -608,10 +626,10 @@ export default function WigRequestPage({ userProfile }) {
       || '';
 
     return {
-      fullName: getPatientFullName(selectedPatient),
+      fullName: getPatientFullName(selectedPatient, linkedUserDetails),
       patientCode: String(selectedPatient.Patient_Code || `Patient #${selectedPatient.Patient_ID}`).trim(),
       age: resolvedAge || 'N/A',
-      gender: patientGender || detailsGender || 'N/A',
+      gender: detailsGender || 'N/A',
       email: String(getFirstPresentValue(linkedUser, ['email', 'Email']) || '').trim() || 'N/A',
       contactNumber: String(getFirstPresentValue(linkedUserDetails, ['contact_number', 'Contact_Number']) || '').trim() || 'N/A',
       address: buildAddress(linkedUserDetails) || 'N/A',
@@ -624,15 +642,18 @@ export default function WigRequestPage({ userProfile }) {
     const query = normalizeSearchText(patientSearchTerm);
 
     const sortedPatients = [...patients].sort((a, b) => {
-      const aName = getPatientFullName(a);
-      const bName = getPatientFullName(b);
+      const aDetails = userDetailsByUserId[Number(a.User_ID || 0)] || null;
+      const bDetails = userDetailsByUserId[Number(b.User_ID || 0)] || null;
+      const aName = getPatientFullName(a, aDetails);
+      const bName = getPatientFullName(b, bDetails);
       return aName.localeCompare(bName, 'en', { sensitivity: 'base' });
     });
 
     const matchedPatients = !query
       ? sortedPatients
       : sortedPatients.filter((patient) => {
-        const fullName = getPatientFullName(patient);
+        const linkedDetails = userDetailsByUserId[Number(patient.User_ID || 0)] || null;
+        const fullName = getPatientFullName(patient, linkedDetails);
         const searchable = [fullName, patient.Patient_Code, patient.Medical_Condition]
           .map((value) => normalizeSearchText(value))
           .filter(Boolean)
@@ -646,8 +667,9 @@ export default function WigRequestPage({ userProfile }) {
     const seenKeys = new Set();
 
     matchedPatients.forEach((patient) => {
+      const linkedDetails = userDetailsByUserId[Number(patient.User_ID || 0)] || null;
       const dedupeKey = normalizeSearchText(
-        `${patient.Patient_Code || ''}|${getPatientFullName(patient)}|${patient.Medical_Condition || ''}`,
+        `${patient.Patient_Code || ''}|${getPatientFullName(patient, linkedDetails)}|${patient.Medical_Condition || ''}`,
       );
 
       if (seenKeys.has(dedupeKey)) {
@@ -659,17 +681,18 @@ export default function WigRequestPage({ userProfile }) {
     });
 
     return uniquePatients;
-  }, [patients, patientSearchTerm]);
+  }, [patients, patientSearchTerm, userDetailsByUserId]);
 
   const submittedRows = useMemo(() => {
     return wigRequests.map((requestRow) => {
       const reqId = Number(requestRow.Req_ID || 0);
       const patient = patientById.get(Number(requestRow.Patient_ID)) || null;
+      const linkedDetails = patient ? userDetailsByUserId[Number(patient.User_ID || 0)] : null;
 
       return {
         reqId,
         requestId: formatRequestCode(reqId),
-        patient: getPatientFullName(patient),
+        patient: getPatientFullName(patient, linkedDetails),
         medicalCondition: patient?.Medical_Condition || 'N/A',
         requestDate: requestRow.Request_Date,
         updatedAt: requestRow.Updated_At || requestRow.updated_at || requestRow.Request_Date,
@@ -681,7 +704,7 @@ export default function WigRequestPage({ userProfile }) {
         rawStatus: requestRow.Status || REQUEST_STATUS.pending,
       };
     });
-  }, [wigRequests, patientById]);
+  }, [wigRequests, patientById, userDetailsByUserId]);
 
   const statusFilteredSubmittedRows = useMemo(() => {
     if (submittedStatusFilter === 'all') {
@@ -884,12 +907,12 @@ export default function WigRequestPage({ userProfile }) {
         {
           tableName: USER_DETAILS_TABLE,
           idColumn: 'user_id',
-          select: 'user_id,birthdate,gender,contact_number,street,barangay,city,province,region,country,photo_path',
+          select: 'user_id,first_name,middle_name,last_name,suffix,birthdate,gender,contact_number,street,barangay,city,province,region,country,photo_path',
         },
         {
           tableName: LEGACY_USER_DETAILS_TABLE,
           idColumn: 'User_ID',
-          select: 'User_ID,Birthdate,Gender,Contact_Number,Street,Barangay,City,Province,Region,Country,Photo_Path',
+          select: 'User_ID,First_Name,Middle_name,Last_Name,Suffix,Birthdate,Gender,Contact_Number,Street,Barangay,City,Province,Region,Country,Photo_Path',
         },
       ];
 
@@ -996,7 +1019,7 @@ export default function WigRequestPage({ userProfile }) {
       medicalCondition: String(patient.Medical_Condition || ''),
     }));
 
-    setPatientSearchTerm(getPatientFullName(patient));
+    setPatientSearchTerm(getPatientFullName(patient, userDetailsByUserId[Number(patient.User_ID || 0)] || null));
     setPatientSearchOpen(false);
   };
 
@@ -1395,9 +1418,8 @@ export default function WigRequestPage({ userProfile }) {
                     ) : (
                       filteredPatientOptions.map((patient) => {
                         const isSelected = Number(form.patientId) === Number(patient.Patient_ID);
-                        const patientName = getPatientFullName(patient);
-
                         const linkedDetails = userDetailsByUserId[Number(patient.User_ID || 0)];
+                        const patientName = getPatientFullName(patient, linkedDetails);
                         const patientPicUrl = resolveStoragePublicUrl(PATIENT_ASSETS_BUCKET, patient.Patient_Picture)
                           || resolveStoragePublicUrl(PROFILE_PICTURES_BUCKET, getFirstPresentValue(linkedDetails, ['photo_path', 'Photo_Path']))
                           || '';

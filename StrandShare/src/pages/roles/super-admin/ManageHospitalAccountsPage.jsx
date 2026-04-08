@@ -19,8 +19,8 @@ import {
 import { useTheme } from '../../../context/ThemeContext';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
-const HOSPITALS_TABLE = 'H-Representatives';
-const HOSPITAL_STAFF_TABLE = 'Hospital_Staff';
+const HOSPITALS_TABLE = 'Hospitals';
+const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const USERS_TABLE = 'users';
 const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';

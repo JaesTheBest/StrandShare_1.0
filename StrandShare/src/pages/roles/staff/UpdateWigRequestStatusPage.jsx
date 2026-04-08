@@ -7,7 +7,8 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
 const PATIENTS_TABLE = 'Patients';
-const HOSPITALS_TABLE = 'H-Representatives';
+const USERS_TABLE = 'users';
+const HOSPITALS_TABLE = 'Hospitals';
 const RELEASE_SCHEDULES_TABLE = 'Release_Schedules';
 const WIG_REQUEST_PREVIEWS_BUCKET = 'wig_request_previews';
 
@@ -181,18 +182,35 @@ function statusClass(statusValue) {
   return 'bg-amber-100 text-amber-700';
 }
 
-function getPatientFullName(patientRow) {
-  if (!patientRow) {
-    return 'Unknown Patient';
+function getPatientUserName(userRow) {
+  if (!userRow) {
+    return '';
   }
 
-  const fullName = [patientRow.First_Name, patientRow.Middle_Name, patientRow.Last_Name, patientRow.Suffix]
+  const details = Array.isArray(userRow.user_details)
+    ? userRow.user_details[0]
+    : userRow.user_details;
+
+  const fullName = [details?.first_name, details?.middle_name, details?.last_name, details?.suffix]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return fullName || patientRow.Patient_Code || `Patient #${patientRow.Patient_ID}`;
+  return fullName || String(userRow.email || '').trim() || '';
+}
+
+function getPatientFullName(patientRow, linkedUserRow = null) {
+  if (!patientRow) {
+    return 'Unknown Patient';
+  }
+
+  const linkedUserName = getPatientUserName(linkedUserRow);
+  if (linkedUserName) {
+    return linkedUserName;
+  }
+
+  return patientRow.Patient_Code || (patientRow.User_ID ? `User #${patientRow.User_ID}` : `Patient #${patientRow.Patient_ID}`);
 }
 
 function formatRequestCode(reqIdValue) {
@@ -301,14 +319,7 @@ function mapActionError(rawMessage) {
   const lowerMessage = message.toLowerCase();
 
   if (lowerMessage.includes('release_schedules') && (lowerMessage.includes('relation') || lowerMessage.includes('does not exist'))) {
-    return 'Release schedule table is missing. Run supabase/017_release_scheduling_workflow.sql first.';
-  }
-
-  if (
-    (lowerMessage.includes('release_date') || lowerMessage.includes('release_requested'))
-    && lowerMessage.includes('column')
-  ) {
-    return 'Release columns are missing in Wig_Requests. Run supabase/017_release_scheduling_workflow.sql first.';
+    return 'Release scheduling data is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.';
   }
 
   if (lowerMessage.includes('row-level security')) {
@@ -417,7 +428,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
           .select('*')
           .order('Request_Date', { ascending: false }),
         supabase.from(WIG_REQUEST_SPECS_TABLE).select('*'),
-        supabase.from(PATIENTS_TABLE).select('Patient_ID,Hospital_ID,Patient_Code,First_Name,Middle_Name,Last_Name,Suffix,Medical_Condition'),
+        supabase.from(PATIENTS_TABLE).select('Patient_ID,Hospital_ID,Patient_Code,Medical_Condition,User_ID'),
         supabase.from(HOSPITALS_TABLE).select('Hospital_ID,Hospital_Name'),
       ]);
 
@@ -425,6 +436,39 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       if (specsRes.error) throw specsRes.error;
       if (patientsRes.error) throw patientsRes.error;
       if (hospitalsRes.error) throw hospitalsRes.error;
+
+      const linkedUserIds = Array.from(
+        new Set(
+          (patientsRes.data || [])
+            .map((row) => Number(row.User_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      let patientUsersById = {};
+
+      if (linkedUserIds.length > 0) {
+        const { data: patientUsers, error: patientUsersError } = await supabase
+          .from(USERS_TABLE)
+          .select(`
+            user_id,
+            email,
+            user_details:user_details (
+              first_name,
+              middle_name,
+              last_name,
+              suffix
+            )
+          `)
+          .in('user_id', linkedUserIds);
+
+        if (patientUsersError) throw patientUsersError;
+
+        patientUsersById = (patientUsers || []).reduce((accumulator, row) => {
+          accumulator[Number(row.user_id)] = row;
+          return accumulator;
+        }, {});
+      }
 
       let currentSchedules = [];
       let releaseWorkflowAvailable = true;
@@ -464,6 +508,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
         const hospital = hospitalById.get(hospitalId) || null;
         const spec = specByReqId.get(reqId) || {};
         const schedule = currentScheduleByReqId.get(reqId) || null;
+        const linkedPatientUser = patient ? patientUsersById[Number(patient.User_ID || 0)] : null;
 
         const statusRaw = requestRow.Status || REQUEST_STATUS.pending;
         const statusKey = getCanonicalStatusKey(statusRaw);
@@ -479,7 +524,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
           patientId,
           hospitalId,
           hospitalName: String(hospital?.Hospital_Name || `H-Representative #${hospitalId || 'N/A'}`),
-          patientName: getPatientFullName(patient),
+          patientName: getPatientFullName(patient, linkedPatientUser),
           patientCode: String(patient?.Patient_Code || ''),
           medicalCondition: String(patient?.Medical_Condition || requestRow.Medical_Condition || '').trim() || 'N/A',
           requestDate: requestRow.Request_Date,
@@ -495,7 +540,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
           specTexture: String(spec.Hair_Texture || '').trim() || 'N/A',
           specCapSize: String(spec.Cap_Size || '').trim() || 'N/A',
           specSpecialNote: parseSpecialNotes(spec.Special_Notes) || 'N/A',
-          releaseDate: requestRow.Release_Date || schedule?.Proposed_Release_Date || null,
+          releaseDate: schedule?.Proposed_Release_Date || null,
           releaseScheduleId: Number(schedule?.Release_Schedule_ID || 0) || null,
           releaseWorkflowStatus: releaseWorkflowRaw || '',
           releaseWorkflowKey: normalizeReleaseWorkflowKey(releaseWorkflowRaw),
@@ -523,7 +568,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
           return {
             kind: 'warning',
-            text: 'Release scheduling is partially disabled. Run supabase/017_release_scheduling_workflow.sql to enable schedule loop and hospital approvals.',
+            text: 'Release scheduling is partially disabled. Ensure Release_Schedules exists and refresh Supabase schema cache.',
           };
         });
       }
@@ -672,19 +717,43 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       throw clearCurrentError;
     }
 
-    const { error: insertScheduleError } = await supabase
-      .from(RELEASE_SCHEDULES_TABLE)
-      .insert({
-        Req_ID: requestRow.reqId,
-        Hospital_ID: requestRow.hospitalId,
-        Proposed_Release_Date: releaseDateIso,
-        Proposed_By: actorUserId,
-        Proposal_Note: note || null,
-        Hospital_Decision: 'Pending',
-        Is_Current: true,
-        Created_At: nowIso,
-        Updated_At: nowIso,
-      });
+    const schedulePayload = {
+      Req_ID: requestRow.reqId,
+      Proposed_Release_Date: releaseDateIso,
+      Proposed_By: actorUserId,
+      Proposal_Note: note || null,
+      Hospital_Decision: 'Pending',
+      Is_Current: true,
+      Created_At: nowIso,
+      Updated_At: nowIso,
+    };
+
+    let insertScheduleError = null;
+
+    {
+      const { error } = await supabase
+        .from(RELEASE_SCHEDULES_TABLE)
+        .insert(schedulePayload);
+
+      insertScheduleError = error;
+    }
+
+    if (insertScheduleError) {
+      const lowerInsertError = String(insertScheduleError.message || '').toLowerCase();
+      const requiresHospitalId = lowerInsertError.includes('hospital_id')
+        || (lowerInsertError.includes('not-null') && lowerInsertError.includes('null value'));
+
+      if (requiresHospitalId && Number(requestRow.hospitalId || 0) > 0) {
+        const { error: retryInsertError } = await supabase
+          .from(RELEASE_SCHEDULES_TABLE)
+          .insert({
+            ...schedulePayload,
+            Hospital_ID: requestRow.hospitalId,
+          });
+
+        insertScheduleError = retryInsertError;
+      }
+    }
 
     if (insertScheduleError) {
       throw insertScheduleError;
@@ -692,9 +761,6 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
     const releasePayload = {
       Status: REQUEST_STATUS.toBeRelease,
-      Release_Date: releaseDateIso,
-      Release_Requested_By: actorUserId,
-      Release_Requested_At: nowIso,
       Updated_At: nowIso,
       Status_Reason: null,
     };
@@ -739,7 +805,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
     if (actionRequiresReleaseDate(selectedAction) && !isReleaseWorkflowAvailable) {
       setNotice({
         kind: 'error',
-        text: 'Release scheduling is unavailable. Run supabase/017_release_scheduling_workflow.sql first.',
+        text: 'Release scheduling is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.',
       });
       return;
     }
@@ -1094,7 +1160,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
                         />
                         {!isReleaseWorkflowAvailable && (
                           <p className="mt-1 text-xs text-red-700">
-                            Release schedule database objects are missing. Apply supabase/017_release_scheduling_workflow.sql.
+                            Release scheduling data is unavailable. Ensure Release_Schedules exists and refresh Supabase schema cache.
                           </p>
                         )}
                       </div>
