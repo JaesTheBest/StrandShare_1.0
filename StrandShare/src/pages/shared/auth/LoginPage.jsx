@@ -48,6 +48,14 @@ function withAlpha(colorValue, alpha) {
   return input;
 }
 
+function normalizeRole(roleValue) {
+  return String(roleValue || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ');
+}
+
 export default function LoginPage({ authNotice, onClearNotice }) {
   const { theme, isThemeReady } = useTheme();
   const [mode, setMode] = useState('login');
@@ -126,8 +134,39 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     const now = new Date();
     const withinStart = !profile.access_start || new Date(profile.access_start) <= now;
     const withinEnd = !profile.access_end || new Date(profile.access_end) >= now;
+    const normalizedRole = normalizeRole(profile.role);
 
     if (profile.is_active === false) {
+      const isOrganizationRole =
+        normalizedRole === 'organization'
+        || normalizedRole === 'organizations'
+        || normalizedRole === 'partner'
+        || normalizedRole === 'partners';
+
+      if (isOrganizationRole) {
+        const { data: latestApplication, error: latestApplicationError } = await supabase
+          .from('Organization_Applications')
+          .select('Status')
+          .eq('User_ID', profile.user_id)
+          .order('Created_At', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!latestApplicationError && latestApplication?.Status) {
+          const applicationStatus = normalizeRole(latestApplication.Status);
+
+          if (applicationStatus === 'pending') {
+            throw new Error('Your organization application is pending Super Admin approval. You can log in once approved.');
+          }
+
+          if (applicationStatus === 'rejected') {
+            throw new Error('Your organization application was rejected. Please submit a new application.');
+          }
+        }
+
+        throw new Error('Your organization account is inactive until Super Admin approval is completed.');
+      }
+
       throw new Error('Your account is currently inactive. Please contact an administrator.');
     }
 

@@ -71,8 +71,13 @@ function resolveDisplayRole(roleValue) {
     return 'Super Admin';
   }
 
-  if (normalizedRole === 'partner' || normalizedRole === 'partners') {
-    return 'Partner';
+  if (
+    normalizedRole === 'organization'
+    || normalizedRole === 'organizations'
+    || normalizedRole === 'partner'
+    || normalizedRole === 'partners'
+  ) {
+    return 'Organization';
   }
 
   if (normalizedRole === 'staff') {

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   Building2,
+  ShieldCheck,
   FileText,
   ClipboardList,
   HardDrive,
@@ -12,6 +13,7 @@ import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
 import ManageUserAccountsPage from './ManageUserAccountsPage';
 import ManageHospitalAccountsPage from './ManageHospitalAccountsPage';
+import ManageOrganizationApplicationsPage from './ManageOrganizationApplicationsPage';
 import GenerateReportsPage from './GenerateReportsPage';
 import AuditTrailsPage from './AuditTrailsPage';
 import BackupPage from './BackupPage';
@@ -21,6 +23,7 @@ const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'manage-user-accounts', label: 'Manage User Accounts', icon: Users },
   { id: 'manage-hospital-accounts', label: 'Manage H-Representative Accounts', icon: Building2 },
+  { id: 'manage-organization-applications', label: 'Manage Organization Applications', icon: ShieldCheck },
   { id: 'generate-reports', label: 'Generate Reports', icon: FileText },
   { id: 'audit-trails', label: 'Audit Trails', icon: ClipboardList },
   { id: 'backup', label: 'Backup', icon: HardDrive },
@@ -31,6 +34,7 @@ const superAdminPageComponents = {
   dashboard: DashboardPage,
   'manage-user-accounts': ManageUserAccountsPage,
   'manage-hospital-accounts': ManageHospitalAccountsPage,
+  'manage-organization-applications': ManageOrganizationApplicationsPage,
   'generate-reports': GenerateReportsPage,
   'audit-trails': AuditTrailsPage,
   backup: BackupPage,

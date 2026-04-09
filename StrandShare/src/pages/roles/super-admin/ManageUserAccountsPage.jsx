@@ -21,7 +21,7 @@ import {
   isSupabaseConfigured,
 } from '../../../lib/supabaseClient';
 
-const DEFAULT_ROLES = ['Super Admin', 'H-Representative', 'Partner', 'Staff'];
+const DEFAULT_ROLES = ['Super Admin', 'H-Representative', 'Organization', 'Staff'];
 
 function toRoleLabel(roleValue) {
   const normalizedRole = String(roleValue || '')
@@ -44,8 +44,13 @@ function toRoleLabel(roleValue) {
     return 'Super Admin';
   }
 
-  if (normalizedRole === 'partner' || normalizedRole === 'partners') {
-    return 'Partner';
+  if (
+    normalizedRole === 'organization'
+    || normalizedRole === 'organizations'
+    || normalizedRole === 'partner'
+    || normalizedRole === 'partners'
+  ) {
+    return 'Organization';
   }
 
   if (normalizedRole === 'staff') {
@@ -845,7 +850,7 @@ export default function ManageUserAccountsPage() {
                   <select required name="role" value={formData.role} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white text-gray-900" style={{ '--tw-ring-color': theme.primaryColor }}>
                     <option value="Super Admin">Super Admin</option>
                     <option value="H-Representative">H-Representative</option>
-                    <option value="Partner">Partner</option>
+                    <option value="organization">Organization</option>
                     <option value="Staff">Staff</option>
                   </select>
                 </div>
@@ -954,7 +959,7 @@ export default function ManageUserAccountsPage() {
                   >
                     <option value="Super Admin">Super Admin</option>
                     <option value="H-Representative">H-Representative</option>
-                    <option value="Partner">Partner</option>
+                    <option value="organization">Organization</option>
                     <option value="Staff">Staff</option>
                   </select>
                 </div>

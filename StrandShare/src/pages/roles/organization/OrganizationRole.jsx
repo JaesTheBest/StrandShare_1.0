@@ -18,7 +18,7 @@ import GenerateCertificatePage from './GenerateCertificatePage';
 import GenerateReportPage from './GenerateReportPage';
 import SettingsPage from './SettingsPage';
 
-const partnerNavItems = [
+const organizationNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'submit-donations-request', label: 'Submit Donations Request', icon: Clipboard },
   { id: 'coordinate-donation-programs', label: 'Coordinate Donation Programs', icon: Users },
@@ -29,7 +29,7 @@ const partnerNavItems = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const partnerPageComponents = {
+const organizationPageComponents = {
   dashboard: DashboardPage,
   'submit-donations-request': SubmitDonationsRequestPage,
   'coordinate-donation-programs': CoordinateDonationProgramsPage,
@@ -40,13 +40,13 @@ const partnerPageComponents = {
   settings: SettingsPage,
 };
 
-export default function PartnerRole({ onSignOut, userProfile }) {
+export default function OrganizationRole({ onSignOut, userProfile }) {
   return (
     <RoleDashboardShell
       onSignOut={onSignOut}
       userProfile={userProfile}
-      navItems={partnerNavItems}
-      pageComponents={partnerPageComponents}
+      navItems={organizationNavItems}
+      pageComponents={organizationPageComponents}
       defaultPage="dashboard"
     />
   );

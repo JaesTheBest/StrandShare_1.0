@@ -17,7 +17,7 @@ export default function GenerateCertificatePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Generate Certificate</h1>
-        <p className="text-gray-600">Generate donation participation and acknowledgment certificates for donors and partner records.</p>
+        <p className="text-gray-600">Generate donation participation and acknowledgment certificates for donors and organization records.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -323,8 +323,8 @@ export default function ManagePatientsPage({ userProfile }) {
   const [isSaving, setIsSaving] = useState(false);
 
   const [notice, setNotice] = useState({ kind: '', text: '' });
+  const [successPopup, setSuccessPopup] = useState({ open: false, text: '' });
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
-  const [createdCredentials, setCreatedCredentials] = useState(null);
 
   const signupClient = useMemo(() => {
     if (!isSupabaseConfigured || !supabaseUrl || !supabaseAnonKey) {
@@ -700,7 +700,9 @@ export default function ManagePatientsPage({ userProfile }) {
       throw new Error('Signup client is not configured.');
     }
 
-    const emailRedirectTo = typeof window !== 'undefined' ? `${window.location.origin}/` : undefined;
+    const emailRedirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/confirmation-complete`
+      : undefined;
 
     const { data, error } = await signupClient.auth.signUp({
       email,
@@ -913,7 +915,6 @@ export default function ManagePatientsPage({ userProfile }) {
     try {
       setIsSaving(true);
       setNotice({ kind: '', text: '' });
-      setCreatedCredentials(null);
 
       const patientCode = await resolveUniquePatientCode(form.patientCode);
       const temporaryPassword = generateTemporaryPassword();
@@ -990,16 +991,11 @@ export default function ManagePatientsPage({ userProfile }) {
         throw new Error(mapPatientInsertError(patientInsertError.message));
       }
 
-      setCreatedCredentials({
-        email: normalizedEmail,
-        patientCode,
-        temporaryPassword,
-      });
-
       resetForm();
-      setNotice({
-        kind: 'success',
-        text: 'Patient account and patient record were created. Confirm-signup email was sent with PT code and temporary password.',
+      setNotice({ kind: '', text: '' });
+      setSuccessPopup({
+        open: true,
+        text: 'Task done. Confirmation email was sent.',
       });
 
       await fetchPatients();
@@ -1070,29 +1066,11 @@ export default function ManagePatientsPage({ userProfile }) {
         </div>
       </section>
 
-      {notice.text && (
-        <div
-          className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${
-            notice.kind === 'error'
-              ? 'border-red-200 bg-red-50 text-red-800'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-900'
-          }`}
-        >
-          {notice.kind === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+      {notice.kind === 'error' && notice.text && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+          <AlertTriangle size={16} />
           <span>{notice.text}</span>
         </div>
-      )}
-
-      {createdCredentials && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-          <h3 className="text-sm font-semibold text-emerald-900">Latest Account Credentials (Shown Once)</h3>
-          <p className="mt-1 text-xs text-emerald-800">Share securely with the patient if needed. The same details are included in confirm-signup email metadata template.</p>
-          <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-emerald-900 md:grid-cols-3">
-            <p><span className="font-semibold">Email:</span> {createdCredentials.email}</p>
-            <p><span className="font-semibold">Patient Code:</span> {createdCredentials.patientCode}</p>
-            <p><span className="font-semibold">Temporary Password:</span> {createdCredentials.temporaryPassword}</p>
-          </div>
-        </section>
       )}
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
@@ -1485,6 +1463,45 @@ export default function ManagePatientsPage({ userProfile }) {
           </form>
         </section>
       </div>
+
+      {successPopup.open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4">
+          <button
+            type="button"
+            aria-label="Close success popup"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => setSuccessPopup({ open: false, text: '' })}
+          />
+
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Patient account creation success"
+            className="relative w-full max-w-md rounded-2xl border border-emerald-100 bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Task Completed</h3>
+                <p className="mt-1 text-sm text-gray-700">{successPopup.text}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSuccessPopup({ open: false, text: '' })}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                style={{ backgroundColor: theme.primaryColor }}
+              >
+                OK
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

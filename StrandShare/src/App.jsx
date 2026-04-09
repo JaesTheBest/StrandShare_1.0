@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
+import LandingPage from './pages/public/LandingPage';
 import LoginPage from './pages/shared/auth/LoginPage';
 import CompleteAccountPage from './pages/shared/auth/CompleteAccountPage';
 import ResetPasswordPage from './pages/shared/auth/ResetPasswordPage';
+import ConfirmationCompletePage from './pages/shared/auth/ConfirmationCompletePage';
 import SuperAdminRole from './pages/roles/super-admin/SuperAdminRole';
 import HospitalRole from './pages/roles/hospital/HospitalRole';
-import PartnerRole from './pages/roles/partner/PartnerRole';
+import OrganizationRole from './pages/roles/organization/OrganizationRole';
+import OrganizationApplicationPage from './pages/roles/organization/OrganizationApplicationPage';
 import StaffRole from './pages/roles/staff/StaffRole';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 import { logAuditAction } from './lib/auditLogger';
@@ -38,8 +41,13 @@ function resolveDashboardByRole(roleValue) {
     return HospitalRole;
   }
 
-  if (normalizedRole === 'partner' || normalizedRole === 'partners') {
-    return PartnerRole;
+  if (
+    normalizedRole === 'organization'
+    || normalizedRole === 'organizations'
+    || normalizedRole === 'partner'
+    || normalizedRole === 'partners'
+  ) {
+    return OrganizationRole;
   }
 
   if (normalizedRole === 'staff') {
@@ -284,9 +292,15 @@ export default function App() {
 
   const activeRole = userProfile?.role || null;
   const ActiveDashboard = resolveDashboardByRole(activeRole);
-  const isCompleteAccountRoute = window.location.pathname === '/complete-account';
-  const isResetPasswordRoute = window.location.pathname === '/reset-password';
-  const showLoginPage = !isLoadingAuth && !session;
+  const currentPath = window.location.pathname;
+  const isLandingRoute = currentPath === '/';
+  const isOrganizationApplicationRoute = currentPath === '/apply-organization';
+  const isCompleteAccountRoute = currentPath === '/complete-account';
+  const isResetPasswordRoute = currentPath === '/reset-password';
+  const isConfirmationCompleteRoute = currentPath === '/confirmation-complete';
+  const showLandingPage = !isLoadingAuth && !session && isLandingRoute;
+  const showOrganizationApplicationPage = !isLoadingAuth && !session && isOrganizationApplicationRoute;
+  const showLoginPage = !isLoadingAuth && !session && !isLandingRoute && !isOrganizationApplicationRoute;
   const showDashboard = !isLoadingAuth && Boolean(session) && Boolean(activeRole);
   const showHydratingScreen =
     !isLoadingAuth && Boolean(session) && !showDashboard && isHydratingProfile;
@@ -296,8 +310,17 @@ export default function App() {
       <div className="min-h-screen">
         {isCompleteAccountRoute && <CompleteAccountPage />}
         {isResetPasswordRoute && <ResetPasswordPage />}
+        {isConfirmationCompleteRoute && <ConfirmationCompletePage />}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && showLoginPage && (
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showLandingPage && (
+          <LandingPage />
+        )}
+
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showOrganizationApplicationPage && (
+          <OrganizationApplicationPage />
+        )}
+
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showLoginPage && (
           <LoginPage
             authNotice={
               authNotice ||
@@ -309,7 +332,7 @@ export default function App() {
           />
         )}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && showDashboard && (
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showDashboard && (
           <ActiveDashboard
             onSignOut={handleSignOut}
             userProfile={
@@ -321,7 +344,7 @@ export default function App() {
           />
         )}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && showHydratingScreen && (
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showHydratingScreen && (
           <div className="min-h-screen flex items-center justify-center">
             Finalizing your account access...
           </div>

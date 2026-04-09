@@ -67,7 +67,7 @@ const DASHBOARD_SHORTCUTS = [
   {
     id: 'reports',
     label: 'Generate Reports',
-    description: 'Produce snapshots for operations and partner coordination.',
+    description: 'Produce snapshots for operations and organization coordination.',
     icon: FileBarChart,
   },
   {
