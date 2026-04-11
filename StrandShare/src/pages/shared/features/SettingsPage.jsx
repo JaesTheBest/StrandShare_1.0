@@ -246,6 +246,7 @@ export default function SettingsPage() {
     theme,
     saveThemeGlobally,
     themePresets,
+    refreshThemePresets,
     createThemePreset,
     softDeleteThemePreset,
     googleFonts,
@@ -561,6 +562,15 @@ export default function SettingsPage() {
   );
 
   const canManageBranding = useMemo(() => isSuperAdminRole(profile.role), [profile.role]);
+
+  useEffect(() => {
+    if (!canManageBranding) {
+      return;
+    }
+
+    void refreshThemePresets();
+  }, [canManageBranding, refreshThemePresets]);
+
   const presetHighlightColor = theme.primaryColor || '#0275d8';
   const visibleTabs = useMemo(
     () => TAB_ITEMS.filter((tab) => tab.id !== 'branding' || canManageBranding),

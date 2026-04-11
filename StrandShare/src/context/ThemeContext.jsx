@@ -441,8 +441,11 @@ export function ThemeProvider({ children }) {
       return [];
     }
 
-    await ensureDefaultPreset();
-    await ensureStarterPresets();
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData?.session) {
+      setThemePresets([]);
+      return [];
+    }
 
     const { data, error } = await supabase
       .from(THEME_PRESETS_TABLE)
@@ -452,10 +455,28 @@ export function ThemeProvider({ children }) {
       .order('Created_At', { ascending: true });
 
     if (error) {
+      setThemePresets([]);
       return [];
     }
 
-    const list = data || [];
+    let list = data || [];
+
+    if (list.length === 0) {
+      await ensureDefaultPreset();
+      await ensureStarterPresets();
+
+      const retryResult = await supabase
+        .from(THEME_PRESETS_TABLE)
+        .select('*')
+        .eq('Is_Deleted', false)
+        .order('Is_Default', { ascending: false })
+        .order('Created_At', { ascending: true });
+
+      if (!retryResult.error) {
+        list = retryResult.data || [];
+      }
+    }
+
     setThemePresets(list);
     return list;
   }, [ensureDefaultPreset, ensureStarterPresets]);
@@ -538,7 +559,6 @@ export function ThemeProvider({ children }) {
     };
 
     loadGlobalTheme();
-    refreshThemePresets();
     fetchGoogleFonts();
 
     const channel = supabase

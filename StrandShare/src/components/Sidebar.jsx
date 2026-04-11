@@ -67,8 +67,8 @@ export default function Sidebar({
 
           {!isCollapsed && (
             <div className="min-w-0">
-              <h2 className="truncate font-bold text-gray-900">{theme.brandName}</h2>
-              <p className="truncate text-xs text-gray-500">{theme.brandTagline}</p>
+              <h2 className="break-words text-left text-sm font-bold leading-tight text-gray-900">{theme.brandName}</h2>
+              <p className="mt-0.5 break-words text-left text-xs leading-snug text-gray-500">{theme.brandTagline}</p>
             </div>
           )}
         </div>
@@ -85,7 +85,7 @@ export default function Sidebar({
               key={item.id}
               onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center rounded-lg transition-colors ${
-                isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-2.5'
+                isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-2.5 text-left'
               } ${
                 isActive
                   ? 'bg-blue-50'
@@ -101,7 +101,7 @@ export default function Sidebar({
 
               {!isCollapsed && (
                 <span
-                  className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium"
+                  className="min-w-0 flex-1 whitespace-normal break-words text-left text-sm font-medium leading-snug"
                   style={isActive ? { color: theme.primaryColor } : {}}
                 >
                   {item.label}

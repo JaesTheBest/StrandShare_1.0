@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
+import InfoSlidePanel from '../../../components/admin/InfoSlidePanel';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
 const HOSPITALS_TABLE = 'Hospitals';
@@ -154,6 +155,10 @@ function getHStaffDisplayName(user) {
 export default function ManageHospitalAccountsPage() {
   const { theme } = useTheme();
   const tableHeaderTextColor = theme?.primaryTextColor || '#111827';
+  const primaryTextColor = theme?.primaryTextColor || '#111827';
+  const secondaryTextColor = theme?.secondaryTextColor || '#6b7280';
+  const headingFont = theme?.secondaryFontFamily || theme?.fontFamily || 'Poppins';
+  const bodyFont = theme?.fontFamily || 'Poppins';
 
   const [activeTab, setActiveTab] = useState('manage');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1555,141 +1560,143 @@ export default function ManageHospitalAccountsPage() {
         document.body,
       )}
 
-      {detailsHospital && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[95] m-0 p-0">
-          <button
-            type="button"
-            aria-label="Close hospital details panel"
-            className="absolute inset-0 m-0 p-0 border-0 appearance-none bg-black bg-opacity-50 backdrop-blur-sm"
-            onClick={closeHospitalDetails}
-          />
+      {detailsHospital ? (
+        <InfoSlidePanel
+          open={Boolean(detailsHospital)}
+          onClose={closeHospitalDetails}
+          zIndexClassName="z-[95]"
+          panelStyle={{
+            borderColor: `${theme.secondaryColor}35`,
+            backgroundColor: '#ffffff',
+            opacity: 1,
+            backdropFilter: 'none',
+            color: primaryTextColor,
+            fontFamily: `${bodyFont}, sans-serif`,
+          }}
+          closeButtonClassName="rounded-md border p-1"
+          closeButtonStyle={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
+          closeButtonSize={16}
+          closeButtonLabel="Close hospital details panel"
+          header={(
+            <div>
+              <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
+                H-Representative Details
+              </h3>
+              <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
+                View and manage assigned H-Representative.
+              </p>
+            </div>
+          )}
+        >
+          <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <div className="flex items-start gap-3">
+              {resolveHospitalLogoUrl(detailsHospital.Hospital_Logo) ? (
+                <img
+                  src={resolveHospitalLogoUrl(detailsHospital.Hospital_Logo)}
+                  alt="H-Representative logo"
+                  className="h-14 w-14 rounded-lg border object-cover bg-white"
+                  style={{ borderColor: `${theme.secondaryColor}30` }}
+                />
+              ) : (
+                <div className="h-14 w-14 rounded-lg border bg-white flex items-center justify-center" style={{ borderColor: `${theme.secondaryColor}30`, color: secondaryTextColor }}>
+                  <Building2 size={20} />
+                </div>
+              )}
 
-          <aside
-            className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-2xl overflow-y-auto"
-            style={{ animation: 'hospitalDetailsSlideIn 0.25s ease-out' }}
-          >
-            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">H-Representative Details</h3>
-                <p className="text-xs text-gray-500 mt-0.5">View and manage assigned H-Representative.</p>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold break-words" style={{ color: primaryTextColor }}>{detailsHospital.Hospital_Name || 'N/A'}</p>
+                <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>H-Representative ID: {detailsHospital.Hospital_ID}</p>
+                <p className="mt-2 text-xs" style={{ color: secondaryTextColor }}>Contact: {detailsHospital.Contact_Number || 'N/A'}</p>
               </div>
-              <button type="button" onClick={closeHospitalDetails} className="text-gray-400 hover:text-red-500">
-                <X size={22} />
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed" style={{ color: secondaryTextColor }}>
+              {[detailsHospital.Street, detailsHospital.Barangay, detailsHospital.City, detailsHospital.Region, detailsHospital.Country]
+                .filter(Boolean)
+                .join(', ') || 'No address on record.'}
+            </p>
+          </div>
+
+          <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <p className="mb-3 text-sm font-semibold" style={{ color: primaryTextColor }}>Quick Assign H-Representative</p>
+            <div className="space-y-2">
+              <select
+                value={panelAssignUserId}
+                onChange={(event) => setPanelAssignUserId(event.target.value)}
+                disabled={unassignedHStaffUsers.length === 0}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm focus:ring-2 outline-none"
+                style={{ '--tw-ring-color': theme.primaryColor, color: primaryTextColor }}
+              >
+                <option value="">
+                  {hStaffUsers.length === 0
+                    ? 'No H-Representative users found in users/user_details'
+                    : unassignedHStaffUsers.length === 0
+                      ? 'All H-Representative users are already assigned'
+                      : 'Select unassigned H-Representative'}
+                </option>
+                {unassignedHStaffUsers.map((user) => (
+                  <option key={user.user_id} value={user.user_id}>
+                    {getHStaffDisplayName(user)}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => assignHStaffToHospital(detailsHospital.Hospital_ID, panelAssignUserId)}
+                disabled={isSavingAssignment || !panelAssignUserId || unassignedHStaffUsers.length === 0}
+                className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: theme.primaryColor }}
+              >
+                {isSavingAssignment ? 'Assigning...' : 'Assign To This H-Representative'}
               </button>
             </div>
+          </div>
 
-            <div className="p-5 space-y-4">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="flex items-start gap-3">
-                  {resolveHospitalLogoUrl(detailsHospital.Hospital_Logo) ? (
-                    <img
-                      src={resolveHospitalLogoUrl(detailsHospital.Hospital_Logo)}
-                      alt="H-Representative logo"
-                      className="h-14 w-14 rounded-lg border border-gray-200 object-cover bg-white"
-                    />
-                  ) : (
-                    <div className="h-14 w-14 rounded-lg border border-gray-200 bg-white text-gray-400 flex items-center justify-center">
-                      <Building2 size={20} />
+          <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <p className="mb-3 text-sm font-semibold" style={{ color: primaryTextColor }}>Assigned H-Representative</p>
+
+            {detailsHospitalStaffLinks.length === 0 ? (
+              <p className="text-sm" style={{ color: secondaryTextColor }}>No H-Representative assigned yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {detailsHospitalStaffLinks.map((link) => {
+                  const linkedUser = hStaffUsersById.get(Number(link.User_ID));
+
+                  return (
+                    <div key={link.Link_ID} className="rounded-lg border bg-gray-50 px-3 py-2" style={{ borderColor: `${theme.secondaryColor}30` }}>
+                      <p className="text-sm font-medium break-words" style={{ color: primaryTextColor }}>
+                        {getHStaffDisplayName(linkedUser)}
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Assigned: {formatDateTime(link.Assigned_Date)}</p>
+
+                      <button
+                        type="button"
+                        onClick={() => removeHospitalStaffLink(link)}
+                        disabled={removingLinkId === link.Link_ID}
+                        className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        {removingLinkId === link.Link_ID ? <Loader2 className="animate-spin" size={11} /> : <Trash2 size={11} />}
+                        Unassign
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openReassignModal(link)}
+                        disabled={isReassigning || hospitals.length < 2}
+                        className="mt-2 ml-2 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+                      >
+                        <ArrowRightLeft size={11} />
+                        Reassign
+                      </button>
                     </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 break-words">{detailsHospital.Hospital_Name || 'N/A'}</p>
-                    <p className="text-xs text-gray-500 mt-1">H-Representative ID: {detailsHospital.Hospital_ID}</p>
-                    <p className="text-xs text-gray-600 mt-2">Contact: {detailsHospital.Contact_Number || 'N/A'}</p>
-                  </div>
-                </div>
-
-                <p className="text-xs text-gray-600 mt-3 leading-relaxed">
-                  {[detailsHospital.Street, detailsHospital.Barangay, detailsHospital.City, detailsHospital.Region, detailsHospital.Country]
-                    .filter(Boolean)
-                    .join(', ') || 'No address on record.'}
-                </p>
+                  );
+                })}
               </div>
-
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Quick Assign H-Representative</p>
-                <div className="space-y-2">
-                  <select
-                    value={panelAssignUserId}
-                    onChange={(event) => setPanelAssignUserId(event.target.value)}
-                    disabled={unassignedHStaffUsers.length === 0}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm focus:ring-2 outline-none"
-                    style={{ '--tw-ring-color': theme.primaryColor }}
-                  >
-                    <option value="">
-                      {hStaffUsers.length === 0
-                        ? 'No H-Representative users found in users/user_details'
-                        : unassignedHStaffUsers.length === 0
-                          ? 'All H-Representative users are already assigned'
-                          : 'Select unassigned H-Representative'}
-                    </option>
-                    {unassignedHStaffUsers.map((user) => (
-                      <option key={user.user_id} value={user.user_id}>
-                        {getHStaffDisplayName(user)}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => assignHStaffToHospital(detailsHospital.Hospital_ID, panelAssignUserId)}
-                    disabled={isSavingAssignment || !panelAssignUserId || unassignedHStaffUsers.length === 0}
-                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                    style={{ backgroundColor: theme.primaryColor }}
-                  >
-                    {isSavingAssignment ? 'Assigning...' : 'Assign To This H-Representative'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Assigned H-Representative</p>
-
-                {detailsHospitalStaffLinks.length === 0 ? (
-                  <p className="text-sm text-gray-500">No H-Representative assigned yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {detailsHospitalStaffLinks.map((link) => {
-                      const linkedUser = hStaffUsersById.get(Number(link.User_ID));
-
-                      return (
-                        <div key={link.Link_ID} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                          <p className="text-sm font-medium text-gray-900 break-words">
-                            {getHStaffDisplayName(linkedUser)}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">Assigned: {formatDateTime(link.Assigned_Date)}</p>
-
-                          <button
-                            type="button"
-                            onClick={() => removeHospitalStaffLink(link)}
-                            disabled={removingLinkId === link.Link_ID}
-                            className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
-                          >
-                            {removingLinkId === link.Link_ID ? <Loader2 className="animate-spin" size={11} /> : <Trash2 size={11} />}
-                            Unassign
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => openReassignModal(link)}
-                            disabled={isReassigning || hospitals.length < 2}
-                            className="mt-2 ml-2 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-                          >
-                            <ArrowRightLeft size={11} />
-                            Reassign
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
-        </div>,
-        document.body,
-      )}
+            )}
+          </div>
+        </InfoSlidePanel>
+      ) : null}
 
       {isModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[90] backdrop-blur-sm p-4">
@@ -1971,17 +1978,6 @@ export default function ManageHospitalAccountsPage() {
           <span>{toastMessage}</span>
         </div>
       )}
-
-      <style>{`
-        @keyframes hospitalDetailsSlideIn {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-      `}</style>
     </div>
   );
 }

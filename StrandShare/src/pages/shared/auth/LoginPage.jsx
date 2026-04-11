@@ -120,6 +120,105 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     setEmailOtpCooldown(0);
   };
 
+  const getLatestOrganizationReview = async (userId) => {
+    if (!userId) {
+      return null;
+    }
+
+    const membershipResult = await supabase
+      .from('Organization_Members')
+      .select('Organization_ID, Membership_Role, Is_Primary, Status, Created_At')
+      .eq('User_ID', userId)
+      .order('Created_At', { ascending: false });
+
+    if (membershipResult.error || !(membershipResult.data || []).length) {
+      return null;
+    }
+
+    const membershipRows = membershipResult.data || [];
+    const preferredMembership = membershipRows.find((row) => row.Is_Primary)
+      || membershipRows.find((row) => normalizeRole(row.Membership_Role) === 'leader')
+      || membershipRows[0];
+
+    if (!preferredMembership?.Organization_ID) {
+      return null;
+    }
+
+    const organizationResult = await supabase
+      .from('Organizations')
+      .select('Organization_ID, Organization_Name, Approval_Status, Status')
+      .eq('Organization_ID', preferredMembership.Organization_ID)
+      .maybeSingle();
+
+    if (organizationResult.error || !organizationResult.data) {
+      return null;
+    }
+
+    return {
+      organizationId: organizationResult.data.Organization_ID,
+      organizationName: organizationResult.data.Organization_Name,
+      approvalStatus: normalizeRole(organizationResult.data.Approval_Status || 'pending'),
+      organizationStatus: normalizeRole(organizationResult.data.Status || ''),
+      memberStatus: normalizeRole(preferredMembership.Status || 'inactive'),
+    };
+  };
+
+  const recoverProfileByEmail = async (authUserId) => {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+
+    if (authError) {
+      return null;
+    }
+
+    const normalizedEmail = String(authData?.user?.email || '').trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    const { data: emailProfiles, error: emailProfilesError } = await supabase
+      .from('users')
+      .select('user_id, auth_user_id, email, role, is_active, access_start, access_end')
+      .ilike('email', normalizedEmail);
+
+    if (emailProfilesError) {
+      throw new Error(emailProfilesError.message);
+    }
+
+    if (!Array.isArray(emailProfiles) || emailProfiles.length === 0) {
+      return null;
+    }
+
+    if (emailProfiles.length > 1) {
+      throw new Error('Multiple account profiles use this email. Please contact an administrator.');
+    }
+
+    const matchedProfile = emailProfiles[0];
+
+    if (!matchedProfile?.user_id) {
+      return null;
+    }
+
+    if (String(matchedProfile.auth_user_id || '') !== String(authUserId || '')) {
+      const { error: relinkError } = await supabase
+        .from('users')
+        .update({
+          auth_user_id: authUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', matchedProfile.user_id);
+
+      if (relinkError) {
+        throw new Error(relinkError.message);
+      }
+    }
+
+    return {
+      ...matchedProfile,
+      auth_user_id: authUserId,
+    };
+  };
+
   const getValidatedProfileByAuthUserId = async (authUserId) => {
     const { data: profile, error: profileError } = await supabase
       .from('users')
@@ -127,41 +226,41 @@ export default function LoginPage({ authNotice, onClearNotice }) {
       .eq('auth_user_id', authUserId)
       .maybeSingle();
 
-    if (profileError || !profile?.role) {
+    if (profileError) {
+      throw new Error('Your account profile could not be found. Please contact an administrator.');
+    }
+
+    let resolvedProfile = profile;
+
+    if (!resolvedProfile?.user_id) {
+      resolvedProfile = await recoverProfileByEmail(authUserId);
+    }
+
+    if (!resolvedProfile?.user_id) {
+      throw new Error('Your account profile could not be found. Please contact an administrator.');
+    }
+
+    const organizationReview = await getLatestOrganizationReview(resolvedProfile.user_id);
+    const hasApprovedOrganizationAccess =
+      organizationReview?.approvalStatus === 'approved'
+      && organizationReview?.memberStatus === 'active';
+
+    if (!resolvedProfile?.role && !hasApprovedOrganizationAccess) {
       throw new Error('Your account does not have a role yet. Please contact an administrator.');
     }
 
     const now = new Date();
-    const withinStart = !profile.access_start || new Date(profile.access_start) <= now;
-    const withinEnd = !profile.access_end || new Date(profile.access_end) >= now;
-    const normalizedRole = normalizeRole(profile.role);
+    const withinStart = !resolvedProfile.access_start || new Date(resolvedProfile.access_start) <= now;
+    const withinEnd = !resolvedProfile.access_end || new Date(resolvedProfile.access_end) >= now;
 
-    if (profile.is_active === false) {
-      const isOrganizationRole =
-        normalizedRole === 'organization'
-        || normalizedRole === 'organizations'
-        || normalizedRole === 'partner'
-        || normalizedRole === 'partners';
+    if (resolvedProfile.is_active === false) {
+      if (organizationReview) {
+        if (organizationReview.approvalStatus === 'pending') {
+          throw new Error('Your organization application is pending Super Admin approval. You can log in once approved.');
+        }
 
-      if (isOrganizationRole) {
-        const { data: latestApplication, error: latestApplicationError } = await supabase
-          .from('Organization_Applications')
-          .select('Status')
-          .eq('User_ID', profile.user_id)
-          .order('Created_At', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!latestApplicationError && latestApplication?.Status) {
-          const applicationStatus = normalizeRole(latestApplication.Status);
-
-          if (applicationStatus === 'pending') {
-            throw new Error('Your organization application is pending Super Admin approval. You can log in once approved.');
-          }
-
-          if (applicationStatus === 'rejected') {
-            throw new Error('Your organization application was rejected. Please submit a new application.');
-          }
+        if (organizationReview.approvalStatus === 'rejected') {
+          throw new Error('Your organization application was rejected. Please submit a new application.');
         }
 
         throw new Error('Your organization account is inactive until Super Admin approval is completed.');
@@ -174,7 +273,17 @@ export default function LoginPage({ authNotice, onClearNotice }) {
       throw new Error('Your account is outside the allowed access schedule. Please contact an administrator.');
     }
 
-    return enrichProfileWithDetails(profile);
+    const normalizedRole = normalizeRole(resolvedProfile.role);
+    const shouldResolveAsOrganization = hasApprovedOrganizationAccess && (!normalizedRole || normalizedRole === 'user');
+
+    if (shouldResolveAsOrganization) {
+      return enrichProfileWithDetails({
+        ...resolvedProfile,
+        role: 'organization',
+      });
+    }
+
+    return enrichProfileWithDetails(resolvedProfile);
   };
 
   const finalizeLoginProfile = (profile, authUserId, fallbackEmail) => {

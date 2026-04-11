@@ -336,6 +336,7 @@ export default function ManagePatientsPage({ userProfile }) {
         persistSession: false,
         autoRefreshToken: false,
         detectSessionInUrl: false,
+        storageKey: 'strandshare-hospital-patient-signup-client',
       },
     });
   }, []);

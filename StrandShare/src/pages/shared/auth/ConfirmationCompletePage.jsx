@@ -31,7 +31,7 @@ export default function ConfirmationCompletePage() {
         </div>
         <h1 className="mt-4 text-2xl font-extrabold md:text-3xl">Email confirmation complete</h1>
         <p className="mt-2 text-sm md:text-base" style={{ color: secondaryTextColor }}>
-          Your {brandName} account is now verified. You can proceed to login.
+          Your {brandName} email is now verified. If this was an organization application, wait for Super Admin approval before access is activated.
         </p>
 
         <div className="mt-6">
@@ -41,7 +41,7 @@ export default function ConfirmationCompletePage() {
             className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
             style={{ backgroundColor: primaryColor }}
           >
-            Continue To Login <ArrowRight size={15} />
+            Go To Login <ArrowRight size={15} />
           </button>
         </div>
       </section>

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Plus,
   Search,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import Select from 'react-select';
 import { useTheme } from '../../../context/ThemeContext';
+import InfoSlidePanel from '../../../components/admin/InfoSlidePanel';
 import {
   supabase,
   isSupabaseConfigured,
@@ -102,6 +102,10 @@ function formatDateTime(value) {
 export default function ManageUserAccountsPage() {
   const { theme } = useTheme();
   const tableHeaderTextColor = theme?.primaryTextColor || '#000000';
+  const primaryTextColor = theme?.primaryTextColor || '#111827';
+  const secondaryTextColor = theme?.secondaryTextColor || '#6b7280';
+  const headingFont = theme?.secondaryFontFamily || theme?.fontFamily || 'Poppins';
+  const bodyFont = theme?.fontFamily || 'Poppins';
 
   const [users, setUsers] = useState([]);
   const [allRoles, setAllRoles] = useState([]);
@@ -605,92 +609,111 @@ export default function ManageUserAccountsPage() {
         )}
       </div>
 
-      {detailsUser && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[70] m-0 p-0">
-          <button
-            type="button"
-            aria-label="Close user details panel"
-            className="absolute inset-0 m-0 p-0 border-0 appearance-none bg-black bg-opacity-50 backdrop-blur-sm"
-            onClick={closeUserDetails}
-          />
-
-          <aside
-            className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-2xl overflow-y-auto"
-            style={{ animation: 'userDetailsSlideIn 0.25s ease-out' }}
-          >
-            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">User Account Details</h3>
-                <p className="text-xs text-gray-500 mt-0.5">View account role, access, and profile details.</p>
+      {detailsUser ? (
+        <InfoSlidePanel
+          open={Boolean(detailsUser)}
+          onClose={closeUserDetails}
+          zIndexClassName="z-[70]"
+          panelWidthClassName="max-w-md"
+          panelStyle={{
+            borderColor: `${theme.secondaryColor}35`,
+            backgroundColor: '#ffffff',
+            opacity: 1,
+            backdropFilter: 'none',
+            color: primaryTextColor,
+            fontFamily: `${bodyFont}, sans-serif`,
+          }}
+          closeButtonClassName="rounded-md border p-1"
+          closeButtonStyle={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
+          closeButtonSize={16}
+          closeButtonLabel="Close user details panel"
+          header={(
+            <div>
+              <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
+                User Account Details
+              </h3>
+              <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
+                View account role, access, and profile details.
+              </p>
+            </div>
+          )}
+        >
+          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <div className="flex items-start gap-3">
+              <div
+                className="grid h-14 w-14 place-items-center rounded-full border bg-white text-lg font-semibold"
+                style={{ borderColor: `${theme.secondaryColor}30`, color: theme.primaryColor }}
+              >
+                {`${String(detailsUser.firstName || '').charAt(0)}${String(detailsUser.lastName || '').charAt(0)}`.trim() || 'U'}
               </div>
-              <button type="button" onClick={closeUserDetails} className="text-gray-400 hover:text-red-500">
-                <X size={22} />
-              </button>
+
+              <div className="min-w-0">
+                <p className="text-sm font-semibold break-words" style={{ color: primaryTextColor }}>
+                  {detailsUser.firstName} {detailsUser.lastName}
+                </p>
+                <p className="mt-1 text-xs break-all" style={{ color: secondaryTextColor }}>
+                  {detailsUser.email || 'N/A'}
+                </p>
+                <p className="mt-2 text-xs" style={{ color: secondaryTextColor }}>
+                  User ID: {detailsUser.id}
+                </p>
+              </div>
             </div>
 
-            <div className="p-5 space-y-4">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className="h-14 w-14 rounded-full border border-gray-200 bg-white flex items-center justify-center text-lg font-semibold"
-                    style={{ color: theme.primaryColor }}
-                  >
-                    {`${String(detailsUser.firstName || '').charAt(0)}${String(detailsUser.lastName || '').charAt(0)}`.trim() || 'U'}
-                  </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span
+                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium"
+                style={{
+                  backgroundColor: `${theme.primaryColor}18`,
+                  color: theme.primaryColor,
+                  borderColor: `${theme.primaryColor}33`,
+                }}
+              >
+                <Shield size={12} /> {toRoleLabel(detailsUser.role)}
+              </span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${detailsUser.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {detailsUser.status}
+              </span>
+            </div>
+          </section>
 
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 break-words">{detailsUser.firstName} {detailsUser.lastName}</p>
-                    <p className="text-xs text-gray-500 mt-1 break-all">{detailsUser.email || 'N/A'}</p>
-                    <p className="text-xs text-gray-600 mt-2">User ID: {detailsUser.id}</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium"
-                    style={{
-                      backgroundColor: `${theme.primaryColor}18`,
-                      color: theme.primaryColor,
-                      borderColor: `${theme.primaryColor}33`,
-                    }}
-                  >
-                    <Shield size={12} /> {toRoleLabel(detailsUser.role)}
-                  </span>
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${detailsUser.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {detailsUser.status}
-                  </span>
-                </div>
+          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role Access Window</p>
+            <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${theme.secondaryColor}24` }}>
+              <div className="grid grid-cols-[110px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${theme.secondaryColor}20` }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access Start</p>
+                <p style={{ color: primaryTextColor }}>{detailsUser.accessStart || 'N/A'}</p>
               </div>
-
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Role Access Window</p>
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p><span className="font-medium text-gray-900">Access Start:</span> {detailsUser.accessStart || 'N/A'}</p>
-                  <p><span className="font-medium text-gray-900">Access End:</span> {detailsUser.accessEnd || 'N/A'}</p>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Profile Metadata</p>
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p>
-                    <span className="font-medium text-gray-900">Joined Date:</span>{' '}
-                    {detailsUser.joinedDate
-                      ? new Date(detailsUser.joinedDate).toLocaleDateString('en-US', {
-                          month: 'long',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })
-                      : 'N/A'}
-                  </p>
-                  <p><span className="font-medium text-gray-900">Raw Role:</span> {detailsUser.role || 'N/A'}</p>
-                </div>
+              <div className="grid grid-cols-[110px_1fr] gap-3 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access End</p>
+                <p style={{ color: primaryTextColor }}>{detailsUser.accessEnd || 'N/A'}</p>
               </div>
             </div>
-          </aside>
-        </div>,
-        document.body,
-      )}
+          </section>
+
+          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Profile Metadata</p>
+            <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${theme.secondaryColor}24` }}>
+              <div className="grid grid-cols-[110px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${theme.secondaryColor}20` }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Joined Date</p>
+                <p style={{ color: primaryTextColor }}>
+                  {detailsUser.joinedDate
+                    ? new Date(detailsUser.joinedDate).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })
+                    : 'N/A'}
+                </p>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] gap-3 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Raw Role</p>
+                <p style={{ color: primaryTextColor }}>{detailsUser.role || 'N/A'}</p>
+              </div>
+            </div>
+          </section>
+        </InfoSlidePanel>
+      ) : null}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] backdrop-blur-sm">
@@ -992,17 +1015,6 @@ export default function ManageUserAccountsPage() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes userDetailsSlideIn {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-      `}</style>
     </div>
   );
 }
