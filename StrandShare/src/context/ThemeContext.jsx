@@ -192,6 +192,34 @@ const isAbsoluteUrl = (value) => /^https?:\/\//i.test(String(value || ''));
 
 const isBlobUrl = (value) => String(value || '').startsWith('blob:');
 
+const defaultFaviconHref = `${process.env.PUBLIC_URL || ''}/favicon.ico`;
+
+const updateHeadLinkHref = (rel, href) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  let link = document.querySelector(`link[rel="${rel}"]`);
+  if (!link) {
+    link = document.createElement('link');
+    link.setAttribute('rel', rel);
+    document.head.appendChild(link);
+  }
+
+  if (href) {
+    link.setAttribute('href', href);
+  }
+};
+
+const applyFaviconFromTheme = (themeObj) => {
+  const logoHref = String(themeObj?.logoImage || '').trim();
+  const faviconHref = logoHref && !isBlobUrl(logoHref) ? logoHref : defaultFaviconHref;
+
+  updateHeadLinkHref('icon', faviconHref);
+  updateHeadLinkHref('shortcut icon', faviconHref);
+  updateHeadLinkHref('apple-touch-icon', faviconHref);
+};
+
 const resolveBrandingAssetUrl = (urlValue, pathValue, fallbackValue) => {
   if (pathValue && supabase) {
     const { data } = supabase.storage.from(BRANDING_BUCKET).getPublicUrl(pathValue);
@@ -603,6 +631,7 @@ export function ThemeProvider({ children }) {
       localStorage.setItem('strandshare_theme', JSON.stringify(theme));
       // Update CSS variables in real-time
       applyThemeVariables(theme);
+      applyFaviconFromTheme(theme);
       loadGoogleFont(theme.selectedFont || theme.fontFamily);
       loadGoogleFont(theme.secondaryFontFamily || theme.fontFamily);
     } catch (error) {
