@@ -18,12 +18,14 @@ import GenerateReportsPage from './GenerateReportsPage';
 import AuditTrailsPage from './AuditTrailsPage';
 import BackupPage from './BackupPage';
 import SettingsPage from './SettingsPage';
+import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
 
 const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'manage-user-accounts', label: 'Manage User Accounts', icon: Users },
   { id: 'manage-hospital-accounts', label: 'Manage H-Representative Accounts', icon: Building2 },
   { id: 'manage-organization-applications', label: 'Manage Organization Applications', icon: ShieldCheck },
+  { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: ClipboardList },
   { id: 'generate-reports', label: 'Generate Reports', icon: FileText },
   { id: 'audit-trails', label: 'Audit Trails', icon: ClipboardList },
   { id: 'backup', label: 'Backup', icon: HardDrive },
@@ -35,6 +37,7 @@ const superAdminPageComponents = {
   'manage-user-accounts': ManageUserAccountsPage,
   'manage-hospital-accounts': ManageHospitalAccountsPage,
   'manage-organization-applications': ManageOrganizationApplicationsPage,
+  'manage-donation-requirements': ManageDonationRequirementsPage,
   'generate-reports': GenerateReportsPage,
   'audit-trails': AuditTrailsPage,
   backup: BackupPage,
