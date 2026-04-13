@@ -20,7 +20,7 @@ import SettingsPage from './SettingsPage';
 
 const organizationNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'submit-donations-request', label: 'Submit Donations Request', icon: Clipboard },
+  { id: 'submit-donations-request', label: 'Request Donation Drive', icon: Clipboard },
   { id: 'coordinate-donation-programs', label: 'Coordinate Donation Programs', icon: Users },
   { id: 'refer-patients-and-donors', label: 'Refer Patients and Donors', icon: Users },
   { id: 'track-donation-status', label: 'Track Donation Status', icon: CheckCircle },
