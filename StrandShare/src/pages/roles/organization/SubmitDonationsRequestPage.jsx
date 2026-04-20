@@ -6,6 +6,7 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
 const DONATION_REQUIREMENTS_TABLE = 'Donation_Requirements';
 const DONATION_DRIVE_REQUESTS_TABLE = 'Donation_Drive_Requests';
+const DONATION_DRIVE_ALLOWED_GROUPS_TABLE = 'Donation_Drive_Allowed_Groups';
 const ORGANIZATIONS_TABLE = 'Organizations';
 const ORGANIZATION_MEMBERS_TABLE = 'Organization_Members';
 const DONATION_DRIVE_PROPOSALS_BUCKET = 'donation_drive_proposals';
@@ -30,7 +31,7 @@ const DEFAULT_FORM = {
   country: DEFAULT_COUNTRY,
   latitude: '',
   longitude: '',
-  isOpenForAll: false,
+  scopeMode: 'own',
 };
 
 function toUnifiedRegionOptions(addressData) {
@@ -234,6 +235,28 @@ function mapStatusMeta(statusValue) {
   };
 }
 
+function toUniqueOrganizationNames(rows) {
+  const names = (Array.isArray(rows) ? rows : [])
+    .map((row) => String(row?.Group_Name || '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(names));
+}
+
+function formatDriveScopeLabel({ isOpenForAll, hostOrganizationName, allowedGroups }) {
+  if (Boolean(isOpenForAll)) {
+    return 'Open to all organizations';
+  }
+
+  const uniqueGroupNames = toUniqueOrganizationNames(allowedGroups);
+
+  if (uniqueGroupNames.length > 0) {
+    return `Specific organizations: ${uniqueGroupNames.join(', ')}`;
+  }
+
+  return `Only ${hostOrganizationName || 'my organization'}`;
+}
+
 function mapLoadError(rawMessage) {
   const message = String(rawMessage || 'Unable to load donation drive data.');
   const lower = message.toLowerCase();
@@ -252,6 +275,10 @@ function mapLoadError(rawMessage) {
 
   if (lower.includes('organization_members') && lower.includes('does not exist')) {
     return 'Organization_Members table is missing. Run migration 024_simplify_organization_tables_to_two_tables.sql.';
+  }
+
+  if (lower.includes('donation_drive_allowed_groups') && lower.includes('does not exist')) {
+    return 'Donation_Drive_Allowed_Groups table is missing. Run migration 031_donation_drive_allowed_groups_policies.sql.';
   }
 
   if (lower.includes('donation_drive_proposals') && lower.includes('bucket')) {
@@ -292,6 +319,10 @@ function mapSaveError(rawMessage) {
     return 'Donation_Drive_Requests table is missing. Please apply the latest donation drive migration.';
   }
 
+  if (lower.includes('donation_drive_allowed_groups') && lower.includes('does not exist')) {
+    return 'Donation_Drive_Allowed_Groups table is missing. Run migration 031_donation_drive_allowed_groups_policies.sql.';
+  }
+
   return message;
 }
 
@@ -330,6 +361,9 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
   const [requirements, setRequirements] = useState(null);
   const [organizationScope, setOrganizationScope] = useState(null);
   const [requests, setRequests] = useState([]);
+  const [allowedGroupsByDriveId, setAllowedGroupsByDriveId] = useState({});
+  const [selectableOrganizations, setSelectableOrganizations] = useState([]);
+  const [selectedAllowedOrganizationIds, setSelectedAllowedOrganizationIds] = useState([]);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [proposalFile, setProposalFile] = useState(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -370,6 +404,15 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
     && Boolean(requirements?.Donation_Requirement_ID)
     && !isLoading
     && !isSubmitting;
+
+  const selectedAllowedOrganizationNames = useMemo(() => {
+    const selectedSet = new Set(selectedAllowedOrganizationIds.map((value) => Number(value)));
+
+    return selectableOrganizations
+      .filter((row) => selectedSet.has(Number(row.Organization_ID)))
+      .map((row) => String(row.Organization_Name || '').trim())
+      .filter(Boolean);
+  }, [selectedAllowedOrganizationIds, selectableOrganizations]);
 
   const requirementRows = useMemo(
     () => [
@@ -424,6 +467,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       setRequirements(null);
       setOrganizationScope(null);
       setRequests([]);
+      setAllowedGroupsByDriveId({});
+      setSelectableOrganizations([]);
       return;
     }
 
@@ -435,6 +480,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       });
       setOrganizationScope(null);
       setRequests([]);
+      setAllowedGroupsByDriveId({});
+      setSelectableOrganizations([]);
       return;
     }
 
@@ -470,6 +517,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       if (!preferredMembership?.Organization_ID) {
         setOrganizationScope(null);
         setRequests([]);
+        setAllowedGroupsByDriveId({});
+        setSelectableOrganizations([]);
         setNotice({
           kind: 'warning',
           text: 'No organization membership found for your account. Ask Super Admin to assign your organization membership.',
@@ -491,6 +540,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       if (!organization?.Organization_ID) {
         setOrganizationScope(null);
         setRequests([]);
+        setAllowedGroupsByDriveId({});
+        setSelectableOrganizations([]);
         setNotice({
           kind: 'error',
           text: 'Organization membership found, but organization details are missing.',
@@ -498,13 +549,38 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         return;
       }
 
+      const scopedOrganizationId = Number(organization.Organization_ID || 0) || null;
+      const scopedOrganizationName = String(organization.Organization_Name || '');
+
       setOrganizationScope({
-        organizationId: organization.Organization_ID,
-        organizationName: String(organization.Organization_Name || ''),
+        organizationId: scopedOrganizationId,
+        organizationName: scopedOrganizationName,
         approvalStatus: String(organization.Approval_Status || ''),
         organizationStatus: String(organization.Status || ''),
         membershipRole: String(preferredMembership.Membership_Role || ''),
         memberStatus: String(preferredMembership.Status || ''),
+      });
+
+      const selectableOrganizationsResult = await supabase
+        .from(ORGANIZATIONS_TABLE)
+        .select('Organization_ID, Organization_Name, Approval_Status, Status')
+        .eq('Approval_Status', 'Approved')
+        .eq('Status', 'Active')
+        .neq('Organization_ID', scopedOrganizationId)
+        .order('Organization_Name', { ascending: true });
+
+      if (selectableOrganizationsResult.error) {
+        throw selectableOrganizationsResult.error;
+      }
+
+      const selectableRows = selectableOrganizationsResult.data || [];
+      setSelectableOrganizations(selectableRows);
+      setSelectedAllowedOrganizationIds((previous) => {
+        return previous.filter((organizationId) => {
+          return selectableRows.some(
+            (row) => Number(row.Organization_ID || 0) === Number(organizationId || 0),
+          );
+        });
       });
 
       const requestsResult = await supabase
@@ -512,14 +588,51 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         .select(
           'Donation_Drive_ID, Event_Title, Event_Overview, Start_Date, End_Date, Proposal_Attachment, Is_Open_For_All, Status, Updated_At, Donation_Setup_Type',
         )
-        .eq('Organization_ID', organization.Organization_ID)
+        .eq('Organization_ID', scopedOrganizationId)
         .order('Updated_At', { ascending: false });
 
       if (requestsResult.error) {
         throw requestsResult.error;
       }
 
-      setRequests(requestsResult.data || []);
+      const requestRows = requestsResult.data || [];
+      setRequests(requestRows);
+
+      const driveIds = requestRows
+        .map((row) => Number(row.Donation_Drive_ID || 0))
+        .filter(Boolean);
+
+      if (!driveIds.length) {
+        setAllowedGroupsByDriveId({});
+        return;
+      }
+
+      const allowedGroupsResult = await supabase
+        .from(DONATION_DRIVE_ALLOWED_GROUPS_TABLE)
+        .select('Donation_Drive_ID, Organization_ID, Group_Name')
+        .in('Donation_Drive_ID', driveIds);
+
+      if (allowedGroupsResult.error) {
+        throw allowedGroupsResult.error;
+      }
+
+      const groupsByDrive = (allowedGroupsResult.data || []).reduce((accumulator, row) => {
+        const driveId = Number(row.Donation_Drive_ID || 0);
+        if (!driveId) {
+          return accumulator;
+        }
+
+        const nextList = accumulator[driveId] || [];
+        nextList.push({
+          Donation_Drive_ID: driveId,
+          Organization_ID: Number(row.Organization_ID || 0) || null,
+          Group_Name: String(row.Group_Name || ''),
+        });
+        accumulator[driveId] = nextList;
+        return accumulator;
+      }, {});
+
+      setAllowedGroupsByDriveId(groupsByDrive);
     } catch (error) {
       setNotice({ kind: 'error', text: mapLoadError(error?.message) });
     } finally {
@@ -536,8 +649,28 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
     setForm((prev) => ({ ...prev, [field]: nextValue }));
   };
 
-  const handleScopeChange = (isOpenForAll) => {
-    setForm((prev) => ({ ...prev, isOpenForAll }));
+  const handleScopeChange = (scopeMode) => {
+    setForm((prev) => ({ ...prev, scopeMode }));
+
+    if (scopeMode !== 'specific') {
+      setSelectedAllowedOrganizationIds([]);
+    }
+  };
+
+  const handleAllowedOrganizationToggle = (organizationId) => {
+    const parsedOrganizationId = Number(organizationId || 0) || 0;
+
+    if (!parsedOrganizationId) {
+      return;
+    }
+
+    setSelectedAllowedOrganizationIds((previous) => {
+      if (previous.includes(parsedOrganizationId)) {
+        return previous.filter((value) => value !== parsedOrganizationId);
+      }
+
+      return [...previous, parsedOrganizationId];
+    });
   };
 
   const handleRegionChange = (event) => {
@@ -675,6 +808,10 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       return 'Country is required.';
     }
 
+    if (form.scopeMode === 'specific' && selectedAllowedOrganizationIds.length < 1) {
+      return 'Select at least one specific organization for this drive.';
+    }
+
     if (!proposalFile) {
       return 'Proposal attachment is required and must be a PDF.';
     }
@@ -711,7 +848,13 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
     }
 
     return '';
-  }, [form, organizationScope?.organizationId, proposalFile, requirements?.Donation_Requirement_ID]);
+  }, [
+    form,
+    organizationScope?.organizationId,
+    proposalFile,
+    requirements?.Donation_Requirement_ID,
+    selectedAllowedOrganizationIds,
+  ]);
 
   const handleOpenReviewModal = () => {
     const validationError = validateBeforeReview();
@@ -817,6 +960,9 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         eventTitle: title,
       });
 
+      const isOpenForAll = form.scopeMode === 'all';
+      const shouldSaveSpecificGroups = form.scopeMode === 'specific';
+
       const payload = {
         User_ID: actorUserId,
         Organization_ID: organizationId,
@@ -834,7 +980,7 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         Country: String(form.country || '').trim(),
         Longitude: longitude,
         Latitude: latitude,
-        Is_Open_For_All: Boolean(form.isOpenForAll),
+        Is_Open_For_All: isOpenForAll,
         Approved_By: null,
         Status: INITIAL_REQUEST_STATUS,
         Updated_At: new Date().toISOString(),
@@ -853,9 +999,84 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         throw error;
       }
 
+      const driveId = Number(data?.Donation_Drive_ID || 0) || null;
+      let savedAllowedGroups = [];
+
+      if (shouldSaveSpecificGroups && driveId) {
+        const selectedSet = new Set(
+          selectedAllowedOrganizationIds
+            .map((value) => Number(value || 0))
+            .filter(Boolean),
+        );
+
+        const selectedRows = selectableOrganizations.filter((row) => {
+          return selectedSet.has(Number(row.Organization_ID || 0));
+        });
+
+        const hostGroupName = String(organizationScope?.organizationName || '').trim();
+
+        const draftGroupRows = [
+          {
+            Donation_Drive_ID: driveId,
+            Organization_ID: organizationId,
+            Group_Name: hostGroupName || `Organization ${organizationId}`,
+          },
+          ...selectedRows.map((row) => ({
+            Donation_Drive_ID: driveId,
+            Organization_ID: Number(row.Organization_ID || 0) || null,
+            Group_Name: String(row.Organization_Name || '').trim(),
+          })),
+        ];
+
+        const dedupedRows = Object.values(
+          draftGroupRows.reduce((accumulator, row) => {
+            const key = Number(row.Organization_ID || 0);
+
+            if (!key || !String(row.Group_Name || '').trim()) {
+              return accumulator;
+            }
+
+            accumulator[key] = {
+              Donation_Drive_ID: driveId,
+              Organization_ID: key,
+              Group_Name: String(row.Group_Name || '').trim(),
+            };
+
+            return accumulator;
+          }, {}),
+        );
+
+        if (dedupedRows.length) {
+          const { error: allowedGroupsInsertError } = await supabase
+            .from(DONATION_DRIVE_ALLOWED_GROUPS_TABLE)
+            .insert(dedupedRows);
+
+          if (allowedGroupsInsertError) {
+            throw allowedGroupsInsertError;
+          }
+
+          savedAllowedGroups = dedupedRows;
+        }
+      }
+
       setRequests((prev) => [data, ...prev]);
+      setAllowedGroupsByDriveId((previous) => {
+        if (!driveId) {
+          return previous;
+        }
+
+        if (!savedAllowedGroups.length) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [driveId]: savedAllowedGroups,
+        };
+      });
       setForm(DEFAULT_FORM);
       setProposalFile(null);
+      setSelectedAllowedOrganizationIds([]);
       setIsReviewModalOpen(false);
       setSuccessModalData({
         driveId: data?.Donation_Drive_ID,
@@ -888,40 +1109,59 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
   };
 
   const reviewRows = useMemo(
-    () => [
-      { label: 'Event Title', value: form.eventTitle || '-' },
-      { label: 'Event Overview', value: form.eventOverview || '-' },
-      { label: 'Start Date', value: formatDateTime(toPostgresTimestamp(form.startDate)) },
-      { label: 'End Date', value: formatDateTime(toPostgresTimestamp(form.endDate)) },
-      { label: 'Donation Setup Type', value: form.setupType || '-' },
-      {
-        label: 'Drive Scope',
-        value: form.isOpenForAll
-          ? 'Open to all organizations'
-          : `Only ${organizationScope?.organizationName || 'my organization'}`,
-      },
-      { label: 'Street', value: form.street || '-' },
-      { label: 'Region', value: form.region || '-' },
-      { label: 'Province', value: form.province || '-' },
-      { label: 'City/Municipality', value: form.city || '-' },
-      { label: 'Barangay', value: form.barangay || '-' },
-      { label: 'Country', value: form.country || '-' },
-      { label: 'Latitude', value: String(form.latitude || 'Not provided') },
-      { label: 'Longitude', value: String(form.longitude || 'Not provided') },
-      {
-        label: 'Proposal Attachment (PDF)',
-        value: proposalFile
-          ? `${proposalFile.name} (${formatFileSize(proposalFile.size)})`
-          : 'No file selected',
-      },
-      {
-        label: 'Applied Requirement Record',
-        value: requirements?.Donation_Requirement_ID
-          ? `Requirement #${requirements.Donation_Requirement_ID}`
-          : 'Not available',
-      },
+    () => {
+      const hostOrganizationName = String(organizationScope?.organizationName || '').trim();
+      const previewSpecificOrganizations = Array.from(
+        new Set([hostOrganizationName, ...selectedAllowedOrganizationNames].filter(Boolean)),
+      );
+
+      const reviewScopeLabel = form.scopeMode === 'all'
+        ? 'Open to all organizations'
+        : form.scopeMode === 'specific'
+          ? previewSpecificOrganizations.length
+            ? `Specific organizations: ${previewSpecificOrganizations.join(', ')}`
+            : 'Specific organizations'
+          : `Only ${hostOrganizationName || 'my organization'}`;
+
+      return [
+        { label: 'Event Title', value: form.eventTitle || '-' },
+        { label: 'Event Overview', value: form.eventOverview || '-' },
+        { label: 'Start Date', value: formatDateTime(toPostgresTimestamp(form.startDate)) },
+        { label: 'End Date', value: formatDateTime(toPostgresTimestamp(form.endDate)) },
+        { label: 'Donation Setup Type', value: form.setupType || '-' },
+        {
+          label: 'Drive Scope',
+          value: reviewScopeLabel,
+        },
+        { label: 'Street', value: form.street || '-' },
+        { label: 'Region', value: form.region || '-' },
+        { label: 'Province', value: form.province || '-' },
+        { label: 'City/Municipality', value: form.city || '-' },
+        { label: 'Barangay', value: form.barangay || '-' },
+        { label: 'Country', value: form.country || '-' },
+        { label: 'Latitude', value: String(form.latitude || 'Not provided') },
+        { label: 'Longitude', value: String(form.longitude || 'Not provided') },
+        {
+          label: 'Proposal Attachment (PDF)',
+          value: proposalFile
+            ? `${proposalFile.name} (${formatFileSize(proposalFile.size)})`
+            : 'No file selected',
+        },
+        {
+          label: 'Applied Requirement Record',
+          value: requirements?.Donation_Requirement_ID
+            ? `Requirement #${requirements.Donation_Requirement_ID}`
+            : 'Not available',
+        },
+      ];
+    },
+    [
+      form,
+      organizationScope?.organizationName,
+      proposalFile,
+      requirements?.Donation_Requirement_ID,
+      selectedAllowedOrganizationNames,
     ],
-    [form, organizationScope?.organizationName, proposalFile, requirements?.Donation_Requirement_ID],
   );
 
   const inputClass =
@@ -1201,13 +1441,13 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
 
         <div className="mt-5">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Donation Drive Scope</p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
               <input
                 type="radio"
                 name="drive-scope"
-                checked={!form.isOpenForAll}
-                onChange={() => handleScopeChange(false)}
+                checked={form.scopeMode === 'own'}
+                onChange={() => handleScopeChange('own')}
                 disabled={!canSubmit}
               />
               <span>
@@ -1220,8 +1460,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
               <input
                 type="radio"
                 name="drive-scope"
-                checked={form.isOpenForAll}
-                onChange={() => handleScopeChange(true)}
+                checked={form.scopeMode === 'all'}
+                onChange={() => handleScopeChange('all')}
                 disabled={!canSubmit}
               />
               <span>
@@ -1229,7 +1469,62 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
                 <span className="text-xs text-slate-500">Any approved organization can participate once approved.</span>
               </span>
             </label>
+
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="drive-scope"
+                checked={form.scopeMode === 'specific'}
+                onChange={() => handleScopeChange('specific')}
+                disabled={!canSubmit}
+              />
+              <span>
+                <span className="block font-semibold text-slate-900">Specific organizations only</span>
+                <span className="text-xs text-slate-500">Choose selected approved organizations. Your organization is auto-included.</span>
+              </span>
+            </label>
           </div>
+
+          {form.scopeMode === 'specific' && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-xs font-semibold text-slate-700">Select organizations allowed to access this drive</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Host organization included automatically: {organizationScope?.organizationName || 'N/A'}
+              </p>
+
+              {!selectableOrganizations.length ? (
+                <p className="mt-2 text-xs text-slate-500">No other approved and active organizations are available.</p>
+              ) : (
+                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {selectableOrganizations.map((organization) => {
+                    const organizationId = Number(organization.Organization_ID || 0);
+                    const isSelected = selectedAllowedOrganizationIds.includes(organizationId);
+
+                    return (
+                      <label
+                        key={organizationId}
+                        className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleAllowedOrganizationToggle(organizationId)}
+                          disabled={!canSubmit}
+                        />
+                        <span className="text-xs font-medium text-slate-700">{organization.Organization_Name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <p className="mt-2 text-[11px] text-slate-500">
+                {selectedAllowedOrganizationNames.length
+                  ? `Selected organizations: ${selectedAllowedOrganizationNames.join(', ')}`
+                  : 'No specific organizations selected yet.'}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
@@ -1248,7 +1543,7 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">
           <h2 className="text-lg font-semibold text-slate-900">My Donation Drive Requests</h2>
-          <p className="text-xs text-slate-500">Track if each request is open to all organizations or only your organization.</p>
+          <p className="text-xs text-slate-500">Track if each request is open to all organizations, host-only, or limited to selected organizations.</p>
         </div>
 
         {!requests.length ? (
@@ -1272,9 +1567,12 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
               <tbody>
                 {requests.map((row) => {
                   const statusMeta = mapStatusMeta(row.Status);
-                  const scopeLabel = row.Is_Open_For_All
-                    ? 'Open to all organizations'
-                    : `Only ${organizationScope?.organizationName || 'my organization'}`;
+                  const driveId = Number(row.Donation_Drive_ID || 0) || 0;
+                  const scopeLabel = formatDriveScopeLabel({
+                    isOpenForAll: row.Is_Open_For_All,
+                    hostOrganizationName: organizationScope?.organizationName || 'my organization',
+                    allowedGroups: allowedGroupsByDriveId[driveId] || [],
+                  });
 
                   return (
                     <tr key={row.Donation_Drive_ID} className="border-t border-slate-200 align-top">
