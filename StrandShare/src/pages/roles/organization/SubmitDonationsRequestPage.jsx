@@ -293,7 +293,7 @@ function mapStorageUploadError(rawMessage) {
   const lower = message.toLowerCase();
 
   if (lower.includes('bucket') && lower.includes('not found')) {
-    return 'Donation drive proposal bucket is missing. Run migration 030_donation_drive_proposals_storage_policies.sql.';
+    return `Donation drive proposal bucket is missing. Expected: ${DONATION_DRIVE_PROPOSALS_BUCKET}.`;
   }
 
   if (lower.includes('row-level security')) {
@@ -354,6 +354,7 @@ async function uploadProposalAttachment({
   return {
     filePath,
     fileName: safeFileName,
+    bucketId: DONATION_DRIVE_PROPOSALS_BUCKET,
   };
 }
 
@@ -981,19 +982,55 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         Longitude: longitude,
         Latitude: latitude,
         Is_Open_For_All: isOpenForAll,
-        Approved_By: null,
+        Proposal_Attachment_Bucket: uploadResult.bucketId || DONATION_DRIVE_PROPOSALS_BUCKET,
         Status: INITIAL_REQUEST_STATUS,
         Updated_At: new Date().toISOString(),
         Donation_Setup_Type: setupType,
       };
 
-      const { data, error } = await supabase
+      const basePayload = {
+        User_ID: actorUserId,
+        Organization_ID: organizationId,
+        Donation_Requirement_ID: Number(requirements?.Donation_Requirement_ID || 0) || null,
+        Event_Title: title,
+        Event_Overview: overview,
+        Start_Date: startTimestamp,
+        End_Date: endTimestamp,
+        Proposal_Attachment: uploadResult.filePath,
+        Street: String(form.street || '').trim(),
+        Region: String(form.region || '').trim(),
+        Barangay: String(form.barangay || '').trim(),
+        City: String(form.city || '').trim(),
+        Province: String(form.province || '').trim(),
+        Country: String(form.country || '').trim(),
+        Longitude: longitude,
+        Latitude: latitude,
+        Is_Open_For_All: isOpenForAll,
+        Status: INITIAL_REQUEST_STATUS,
+        Updated_At: new Date().toISOString(),
+        Donation_Setup_Type: setupType,
+      };
+
+      let { data, error } = await supabase
         .from(DONATION_DRIVE_REQUESTS_TABLE)
         .insert(payload)
         .select(
           'Donation_Drive_ID, Event_Title, Event_Overview, Start_Date, End_Date, Proposal_Attachment, Is_Open_For_All, Status, Updated_At, Donation_Setup_Type',
         )
         .single();
+
+      if (error && String(error.message || '').toLowerCase().includes('proposal_attachment_bucket')) {
+        const retryResult = await supabase
+          .from(DONATION_DRIVE_REQUESTS_TABLE)
+          .insert(basePayload)
+          .select(
+            'Donation_Drive_ID, Event_Title, Event_Overview, Start_Date, End_Date, Proposal_Attachment, Is_Open_For_All, Status, Updated_At, Donation_Setup_Type',
+          )
+          .single();
+
+        data = retryResult.data;
+        error = retryResult.error;
+      }
 
       if (error) {
         throw error;

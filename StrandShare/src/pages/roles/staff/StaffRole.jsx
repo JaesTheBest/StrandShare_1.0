@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   CheckCircle,
+  FileText,
   Package,
   Calendar,
   Settings,
@@ -11,6 +12,7 @@ import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
 import ViewDonorInformationsPage from './ViewDonorInformationsPage';
 import UpdateDonationStatusPage from './UpdateDonationStatusPage';
+import AssignedDonationReportsPage from './AssignedDonationReportsPage';
 import UpdateWigRequestStatusPage from './UpdateWigRequestStatusPage';
 import ScheduleAppointmentsPage from './ScheduleAppointmentsPage';
 import SettingsPage from './SettingsPage';
@@ -19,7 +21,8 @@ import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
 const staffNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'view-donor-informations', label: 'View Donor Informations', icon: Users },
-  { id: 'update-donation-status', label: 'Update Donation Status', icon: CheckCircle },
+  { id: 'update-donation-status', label: 'Review Donation Drive', icon: CheckCircle },
+  { id: 'assigned-donation-reports', label: 'Assigned Donation Reports', icon: FileText },
   { id: 'update-wig-request-status', label: 'Update Wig Request Status', icon: Package },
   { id: 'schedule-appointments', label: 'Schedule Appointments', icon: Calendar },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: CheckCircle },
@@ -30,6 +33,7 @@ const staffPageComponents = {
   dashboard: DashboardPage,
   'view-donor-informations': ViewDonorInformationsPage,
   'update-donation-status': UpdateDonationStatusPage,
+  'assigned-donation-reports': AssignedDonationReportsPage,
   'update-wig-request-status': UpdateWigRequestStatusPage,
   'schedule-appointments': ScheduleAppointmentsPage,
   'manage-donation-requirements': ManageDonationRequirementsPage,

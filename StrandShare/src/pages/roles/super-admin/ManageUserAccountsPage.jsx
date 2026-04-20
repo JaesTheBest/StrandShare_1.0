@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Search,
@@ -15,7 +16,6 @@ import {
 } from 'lucide-react';
 import Select from 'react-select';
 import { useTheme } from '../../../context/ThemeContext';
-import InfoSlidePanel from '../../../components/admin/InfoSlidePanel';
 import {
   supabase,
   isSupabaseConfigured,
@@ -609,36 +609,51 @@ export default function ManageUserAccountsPage() {
         )}
       </div>
 
-      {detailsUser ? (
-        <InfoSlidePanel
-          open={Boolean(detailsUser)}
-          onClose={closeUserDetails}
-          zIndexClassName="z-[70]"
-          panelWidthClassName="max-w-md"
-          panelStyle={{
-            borderColor: `${theme.secondaryColor}35`,
-            backgroundColor: '#ffffff',
-            opacity: 1,
-            backdropFilter: 'none',
-            color: primaryTextColor,
-            fontFamily: `${bodyFont}, sans-serif`,
-          }}
-          closeButtonClassName="rounded-md border p-1"
-          closeButtonStyle={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
-          closeButtonSize={16}
-          closeButtonLabel="Close user details panel"
-          header={(
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
-                User Account Details
-              </h3>
-              <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
-                View account role, access, and profile details.
-              </p>
-            </div>
-          )}
-        >
-          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+      {detailsUser && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[70]">
+              <button
+                type="button"
+                aria-label="Close user details panel"
+                className="absolute inset-0 m-0 border-0 bg-black bg-opacity-50 p-0 backdrop-blur-sm"
+                onClick={closeUserDetails}
+              />
+
+              <aside
+                className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l bg-white shadow-2xl"
+                style={{
+                  animation: 'manageUsersInfoSlideIn 0.25s ease-out',
+                  borderColor: `${theme.secondaryColor}35`,
+                  backgroundColor: '#ffffff',
+                  opacity: 1,
+                  backdropFilter: 'none',
+                  color: primaryTextColor,
+                  fontFamily: `${bodyFont}, sans-serif`,
+                }}
+              >
+                <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4">
+                  <div>
+                    <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
+                      User Account Details
+                    </h3>
+                    <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
+                      View account role, access, and profile details.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeUserDetails}
+                    aria-label="Close user details panel"
+                    className="rounded-md border p-1"
+                    style={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-4 p-5">
+                  <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <div className="flex items-start gap-3">
               <div
                 className="grid h-14 w-14 place-items-center rounded-full border bg-white text-lg font-semibold"
@@ -675,9 +690,9 @@ export default function ManageUserAccountsPage() {
                 {detailsUser.status}
               </span>
             </div>
-          </section>
+                  </section>
 
-          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+                  <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role Access Window</p>
             <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${theme.secondaryColor}24` }}>
               <div className="grid grid-cols-[110px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${theme.secondaryColor}20` }}>
@@ -689,9 +704,9 @@ export default function ManageUserAccountsPage() {
                 <p style={{ color: primaryTextColor }}>{detailsUser.accessEnd || 'N/A'}</p>
               </div>
             </div>
-          </section>
+                  </section>
 
-          <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
+                  <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Profile Metadata</p>
             <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${theme.secondaryColor}24` }}>
               <div className="grid grid-cols-[110px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${theme.secondaryColor}20` }}>
@@ -711,9 +726,24 @@ export default function ManageUserAccountsPage() {
                 <p style={{ color: primaryTextColor }}>{detailsUser.role || 'N/A'}</p>
               </div>
             </div>
-          </section>
-        </InfoSlidePanel>
-      ) : null}
+                  </section>
+                </div>
+              </aside>
+
+              <style>{`
+                @keyframes manageUsersInfoSlideIn {
+                  from {
+                    transform: translateX(100%);
+                  }
+                  to {
+                    transform: translateX(0);
+                  }
+                }
+              `}</style>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] backdrop-blur-sm">

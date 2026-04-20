@@ -17,7 +17,6 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabaseClient';
 import { useTheme } from '../../../context/ThemeContext';
-import InfoSlidePanel from '../../../components/admin/InfoSlidePanel';
 
 const USERS_TABLE = 'users';
 const UI_SETTINGS_TABLE = 'UI_Settings';
@@ -958,34 +957,48 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
         )}
       </section>
 
-      {selectedOrganization ? (
-        <InfoSlidePanel
-          open={Boolean(selectedOrganization)}
-          onClose={() => setSelectedOrganization(null)}
-          zIndexClassName="z-40"
-          panelWidthClassName="max-w-xl"
-          panelStyle={{
-            borderColor: `${secondaryColor}35`,
-            backgroundColor: '#ffffff',
-            opacity: 1,
-            backdropFilter: 'none',
-            color: primaryTextColor,
-            fontFamily: `${bodyFont}, sans-serif`,
-          }}
-          closeButtonClassName="rounded-md border p-1"
-          closeButtonStyle={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
-          closeButtonSize={16}
-          closeButtonLabel="Close organization details panel"
-          header={(
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Organization Info</p>
-              <h3 className="text-xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
-                {selectedOrganization.Organization_Name}
-              </h3>
-            </div>
-          )}
-        >
-          <div className="space-y-4 text-sm">
+      {selectedOrganization && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-40">
+              <button
+                type="button"
+                aria-label="Close organization details panel"
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => setSelectedOrganization(null)}
+              />
+
+              <aside
+                className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto border-l bg-white shadow-2xl"
+                style={{
+                  animation: 'manageOrganizationsInfoSlideIn 0.25s ease-out',
+                  borderColor: `${secondaryColor}35`,
+                  backgroundColor: '#ffffff',
+                  opacity: 1,
+                  backdropFilter: 'none',
+                  color: primaryTextColor,
+                  fontFamily: `${bodyFont}, sans-serif`,
+                }}
+              >
+                <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Organization Info</p>
+                    <h3 className="text-xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
+                      {selectedOrganization.Organization_Name}
+                    </h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrganization(null)}
+                    aria-label="Close organization details panel"
+                    className="rounded-md border p-1"
+                    style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-4 p-5 text-sm">
             <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
               <div className="flex items-start gap-3">
                 {selectedOrganization.Organization_Logo_URL ? (
@@ -1134,9 +1147,23 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                 </div>
               </div>
             </section>
-          </div>
-        </InfoSlidePanel>
-      ) : null}
+                </div>
+              </aside>
+
+              <style>{`
+                @keyframes manageOrganizationsInfoSlideIn {
+                  from {
+                    transform: translateX(100%);
+                  }
+                  to {
+                    transform: translateX(0);
+                  }
+                }
+              `}</style>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {completionModal.open && typeof document !== 'undefined' ? createPortal(
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">

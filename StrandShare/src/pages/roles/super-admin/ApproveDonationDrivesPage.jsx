@@ -24,6 +24,10 @@ function normalizeStatusKey(value) {
   return normalizeText(value).replace(/[^a-z0-9]/g, '');
 }
 
+function shouldBeVisibleToSuperAdmin(statusValue) {
+  return normalizeStatusKey(statusValue) !== 'pendingstaffapproval';
+}
+
 function formatDateTime(value) {
   if (!value) {
     return 'N/A';
@@ -223,7 +227,9 @@ export default function ApproveDonationDrivesPage({ userProfile }) {
         throw staffResult.error;
       }
 
-      const requestRows = requestsResult.data || [];
+      const requestRows = (requestsResult.data || []).filter((row) => {
+        return shouldBeVisibleToSuperAdmin(row?.Status);
+      });
       setRequests(requestRows);
 
       const staffRows = staffResult.data || [];

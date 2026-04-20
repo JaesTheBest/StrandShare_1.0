@@ -87,6 +87,32 @@ function resolveDisplayRole(roleValue) {
   return roleValue;
 }
 
+function toOpaqueColor(value, fallback = '#ffffff') {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return fallback;
+  }
+
+  const rgbaMatch = raw.match(
+    /^rgba\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*(?:0|1|0?\.\d+)\s*\)$/i,
+  );
+
+  if (rgbaMatch) {
+    const [r, g, b] = rgbaMatch.slice(1, 4).map((part) => {
+      const parsed = Number(part);
+      if (!Number.isFinite(parsed)) {
+        return 255;
+      }
+
+      return Math.min(255, Math.max(0, parsed));
+    });
+
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  return raw;
+}
+
 export default function Header({
   onSignOut,
   onOpenSettings,
@@ -102,6 +128,10 @@ export default function Header({
   const displayEmail = userProfile?.email || 'No email available';
   const resolvedAvatar = useMemo(() => resolveProfileAvatar(userProfile), [userProfile]);
   const avatarSrc = avatarHasError ? DEFAULT_PROFILE_AVATAR : resolvedAvatar;
+  const dropdownBackgroundColor = useMemo(
+    () => toOpaqueColor(theme?.backgroundColor, '#ffffff'),
+    [theme?.backgroundColor],
+  );
 
   useEffect(() => {
     setAvatarHasError(false);
@@ -180,13 +210,17 @@ export default function Header({
             />
             <ChevronDown
               size={16}
-              className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 text-gray-600"
+              className="absolute -bottom-1 -right-1 rounded-full p-0.5 text-gray-600"
+              style={{ backgroundColor: dropdownBackgroundColor }}
             />
           </button>
 
           {/* Dropdown Menu */}
           {showProfileDropdown && (
-            <div className="absolute right-0 top-16 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+            <div
+              className="absolute right-0 top-16 w-72 rounded-xl border border-gray-200 shadow-2xl z-[80] overflow-hidden backdrop-blur-none"
+              style={{ backgroundColor: dropdownBackgroundColor }}
+            >
               <div className="p-4 border-b border-gray-200">
                 <div className="flex items-start gap-3">
                   <img
@@ -224,7 +258,10 @@ export default function Header({
                 )}
 
                 {showSignOutConfirm && (
-                  <div className="space-y-3 px-3 py-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <div
+                    className="space-y-3 px-3 py-3 rounded-lg border border-gray-200"
+                    style={{ backgroundColor: dropdownBackgroundColor }}
+                  >
                     <p className="text-sm text-gray-700">Are you sure you want to sign out?</p>
                     <div className="flex gap-2">
                       <button

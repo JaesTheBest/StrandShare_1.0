@@ -17,7 +17,6 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
-import InfoSlidePanel from '../../../components/admin/InfoSlidePanel';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
 const HOSPITALS_TABLE = 'Hospitals';
@@ -1560,35 +1559,51 @@ export default function ManageHospitalAccountsPage() {
         document.body,
       )}
 
-      {detailsHospital ? (
-        <InfoSlidePanel
-          open={Boolean(detailsHospital)}
-          onClose={closeHospitalDetails}
-          zIndexClassName="z-[95]"
-          panelStyle={{
-            borderColor: `${theme.secondaryColor}35`,
-            backgroundColor: '#ffffff',
-            opacity: 1,
-            backdropFilter: 'none',
-            color: primaryTextColor,
-            fontFamily: `${bodyFont}, sans-serif`,
-          }}
-          closeButtonClassName="rounded-md border p-1"
-          closeButtonStyle={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
-          closeButtonSize={16}
-          closeButtonLabel="Close hospital details panel"
-          header={(
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
-                H-Representative Details
-              </h3>
-              <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
-                View and manage assigned H-Representative.
-              </p>
-            </div>
-          )}
-        >
-          <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+      {detailsHospital && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[95]">
+              <button
+                type="button"
+                aria-label="Close hospital details panel"
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={closeHospitalDetails}
+              />
+
+              <aside
+                className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l bg-white shadow-2xl"
+                style={{
+                  animation: 'manageHospitalInfoSlideIn 0.25s ease-out',
+                  borderColor: `${theme.secondaryColor}35`,
+                  backgroundColor: '#ffffff',
+                  opacity: 1,
+                  backdropFilter: 'none',
+                  color: primaryTextColor,
+                  fontFamily: `${bodyFont}, sans-serif`,
+                }}
+              >
+                <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4">
+                  <div>
+                    <h3 className="text-lg font-semibold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
+                      H-Representative Details
+                    </h3>
+                    <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
+                      View and manage assigned H-Representative.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeHospitalDetails}
+                    aria-label="Close hospital details panel"
+                    className="rounded-md border p-1"
+                    style={{ borderColor: `${theme.secondaryColor}44`, color: secondaryTextColor }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-4 p-5">
+                  <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <div className="flex items-start gap-3">
               {resolveHospitalLogoUrl(detailsHospital.Hospital_Logo) ? (
                 <img
@@ -1615,9 +1630,9 @@ export default function ManageHospitalAccountsPage() {
                 .filter(Boolean)
                 .join(', ') || 'No address on record.'}
             </p>
-          </div>
+                  </div>
 
-          <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+                  <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <p className="mb-3 text-sm font-semibold" style={{ color: primaryTextColor }}>Quick Assign H-Representative</p>
             <div className="space-y-2">
               <select
@@ -1651,9 +1666,9 @@ export default function ManageHospitalAccountsPage() {
                 {isSavingAssignment ? 'Assigning...' : 'Assign To This H-Representative'}
               </button>
             </div>
-          </div>
+                  </div>
 
-          <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
+                  <div className="rounded-xl border p-4" style={{ borderColor: `${theme.secondaryColor}30` }}>
             <p className="mb-3 text-sm font-semibold" style={{ color: primaryTextColor }}>Assigned H-Representative</p>
 
             {detailsHospitalStaffLinks.length === 0 ? (
@@ -1694,9 +1709,24 @@ export default function ManageHospitalAccountsPage() {
                 })}
               </div>
             )}
-          </div>
-        </InfoSlidePanel>
-      ) : null}
+                  </div>
+                </div>
+              </aside>
+
+              <style>{`
+                @keyframes manageHospitalInfoSlideIn {
+                  from {
+                    transform: translateX(100%);
+                  }
+                  to {
+                    transform: translateX(0);
+                  }
+                }
+              `}</style>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {isModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[90] backdrop-blur-sm p-4">

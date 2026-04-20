@@ -57,6 +57,10 @@ function normalizeStatusKey(value) {
   return normalizeText(value).replace(/[^a-z0-9]/g, '');
 }
 
+function shouldBeVisibleToSuperAdmin(statusValue) {
+  return normalizeStatusKey(statusValue) !== 'pendingstaffapproval';
+}
+
 function mapStatusMeta(statusValue) {
   const key = normalizeStatusKey(statusValue);
 
@@ -163,13 +167,15 @@ export default function SuperAdminOverviewPage() {
         .from(DONATION_DRIVE_REQUESTS_TABLE)
         .select('Donation_Drive_ID, Organization_ID, Event_Title, Is_Open_For_All, Status, Updated_At')
         .order('Updated_At', { ascending: false })
-        .limit(8);
+        .limit(200);
 
       if (requestsResult.error) {
         throw requestsResult.error;
       }
 
-      const requestRows = requestsResult.data || [];
+      const requestRows = (requestsResult.data || []).filter((row) => {
+        return shouldBeVisibleToSuperAdmin(row?.Status);
+      });
 
       if (!requestRows.length) {
         setRecentDriveRows([]);
@@ -239,7 +245,7 @@ export default function SuperAdminOverviewPage() {
         }, {});
       }
 
-      const nextRows = requestRows.map((row) => {
+      const nextRows = requestRows.slice(0, 8).map((row) => {
         const driveId = Number(row.Donation_Drive_ID || 0) || 0;
         const organizationId = Number(row.Organization_ID || 0) || 0;
         const hostOrganizationName = organizationsMap[organizationId] || `Organization #${organizationId || 'N/A'}`;
