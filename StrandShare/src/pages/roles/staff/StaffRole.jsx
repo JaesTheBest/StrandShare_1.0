@@ -22,7 +22,7 @@ const staffNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'view-donor-informations', label: 'View Donor Informations', icon: Users },
   { id: 'update-donation-status', label: 'Review Donation Drive', icon: CheckCircle },
-  { id: 'assigned-donation-reports', label: 'Assigned Donation Reports', icon: FileText },
+  { id: 'assigned-donation-reports', label: 'Assigned Donation Drive', icon: FileText },
   { id: 'update-wig-request-status', label: 'Update Wig Request Status', icon: Package },
   { id: 'schedule-appointments', label: 'Schedule Appointments', icon: Calendar },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: CheckCircle },
