@@ -404,7 +404,7 @@ function mapRegistrationSaveError(rawMessage) {
   }
 
   if (lower.includes('row-level security')) {
-    return 'RSVP update was blocked by database policy. Verify staff select/update access for Donation_Drive_Registrations.';
+    return 'RSVP update was blocked by database policy. Only the assigned staff for this event can access Donation_Drive_Registrations.';
   }
 
   return message;
@@ -621,6 +621,13 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   }, [activeDriveId, eventTabs]);
 
   const selectedDriveId = Number(selectedDrive?.Donation_Drive_ID || 0) || null;
+  const selectedDriveAssignedStaffUserId = Number(selectedDrive?.Assigned_Staff_User_ID || 0) || null;
+  const isSelectedDriveAssignedToCurrentStaff = Boolean(
+    selectedDriveId
+    && selectedDriveAssignedStaffUserId
+    && staffUserId
+    && selectedDriveAssignedStaffUserId === staffUserId,
+  );
   const selectedEventName = selectedDrive?.Event_Title || (selectedDriveId ? `Drive #${selectedDriveId}` : 'No selected event');
   const currentStaffName = buildFullName(
     userProfile?.first_name,
@@ -701,6 +708,12 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
+    if (!isSelectedDriveAssignedToCurrentStaff) {
+      setRsvpScanHistoryRows([]);
+      setScannerNotice('rsvp', 'error', 'RSVP scanner is locked. This event is not assigned to your staff account.');
+      return;
+    }
+
     try {
       setIsRsvpHistoryLoading(true);
 
@@ -747,7 +760,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     } finally {
       setIsRsvpHistoryLoading(false);
     }
-  }, [loadUserNamesByIds, selectedDriveId, setScannerNotice]);
+  }, [isSelectedDriveAssignedToCurrentStaff, loadUserNamesByIds, selectedDriveId, setScannerNotice]);
 
   useEffect(() => {
     void loadRsvpScanHistory();
@@ -789,6 +802,20 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
+    if (!isSelectedDriveAssignedToCurrentStaff) {
+      const assignmentMessage = 'RSVP scanner is locked. This event is not assigned to your staff account.';
+      setNotice({ kind: 'error', text: assignmentMessage });
+      setScannerNotice('rsvp', 'error', assignmentMessage);
+      setLastRsvpScan({
+        status: 'failed',
+        userId: null,
+        scannedAt: new Date().toISOString(),
+        reason: assignmentMessage,
+        raw: String(decodedText || '').trim(),
+      });
+      return;
+    }
+
     const parsedPayload = parseDonationQrPayload(decodedText);
     if (!parsedPayload.userId) {
       const parseMessage = 'QR does not contain a valid donor User ID.';
@@ -804,10 +831,24 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
+    if (!parsedPayload.driveId) {
+      const missingDriveMessage = 'QR is missing Donation Drive ID. Use the RSVP QR generated for this selected event.';
+      setNotice({ kind: 'error', text: missingDriveMessage });
+      setScannerNotice('rsvp', 'error', missingDriveMessage);
+      setLastRsvpScan({
+        status: 'failed',
+        userId: parsedPayload.userId,
+        scannedAt: new Date().toISOString(),
+        reason: missingDriveMessage,
+        raw: parsedPayload.raw,
+      });
+      return;
+    }
+
     if (parsedPayload.driveId && parsedPayload.driveId !== driveId) {
       const mismatchMessage = `QR belongs to drive #${parsedPayload.driveId}, but selected event is #${driveId}.`;
-      setNotice({ kind: 'warning', text: mismatchMessage });
-      setScannerNotice('rsvp', 'warning', mismatchMessage);
+      setNotice({ kind: 'error', text: mismatchMessage });
+      setScannerNotice('rsvp', 'error', mismatchMessage);
       setLastRsvpScan({
         status: 'failed',
         userId: parsedPayload.userId,
@@ -827,7 +868,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
       let registrationResult = await supabase
         .from(DONATION_DRIVE_REGISTRATIONS_TABLE)
-        .select('Registration_ID, Donation_Drive_ID, User_ID, Attendance_Status, Updated_At, Attendance_Marked_At')
+        .select('Registration_ID, Donation_Drive_ID, User_ID, Registration_Status, Attendance_Status, Updated_At, Attendance_Marked_At')
         .eq('Donation_Drive_ID', driveId)
         .eq('User_ID', parsedPayload.userId)
         .maybeSingle();
@@ -835,7 +876,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       if (registrationResult.error && normalizeText(registrationResult.error.message).includes('attendance_marked_at')) {
         registrationResult = await supabase
           .from(DONATION_DRIVE_REGISTRATIONS_TABLE)
-          .select('Registration_ID, Donation_Drive_ID, User_ID, Attendance_Status, Updated_At')
+          .select('Registration_ID, Donation_Drive_ID, User_ID, Registration_Status, Attendance_Status, Updated_At')
           .eq('Donation_Drive_ID', driveId)
           .eq('User_ID', parsedPayload.userId)
           .maybeSingle();
@@ -855,6 +896,22 @@ export default function AssignedDonationReportsPage({ userProfile }) {
           userId: parsedPayload.userId,
           scannedAt: nowIso,
           reason: notRegisteredMessage,
+          raw: parsedPayload.raw,
+        });
+        return;
+      }
+
+      const registrationStatusKey = normalizeStatusKey(registration.Registration_Status);
+      if (registrationStatusKey !== 'approved') {
+        const registrationStatusLabel = registration.Registration_Status || 'Unknown';
+        const notApprovedMessage = `User #${parsedPayload.userId} RSVP is not Approved (current: ${registrationStatusLabel}).`;
+        setNotice({ kind: 'warning', text: notApprovedMessage });
+        setScannerNotice('rsvp', 'warning', notApprovedMessage);
+        setLastRsvpScan({
+          status: 'failed',
+          userId: parsedPayload.userId,
+          scannedAt: nowIso,
+          reason: notApprovedMessage,
           raw: parsedPayload.raw,
         });
         return;
@@ -880,6 +937,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       let updateResult = await supabase
         .from(DONATION_DRIVE_REGISTRATIONS_TABLE)
         .update({
+          Registration_Status: 'Approved',
           Attendance_Status: 'Present',
           Updated_At: nowIso,
           Attendance_Marked_At: nowIso,
@@ -894,6 +952,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
         updateResult = await supabase
           .from(DONATION_DRIVE_REGISTRATIONS_TABLE)
           .update({
+            Registration_Status: 'Approved',
             Attendance_Status: 'Present',
             Updated_At: nowIso,
           })
@@ -957,7 +1016,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     } finally {
       isRsvpProcessingRef.current = false;
     }
-  }, [loadRsvpScanHistory, selectedDriveId, setScannerNotice, userProfile]);
+  }, [isSelectedDriveAssignedToCurrentStaff, loadRsvpScanHistory, selectedDriveId, setScannerNotice, userProfile]);
 
   const handleLogisticsScan = useCallback((decodedText) => {
     const parsedPayload = parseDonationQrPayload(decodedText);
@@ -1027,6 +1086,11 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     }
 
     if (!selectedDriveId) {
+      return undefined;
+    }
+
+    if (activeWorkflowTab === 'rsvp' && !isSelectedDriveAssignedToCurrentStaff) {
+      setScannerNotice('rsvp', 'error', 'RSVP scanner is locked. This event is not assigned to your staff account.');
       return undefined;
     }
 
@@ -1172,6 +1236,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     handleLogisticsScan,
     handleRsvpScan,
     isCameraEnabled,
+    isSelectedDriveAssignedToCurrentStaff,
     isSelectedDriveStarted,
     selectedDriveId,
     setScannerNotice,
@@ -1406,8 +1471,16 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     }
   };
 
+  // Calculate metrics for right-side data cards
+  const checkedInCount = rsvpScanHistoryRows.filter(
+    (row) => Number(row.driveId || 0) === Number(selectedDriveId || 0)
+  ).length;
+  const registrationTotal = selectedDrive?.Registration_Count || 0;
+  const capacityPercentage = registrationTotal > 0 ? Math.round((checkedInCount / registrationTotal) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      {/* Page Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="mb-2 text-3xl font-bold text-slate-900">Assigned Donation Drive</h1>
@@ -1450,263 +1523,316 @@ export default function AssignedDonationReportsPage({ userProfile }) {
         ))}
       </div>
 
-      {!!eventTabs.length && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-semibold text-slate-900">Select Event By Date</h2>
-            <p className="text-xs text-slate-500">Only one event is shown below at a time to avoid scanning or reporting under the wrong drive.</p>
-          </div>
-          <div className="flex gap-2 overflow-x-auto px-4 py-3">
-            {eventTabs.map((row) => {
-              const isActive = row.Donation_Drive_ID === selectedDrive?.Donation_Drive_ID;
+      {/* THREE-COLUMN LAYOUT: Left Sidebar + Center Scanner + Right Data Cards */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        {/* LEFT SIDEBAR: Event List */}
+        <div className="lg:col-span-1">
+          {!!eventTabs.length && (
+            <div className="sticky top-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-sm font-semibold text-slate-900">Assigned Events</h2>
+                <p className="mt-1 text-xs text-slate-500">Tap to select and lock the event for scanning.</p>
+              </div>
+              <div className="max-h-[600px] space-y-2 overflow-y-auto px-3 py-3">
+                {eventTabs.map((row) => {
+                  const isActive = row.Donation_Drive_ID === selectedDrive?.Donation_Drive_ID;
 
-              return (
-                <button
-                  key={row.Donation_Drive_ID}
-                  type="button"
-                  onClick={() => setActiveDriveId(row.Donation_Drive_ID)}
-                  className={`min-w-[220px] rounded-lg border px-3 py-2 text-left transition ${
-                    isActive
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <p className={`text-[11px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>
-                    {row.dateTabLabel}
-                  </p>
-                  <p className="mt-1 line-clamp-1 text-sm font-semibold">{row.Event_Title || `Drive #${row.Donation_Drive_ID}`}</p>
-                  <span
-                    className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                      isActive
-                        ? 'border-white/40 bg-white/10 text-white'
-                        : row.isToday
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : row.isUpcoming
-                            ? 'border-blue-200 bg-blue-50 text-blue-800'
-                            : 'border-slate-200 bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {row.timelineLabel}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                  return (
+                    <button
+                      key={row.Donation_Drive_ID}
+                      type="button"
+                      onClick={() => setActiveDriveId(row.Donation_Drive_ID)}
+                      className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                        isActive
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <p className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>
+                        {row.dateTabLabel}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-xs font-semibold">{row.Event_Title || `Drive #${row.Donation_Drive_ID}`}</p>
+                      <span
+                        className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                          isActive
+                            ? 'border-white/40 bg-white/10 text-white'
+                            : row.isToday
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                              : row.isUpcoming
+                                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                : 'border-slate-200 bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {row.timelineLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
-      {!!selectedDrive && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-semibold text-slate-900">Selected Donation Drive</h2>
-            <p className="text-xs text-slate-500">This event stays pinned while you scan and update records.</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 px-4 py-4 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Event Name</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{selectedEventName}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host Organization</p>
-              <p className="mt-1 text-sm text-slate-700">{selectedDrive.hostOrganizationName}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Schedule</p>
-              <p className="mt-1 text-sm text-slate-700">{formatDateRange(selectedDrive.Start_Date, selectedDrive.End_Date)}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
-              <span className="mt-1 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                Approved
-              </span>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 px-4 py-3">
-            {selectedDrive.canSubmitCompletion ? (
-              <button
-                type="button"
-                onClick={() => openCompletionModal(selectedDrive)}
-                disabled={isSaving}
-                className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-              >
-                <Send size={13} />
-                Submit Drive Completion
-              </button>
-            ) : (
-              <p className="text-xs text-slate-500">Completion can be submitted only after event end date.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!!selectedDrive && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">Drive Workflow</h2>
-              <button
-                type="button"
-                onClick={() => setIsCameraEnabled((previous) => !previous)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                  isCameraEnabled
-                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                }`}
-              >
-                {isCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Event in focus: {selectedDrive.Event_Title || `Drive #${selectedDrive.Donation_Drive_ID}`} ({formatDateRange(selectedDrive.Start_Date, selectedDrive.End_Date)})
-            </p>
-          </div>
-
-          <div className="border-b border-slate-200 px-4 py-3">
-            <div className="flex flex-wrap gap-2">
-              {WORKFLOW_TABS.map((tab) => {
-                const isActive = activeWorkflowTab === tab.id;
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveWorkflowTab(tab.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
-                      isActive
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            {activeWorkflowTab === 'rsvp' && (
-              <>
-                <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${scannerStatusClass(scannerState.rsvp.kind)}`}>
-                  {scannerState.rsvp.text}
+        {/* CENTER: Scanner & Workflows */}
+        <div className="lg:col-span-2 space-y-4">
+          {!!selectedDrive && (
+            <>
+              {/* Selected Drive Info */}
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <h2 className="text-sm font-semibold text-slate-900">Active Event</h2>
                 </div>
-
-                {!isSelectedDriveStarted ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-                    RSVP scanning is locked until start date: {formatDateTime(selectedDrive.Start_Date)}
+                <div className="grid grid-cols-2 gap-3 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-slate-500">Event</p>
+                    <p className="mt-1 line-clamp-1 font-semibold text-slate-900">{selectedEventName}</p>
                   </div>
-                ) : (
-                  <div
-                    className="mx-auto w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                    style={CAMERA_VIEWPORT_STYLE}
-                  >
-                    <video
-                      ref={rsvpVideoRef}
-                      className="h-full w-full bg-slate-900 object-cover"
-                      autoPlay
-                      playsInline
-                      muted
-                    />
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-slate-500">Organization</p>
+                    <p className="mt-1 line-clamp-1 text-slate-700">{selectedDrive.hostOrganizationName}</p>
                   </div>
-                )}
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-slate-500">Schedule</p>
+                    <p className="mt-1 text-slate-700">{formatDateRange(selectedDrive.Start_Date, selectedDrive.End_Date)}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                    <span className="mt-1 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                      Approved
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Manual RSVP QR Input</p>
-                  <div className="flex flex-col gap-2 md:flex-row">
-                    <input
-                      value={manualQrInput.rsvp}
-                      onChange={(event) => setManualQrInput((previous) => ({ ...previous, rsvp: event.target.value }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                      placeholder="Paste QR payload if camera scan is unavailable"
-                    />
+              {/* RSVP Scanner Section */}
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-sm font-semibold text-slate-900">RSVP Scanner</h2>
                     <button
                       type="button"
-                      onClick={() => submitManualScan('rsvp')}
-                      className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      onClick={() => setIsCameraEnabled((previous) => !previous)}
+                      className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                        isCameraEnabled
+                          ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      }`}
                     >
-                      Submit
+                      {isCameraEnabled ? 'Off' : 'On'}
                     </button>
                   </div>
+                  <p className="mt-1 text-xs text-slate-500">Align QR code within frame</p>
                 </div>
 
-                {lastRsvpScan && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Last RSVP Scan</p>
-                    <p className="mt-1">User: {lastRsvpScan.userId ? `#${lastRsvpScan.userId}` : 'Unknown'}</p>
-                    <p>Time: {formatDateTime(lastRsvpScan.scannedAt)}</p>
-                    <p>Status: {lastRsvpScan.status}</p>
-                    <p className="mt-1 text-xs text-slate-500">{lastRsvpScan.reason}</p>
+                <div className="space-y-3 px-4 py-4">
+                  <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${scannerStatusClass(scannerState.rsvp.kind)}`}>
+                    {scannerState.rsvp.text}
                   </div>
-                )}
-              </>
-            )}
 
-            {activeWorkflowTab === 'logistics' && (
-              <>
-                <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${scannerStatusClass(scannerState.logistics.kind)}`}>
-                  {scannerState.logistics.text}
+                  {!isSelectedDriveStarted ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                      RSVP scanning is locked until start date: {formatDateTime(selectedDrive.Start_Date)}
+                    </div>
+                  ) : (
+                    <div
+                      className="mx-auto w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                      style={CAMERA_VIEWPORT_STYLE}
+                    >
+                      <video
+                        ref={rsvpVideoRef}
+                        className="h-full w-full bg-slate-900 object-cover"
+                        autoPlay
+                        playsInline
+                        muted
+                      />
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Manual Entry</p>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        value={manualQrInput.rsvp}
+                        onChange={(event) => setManualQrInput((previous) => ({ ...previous, rsvp: event.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+                        placeholder="E.G., ATT-8492"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => submitManualScan('rsvp')}
+                        className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Check In
+                      </button>
+                    </div>
+                  </div>
+
+                  {lastRsvpScan && (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900">Last Scan</p>
+                      <p className="mt-1 text-xs">User #{lastRsvpScan.userId} — {formatDateTime(lastRsvpScan.scannedAt)}</p>
+                      <p className="mt-1 text-xs text-slate-500">{lastRsvpScan.reason}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Additional Tabs: Logistics & Completion */}
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    {WORKFLOW_TABS.map((tab) => {
+                      const isActive = activeWorkflowTab === tab.id;
+
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActiveWorkflowTab(tab.id)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                            isActive
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
+                <div className="space-y-3 px-4 py-4">
+                  {activeWorkflowTab === 'logistics' && (
+                    <>
+                      <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${scannerStatusClass(scannerState.logistics.kind)}`}>
+                        {scannerState.logistics.text}
+                      </div>
+
+                      <div
+                        className="mx-auto w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                        style={CAMERA_VIEWPORT_STYLE}
+                      >
+                        <video
+                          ref={logisticsVideoRef}
+                          className="h-full w-full bg-slate-900 object-cover"
+                          autoPlay
+                          playsInline
+                          muted
+                        />
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Manual Entry</p>
+                        <div className="flex flex-col gap-2">
+                          <input
+                            value={manualQrInput.logistics}
+                            onChange={(event) => setManualQrInput((previous) => ({ ...previous, logistics: event.target.value }))}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+                            placeholder="Paste QR payload if camera scan is unavailable"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => submitManualScan('logistics')}
+                            className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                        Logistics scanner is active for capture only. Status transitions will be connected in the next update.
+                      </div>
+
+                      {lastLogisticsScan && (
+                        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                          <p className="font-semibold text-slate-900">Last Logistics Scan</p>
+                          <p className="mt-1 text-xs">User #{lastLogisticsScan.userId} — Drive #{lastLogisticsScan.driveId}</p>
+                          <p className="mt-1 text-xs text-slate-500">{lastLogisticsScan.reason}</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {activeWorkflowTab === 'completion' && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900 mb-1">Submit Completion</p>
+                      <p className="text-xs mb-3">Completion can be submitted only after event end date.</p>
+                      {selectedDrive.canSubmitCompletion ? (
+                        <button
+                          type="button"
+                          onClick={() => openCompletionModal(selectedDrive)}
+                          disabled={isSaving}
+                          className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+                        >
+                          <Send size={13} />
+                          Submit Drive Completion
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {activeWorkflowTab === 'rsvp' && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                      <p className="text-xs">Use the RSVP Scanner above to check in attendees and mark attendance.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* RIGHT SIDEBAR: Data Cards */}
+        <div className="lg:col-span-1">
+          <div className="sticky top-4 space-y-3">
+            {/* Checked In Card */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Checked In</p>
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {checkedInCount}<span className="text-lg text-slate-500">/{registrationTotal}</span>
+              </p>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                 <div
-                  className="mx-auto w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                  style={CAMERA_VIEWPORT_STYLE}
-                >
-                  <video
-                    ref={logisticsVideoRef}
-                    className="h-full w-full bg-slate-900 object-cover"
-                    autoPlay
-                    playsInline
-                    muted
-                  />
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${capacityPercentage}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-600">{capacityPercentage}% Capacity</p>
+            </div>
+
+            {/* Supply Alert Card */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-amber-700" />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Supply Alert</p>
+                  <p className="mt-1 text-sm font-semibold text-amber-900">Wig Storage Unit</p>
+                  <p className="mt-1 text-xs text-amber-700">Capacity threshold warning</p>
                 </div>
+              </div>
+            </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Manual Logistics QR Input</p>
-                  <div className="flex flex-col gap-2 md:flex-row">
-                    <input
-                      value={manualQrInput.logistics}
-                      onChange={(event) => setManualQrInput((previous) => ({ ...previous, logistics: event.target.value }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                      placeholder="Paste QR payload if camera scan is unavailable"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => submitManualScan('logistics')}
-                      className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                    >
-                      Submit
-                    </button>
-                  </div>
+            {/* Recently Scanned Summary */}
+            {rsvpScannedTableRows.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recently Scanned</p>
+                <div className="mt-3 space-y-2">
+                  {rsvpScannedTableRows.slice(-3).map((row) => (
+                    <div key={row.id} className="text-xs border-t border-slate-100 pt-2">
+                      <p className="font-semibold text-slate-900 line-clamp-1">{row.userName}</p>
+                      <p className="mt-0.5 text-slate-500">{formatDateTime(row.time)}</p>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                  Logistics scanner is active for capture only. Status transitions will be connected in the next update.
-                </div>
-
-                {lastLogisticsScan && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Last Logistics Scan</p>
-                    <p className="mt-1">User: {lastLogisticsScan.userId ? `#${lastLogisticsScan.userId}` : 'Unknown'}</p>
-                    <p>Drive: {lastLogisticsScan.driveId ? `#${lastLogisticsScan.driveId}` : 'Not encoded'}</p>
-                    <p>Time: {formatDateTime(lastLogisticsScan.scannedAt)}</p>
-                    <p>Status: {lastLogisticsScan.status}</p>
-                    <p className="mt-1 text-xs text-slate-500">{lastLogisticsScan.reason}</p>
-                  </div>
-                )}
-              </>
-            )}
-
-            {activeWorkflowTab === 'completion' && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                Completion is submitted from the selected drive panel below once the event end date has passed.
               </div>
             )}
           </div>
         </div>
-      )}
+      </div>
 
+      {/* SCANNED HISTORY TABLE (Full Width) */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">
           <h2 className="text-lg font-semibold text-slate-900">{activeScannedTableTitle}</h2>
