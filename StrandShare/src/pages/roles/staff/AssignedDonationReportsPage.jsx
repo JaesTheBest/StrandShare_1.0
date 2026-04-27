@@ -4,17 +4,15 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
-  HelpCircle,
   Loader2,
   MapPin,
   Navigation,
   QrCode,
   RefreshCw,
   Search,
-  Send,
   Users,
-  X,
 } from 'lucide-react';
+import { useTheme } from '../../../context/ThemeContext';
 import jsQR from 'jsqr';
 import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
@@ -51,6 +49,15 @@ const STATUS = {
   completed: 'Completed',
 };
 
+function createInitialCompletionForm() {
+  return {
+    totalRecipients: '',
+    totalDonations: '',
+    notes: '',
+    files: [],
+  };
+}
+
 function buildFullName(firstName, lastName, fallback = 'Unknown') {
   const fullName = [firstName, lastName]
     .map((value) => String(value || '').trim())
@@ -68,6 +75,47 @@ function toPositiveInteger(value) {
   }
 
   return parsed;
+}
+
+function withColorAlpha(colorValue, alpha, fallback = '#0275d8') {
+  const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  const parseToRgba = (value) => {
+    const input = String(value || '').trim();
+    if (!input) {
+      return null;
+    }
+
+    const rgbMatch = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+    if (rgbMatch) {
+      const [r, g, b] = rgbMatch.slice(1).map((channel) => {
+        const parsed = Number(channel);
+        return Math.max(0, Math.min(255, Number.isFinite(parsed) ? parsed : 0));
+      });
+
+      return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+    }
+
+    const hexSix = input.match(/^#([0-9a-f]{6})$/i);
+    if (hexSix) {
+      const raw = hexSix[1];
+      const r = parseInt(raw.slice(0, 2), 16);
+      const g = parseInt(raw.slice(2, 4), 16);
+      const b = parseInt(raw.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+    }
+
+    const hexThree = input.match(/^#([0-9a-f]{3})$/i);
+    if (hexThree) {
+      const [r, g, b] = hexThree[1].split('').map((channel) => `${channel}${channel}`);
+      return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${safeAlpha})`;
+    }
+
+    return input;
+  };
+
+  return parseToRgba(colorValue)
+    || parseToRgba(fallback)
+    || `rgba(2, 117, 216, ${safeAlpha})`;
 }
 
 function parseDonationQrPayload(rawValue) {
@@ -482,6 +530,7 @@ async function uploadEventAsset({ filePath, file }) {
 }
 
 export default function AssignedDonationReportsPage({ userProfile }) {
+  const { theme } = useTheme();
   const staffUserId = Number(userProfile?.user_id || 0) || null;
 
   const [requests, setRequests] = useState([]);
@@ -489,14 +538,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [completionModal, setCompletionModal] = useState({
-    open: false,
-    row: null,
-    totalRecipients: '',
-    totalDonations: '',
-    notes: '',
-    files: [],
-  });
+  const [completionForm, setCompletionForm] = useState(createInitialCompletionForm);
   const [activeDriveId, setActiveDriveId] = useState(null);
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('rsvp');
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
@@ -516,6 +558,38 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const [isRsvpHistoryLoading, setIsRsvpHistoryLoading] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
   const [eventFilterId, setEventFilterId] = useState('today');
+
+  const primaryColor = String(theme?.primaryColor || '#0275d8').trim() || '#0275d8';
+  const primaryColorDark = String(theme?.primaryColorDark || primaryColor).trim() || primaryColor;
+  const primaryTextColor = String(theme?.primaryTextColor || '#0f172a').trim() || '#0f172a';
+  const secondaryTextColor = String(theme?.secondaryTextColor || '#64748b').trim() || '#64748b';
+  const pageFontFamily = String(theme?.selectedFont || theme?.fontFamily || 'Poppins').trim() || 'Poppins';
+  const secondaryFontFamily = String(theme?.secondaryFontFamily || pageFontFamily).trim() || pageFontFamily;
+
+  const activeAccentStyle = useMemo(
+    () => ({
+      borderColor: withColorAlpha(primaryColor, 0.35),
+      backgroundColor: withColorAlpha(primaryColor, 0.12),
+      color: primaryColor,
+    }),
+    [primaryColor],
+  );
+
+  const activePanelStyle = useMemo(
+    () => ({
+      borderColor: withColorAlpha(primaryColor, 0.35),
+      backgroundColor: withColorAlpha(primaryColor, 0.1),
+    }),
+    [primaryColor],
+  );
+
+  const checkedInCardStyle = useMemo(
+    () => ({
+      borderColor: withColorAlpha(primaryColor, 0.3),
+      background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColorDark} 100%)`,
+    }),
+    [primaryColor, primaryColorDark],
+  );
 
   const rsvpVideoRef = useRef(null);
   const logisticsVideoRef = useRef(null);
@@ -694,15 +768,80 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
   const selectedDriveStartDate = toDateValue(selectedDrive?.Start_Date);
   const isSelectedDriveStarted = !selectedDriveStartDate || selectedDriveStartDate.getTime() <= Date.now();
+  const selectedDriveEndDate = toDateValue(selectedDrive?.End_Date);
+  const isSelectedDriveEnded = Boolean(
+    selectedDrive?.canSubmitCompletion
+    || (selectedDriveEndDate && selectedDriveEndDate.getTime() <= Date.now()),
+  );
+  const isSelectedDriveScannable = Boolean(selectedDriveId && isSelectedDriveStarted && !isSelectedDriveEnded);
+  const scannerAvailabilityMessage = useMemo(() => {
+    if (!selectedDriveId) {
+      return 'Select an event to prepare scanner controls.';
+    }
+
+    if (!isSelectedDriveStarted) {
+      return `QR scanner will open at ${formatDateTime(selectedDrive?.Start_Date)}.`;
+    }
+
+    if (isSelectedDriveEnded) {
+      return `QR scanner is closed because this event ended at ${formatDateTime(selectedDrive?.End_Date)}.`;
+    }
+
+    return '';
+  }, [isSelectedDriveEnded, isSelectedDriveStarted, selectedDrive, selectedDriveId]);
+
+  const isCompletionUnlocked = Boolean(selectedDrive?.canSubmitCompletion);
+  const isScannerTabActive = activeWorkflowTab === 'rsvp' || activeWorkflowTab === 'logistics';
+  const isScannerLockedByAssignment = activeWorkflowTab === 'rsvp' && !isSelectedDriveAssignedToCurrentStaff;
+  const isScannerCameraToggleDisabled = !isSelectedDriveScannable || isScannerLockedByAssignment;
+  const isManualScannerInputDisabled = !isSelectedDriveScannable || isScannerLockedByAssignment || isSaving;
+
+  const completionGateMessage = useMemo(() => {
+    if (!selectedDrive) {
+      return 'Select an event to check completion requirements.';
+    }
+
+    if (isCompletionUnlocked) {
+      return '';
+    }
+
+    return `Completion form will unlock after event end (${formatDateTime(selectedDrive.End_Date)}).`;
+  }, [isCompletionUnlocked, selectedDrive]);
+
+  useEffect(() => {
+    setIsCameraEnabled(false);
+    setCompletionForm(createInitialCompletionForm());
+  }, [selectedDriveId]);
+
+  useEffect(() => {
+    if (!isSelectedDriveScannable && isCameraEnabled) {
+      setIsCameraEnabled(false);
+    }
+  }, [isCameraEnabled, isSelectedDriveScannable]);
 
   const stats = useMemo(() => {
     const readyToReport = eventTabs.filter((row) => row.canSubmitCompletion).length;
     const waitingForEndDate = eventTabs.length - readyToReport;
 
     return [
-      { label: 'Assigned Approved Drives', value: String(eventTabs.length) },
-      { label: 'Ready For Completion', value: String(readyToReport) },
-      { label: 'Waiting End Date', value: String(waitingForEndDate) },
+      {
+        id: 'assigned',
+        shortLabel: 'Assigned Events',
+        label: 'Approved events assigned to you',
+        value: String(eventTabs.length),
+      },
+      {
+        id: 'ready',
+        shortLabel: 'Ready to Complete',
+        label: 'Events ended and eligible for completion',
+        value: String(readyToReport),
+      },
+      {
+        id: 'waiting',
+        shortLabel: 'Awaiting End Date',
+        label: 'Events still in progress or upcoming',
+        value: String(waitingForEndDate),
+      },
     ];
   }, [eventTabs]);
 
@@ -968,6 +1107,20 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
+    if (!isSelectedDriveScannable) {
+      const availabilityMessage = scannerAvailabilityMessage || 'RSVP scanner is unavailable for this event schedule.';
+      setNotice({ kind: 'warning', text: availabilityMessage });
+      setScannerNotice('rsvp', 'warning', availabilityMessage);
+      setLastRsvpScan({
+        status: 'failed',
+        userId: null,
+        scannedAt: new Date().toISOString(),
+        reason: availabilityMessage,
+        raw: String(decodedText || '').trim(),
+      });
+      return;
+    }
+
     const parsedPayload = parseDonationQrPayload(decodedText);
     if (!parsedPayload.userId) {
       const parseMessage = 'QR does not contain a valid donor User ID.';
@@ -1168,9 +1321,32 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     } finally {
       isRsvpProcessingRef.current = false;
     }
-  }, [isSelectedDriveAssignedToCurrentStaff, loadRsvpScanHistory, selectedDriveId, setScannerNotice, userProfile]);
+  }, [
+    isSelectedDriveAssignedToCurrentStaff,
+    isSelectedDriveScannable,
+    loadRsvpScanHistory,
+    scannerAvailabilityMessage,
+    selectedDriveId,
+    setScannerNotice,
+    userProfile,
+  ]);
 
   const handleLogisticsScan = useCallback((decodedText) => {
+    if (!isSelectedDriveScannable) {
+      const availabilityMessage = scannerAvailabilityMessage || 'Logistics scanner is unavailable for this event schedule.';
+      setNotice({ kind: 'warning', text: availabilityMessage });
+      setScannerNotice('logistics', 'warning', availabilityMessage);
+      setLastLogisticsScan({
+        status: 'failed',
+        userId: null,
+        driveId: selectedDriveId,
+        scannedAt: new Date().toISOString(),
+        raw: String(decodedText || '').trim(),
+        reason: availabilityMessage,
+      });
+      return;
+    }
+
     const parsedPayload = parseDonationQrPayload(decodedText);
     const nowIso = new Date().toISOString();
 
@@ -1206,9 +1382,29 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     if (parsedPayload.userId) {
       void loadUserNamesByIds([parsedPayload.userId]);
     }
-  }, [loadUserNamesByIds, selectedDriveId, selectedEventName, setScannerNotice]);
+  }, [
+    isSelectedDriveScannable,
+    loadUserNamesByIds,
+    scannerAvailabilityMessage,
+    selectedDriveId,
+    selectedEventName,
+    setScannerNotice,
+  ]);
 
   const submitManualScan = useCallback((tabKey) => {
+    const isRsvp = tabKey === 'rsvp';
+    const isLockedByAssignment = isRsvp && !isSelectedDriveAssignedToCurrentStaff;
+
+    if (isLockedByAssignment) {
+      setNotice({ kind: 'error', text: 'RSVP scanner is locked. This event is not assigned to your staff account.' });
+      return;
+    }
+
+    if (!isSelectedDriveScannable) {
+      setNotice({ kind: 'warning', text: scannerAvailabilityMessage || 'QR scanner is unavailable for this event schedule.' });
+      return;
+    }
+
     const nextValue = String(manualQrInput[tabKey] || '').trim();
     if (!nextValue) {
       setNotice({ kind: 'error', text: 'Enter QR payload text before submitting manual scan.' });
@@ -1225,10 +1421,27 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       ...previous,
       [tabKey]: '',
     }));
-  }, [handleLogisticsScan, handleRsvpScan, manualQrInput]);
+  }, [
+    handleLogisticsScan,
+    handleRsvpScan,
+    isSelectedDriveAssignedToCurrentStaff,
+    isSelectedDriveScannable,
+    manualQrInput,
+    scannerAvailabilityMessage,
+  ]);
 
   useEffect(() => {
     if (activeWorkflowTab !== 'rsvp' && activeWorkflowTab !== 'logistics') {
+      return undefined;
+    }
+
+    if (!selectedDriveId) {
+      setScannerNotice(activeWorkflowTab, 'info', 'Select an event to prepare scanner controls.');
+      return undefined;
+    }
+
+    if (!isSelectedDriveScannable) {
+      setScannerNotice(activeWorkflowTab, 'warning', scannerAvailabilityMessage || 'QR scanner is unavailable for this event schedule.');
       return undefined;
     }
 
@@ -1237,17 +1450,8 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return undefined;
     }
 
-    if (!selectedDriveId) {
-      return undefined;
-    }
-
     if (activeWorkflowTab === 'rsvp' && !isSelectedDriveAssignedToCurrentStaff) {
       setScannerNotice('rsvp', 'error', 'RSVP scanner is locked. This event is not assigned to your staff account.');
-      return undefined;
-    }
-
-    if (activeWorkflowTab === 'rsvp' && !isSelectedDriveStarted) {
-      setScannerNotice('rsvp', 'warning', 'RSVP scanner becomes active when the event start date is reached.');
       return undefined;
     }
 
@@ -1389,7 +1593,8 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     handleRsvpScan,
     isCameraEnabled,
     isSelectedDriveAssignedToCurrentStaff,
-    isSelectedDriveStarted,
+    isSelectedDriveScannable,
+    scannerAvailabilityMessage,
     selectedDriveId,
     setScannerNotice,
   ]);
@@ -1423,7 +1628,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   }, [logisticsScanHistoryRows, selectedDriveId, selectedEventName, userNamesByUserId]);
 
   const completionScannedTableRows = useMemo(() => {
-    if (!selectedDrive) {
+    if (!selectedDrive || !isCompletionUnlocked) {
       return [];
     }
 
@@ -1441,7 +1646,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
         status: statusLabel,
       },
     ];
-  }, [currentStaffName, selectedDrive, selectedEventName]);
+  }, [currentStaffName, isCompletionUnlocked, selectedDrive, selectedEventName]);
 
   const activeScannedRows = useMemo(() => {
     if (activeWorkflowTab === 'rsvp') {
@@ -1476,8 +1681,12 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return 'No logistics scans captured yet for this selected event.';
     }
 
+    if (!isCompletionUnlocked) {
+      return 'Completion records are hidden until this event reaches end date.';
+    }
+
     return 'No completion record is available for this event yet.';
-  }, [activeWorkflowTab]);
+  }, [activeWorkflowTab, isCompletionUnlocked]);
 
   const checkedInCount = rsvpScannedTableRows.length;
   const expectedAttendees = Number(selectedDrive?.Total_Recipients || 0) || null;
@@ -1485,44 +1694,29 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     ? Math.min(100, Math.round((checkedInCount / expectedAttendees) * 100))
     : null;
 
-  const openCompletionModal = (row) => {
-    setCompletionModal({
-      open: true,
-      row,
-      totalRecipients: '',
-      totalDonations: '',
-      notes: '',
-      files: [],
-    });
-  };
-
-  const closeCompletionModal = () => {
-    setCompletionModal({
-      open: false,
-      row: null,
-      totalRecipients: '',
-      totalDonations: '',
-      notes: '',
-      files: [],
-    });
-  };
-
   const handleCompletionFileChange = (event) => {
     const nextFiles = Array.from(event.target.files || []);
-    setCompletionModal((previous) => ({
+    setCompletionForm((previous) => ({
       ...previous,
       files: nextFiles,
     }));
   };
 
   const handleSubmitCompletion = async () => {
-    if (!completionModal.row?.Donation_Drive_ID) {
+    const driveId = Number(selectedDrive?.Donation_Drive_ID || 0) || null;
+
+    if (!driveId || !selectedDrive) {
       return;
     }
 
-    const recipients = Number(String(completionModal.totalRecipients || '').trim());
-    const donations = Number(String(completionModal.totalDonations || '').trim());
-    const notes = String(completionModal.notes || '').trim();
+    if (!isCompletionUnlocked) {
+      setNotice({ kind: 'warning', text: completionGateMessage || 'Completion form is locked until event end date.' });
+      return;
+    }
+
+    const recipients = Number(String(completionForm.totalRecipients || '').trim());
+    const donations = Number(String(completionForm.totalDonations || '').trim());
+    const notes = String(completionForm.notes || '').trim();
 
     if (!Number.isFinite(recipients) || recipients < 0) {
       setNotice({ kind: 'error', text: 'Total recipients must be a valid non-negative number.' });
@@ -1534,7 +1728,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
-    const fileError = validateCompletionFiles(completionModal.files);
+    const fileError = validateCompletionFiles(completionForm.files);
     if (fileError) {
       setNotice({ kind: 'error', text: fileError });
       return;
@@ -1558,11 +1752,10 @@ export default function AssignedDonationReportsPage({ userProfile }) {
         throw new Error('Unable to resolve active staff auth session for event asset upload.');
       }
 
-      const driveId = Number(completionModal.row.Donation_Drive_ID || 0);
-      const driveSlug = toSlug(completionModal.row.Event_Title || `drive-${driveId}`);
+      const driveSlug = toSlug(selectedDrive.Event_Title || `drive-${driveId}`);
       const uploadedFiles = [];
 
-      for (const file of completionModal.files) {
+      for (const file of completionForm.files) {
         const safeFileName = toSafeFileName(file.name || 'asset');
         const filePath = `${authFolder}/donation-drive-event-assets/${driveSlug}-${driveId}-${Date.now()}-${safeFileName}`;
 
@@ -1615,14 +1808,14 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       });
 
       setNotice({ kind: 'success', text: 'Donation drive completion submitted successfully.' });
-      closeCompletionModal();
+      setCompletionForm(createInitialCompletionForm());
       await loadAssignedDrives();
     } catch (error) {
       setNotice({ kind: 'error', text: mapSaveError(error?.message) });
 
       await logAuditAction({
         action: 'donation_drive_requests.complete',
-        description: `Failed donation drive completion submission for drive #${completionModal.row?.Donation_Drive_ID || 'N/A'}`,
+        description: `Failed donation drive completion submission for drive #${driveId || 'N/A'}`,
         resource: DONATION_DRIVE_REQUESTS_TABLE,
         status: 'failed',
         userProfile,
@@ -1633,11 +1826,13 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" style={{ fontFamily: pageFontFamily }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Assigned Donation Drive</h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: primaryTextColor }}>
+            Assigned Donation Drive
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: secondaryTextColor, fontFamily: secondaryFontFamily }}>
             Scan attendee QR codes, monitor turnout, and complete assigned drives in one focused workspace.
           </p>
         </div>
@@ -1647,6 +1842,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
           onClick={() => loadAssignedDrives()}
           disabled={isLoading || isSaving}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+          style={{ borderColor: withColorAlpha(primaryColor, 0.35), color: primaryColor }}
         >
           {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           Refresh
@@ -1703,9 +1899,10 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                       onClick={() => setEventFilterId(filter.id)}
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
                         isActive
-                          ? 'border-sky-200 bg-sky-50 text-sky-700'
+                          ? 'border'
                           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                       }`}
+                      style={isActive ? activeAccentStyle : undefined}
                     >
                       {filter.label}
                     </button>
@@ -1738,9 +1935,10 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                             onClick={() => setActiveDriveId(row.Donation_Drive_ID)}
                             className={`w-full rounded-xl border px-3 py-2 text-left transition ${
                               isActive
-                                ? 'border-sky-200 bg-sky-50 shadow-sm'
+                                ? 'border shadow-sm'
                                 : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                             }`}
+                            style={isActive ? activePanelStyle : undefined}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div>
@@ -1766,8 +1964,8 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
               <div className="grid grid-cols-3 gap-2 border-t border-slate-200 pt-3">
                 {stats.map((item) => (
-                  <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{item.label.split(' ')[0]}</p>
+                  <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{item.shortLabel}</p>
                     <p className="mt-0.5 text-sm font-bold text-slate-900">{item.value}</p>
                   </div>
                 ))}
@@ -1782,8 +1980,11 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                          Active
+                        <span
+                          className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                          style={activeAccentStyle}
+                        >
+                          {selectedDrive.timelineLabel || 'Scheduled'}
                         </span>
                         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Event ID: #EV-{selectedDrive.Donation_Drive_ID}
@@ -1815,31 +2016,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                         <Navigation size={13} />
                         Directions
                       </a>
-
-                      <button
-                        type="button"
-                        onClick={() => setNotice({ kind: 'warning', text: 'For event support, contact your super admin or assigned coordinator.' })}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        <HelpCircle size={13} />
-                        Help
-                      </button>
-
-                      {selectedDrive.canSubmitCompletion ? (
-                        <button
-                          type="button"
-                          onClick={() => openCompletionModal(selectedDrive)}
-                          disabled={isSaving}
-                          className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
-                        >
-                          <Send size={13} />
-                          Submit Completion
-                        </button>
-                      ) : (
-                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
-                          Completion available after end date
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1862,9 +2038,10 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                               onClick={() => setActiveWorkflowTab(tab.id)}
                               className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${
                                 isActive
-                                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                                  ? 'border'
                                   : 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50'
                               }`}
+                              style={isActive ? activeAccentStyle : undefined}
                             >
                               {tab.label}
                             </button>
@@ -1872,26 +2049,105 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                         })}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setIsCameraEnabled((previous) => !previous)}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                          isCameraEnabled
-                            ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                        }`}
-                      >
-                        <Camera size={13} />
-                        {isCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
-                      </button>
+                      {isScannerTabActive && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCameraEnabled((previous) => !previous)}
+                          disabled={isScannerCameraToggleDisabled}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                            isCameraEnabled
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                          style={!isCameraEnabled ? { borderColor: withColorAlpha(primaryColor, 0.35), color: primaryColor } : undefined}
+                        >
+                          <Camera size={13} />
+                          {isCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                     <div className="space-y-3">
                       {activeWorkflowTab === 'completion' ? (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                          Completion report is submitted from the event header when this drive reaches its end date.
+                        <div className="space-y-3">
+                          {!isCompletionUnlocked ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                              {completionGateMessage}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-slate-200 bg-white p-4">
+                              <h3 className="text-base font-semibold text-slate-900">Submit Donation Drive Completion</h3>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Completion is enabled because this event has ended. Fill all required fields and upload attachments.
+                              </p>
+
+                              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div>
+                                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Total Recipients *</label>
+                                  <input
+                                    value={completionForm.totalRecipients}
+                                    onChange={(event) => setCompletionForm((previous) => ({ ...previous, totalRecipients: event.target.value }))}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+                                    placeholder="e.g. 120"
+                                    disabled={isSaving}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Total Donations Collected *</label>
+                                  <input
+                                    value={completionForm.totalDonations}
+                                    onChange={(event) => setCompletionForm((previous) => ({ ...previous, totalDonations: event.target.value }))}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+                                    placeholder="e.g. 85"
+                                    disabled={isSaving}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="mt-3">
+                                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Completion Notes</label>
+                                <textarea
+                                  value={completionForm.notes}
+                                  onChange={(event) => setCompletionForm((previous) => ({ ...previous, notes: event.target.value }))}
+                                  className="min-h-[96px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+                                  placeholder="Brief event outcome and highlights"
+                                  disabled={isSaving}
+                                />
+                              </div>
+
+                              <div className="mt-3">
+                                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Event Attachments (JPG/PNG/WEBP/PDF) *</label>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+                                  onChange={handleCompletionFileChange}
+                                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                                  disabled={isSaving}
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {completionForm.files.length
+                                    ? `${completionForm.files.length} file(s) selected`
+                                    : `Max file size: ${formatFileSize(MAX_EVENT_ASSET_SIZE_BYTES)} each.`}
+                                </p>
+                              </div>
+
+                              <div className="mt-4 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handleSubmitCompletion}
+                                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                                  style={{ backgroundColor: primaryColor }}
+                                  disabled={isSaving}
+                                >
+                                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                                  Submit Drive Completion
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <>
@@ -1907,9 +2163,9 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                             <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
                               RSVP scanner is locked because this event is not assigned to your staff account.
                             </div>
-                          ) : (activeWorkflowTab === 'rsvp' && !isSelectedDriveStarted) ? (
+                          ) : !isSelectedDriveScannable ? (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-                              RSVP scanner becomes active at {formatDateTime(selectedDrive.Start_Date)}.
+                              {scannerAvailabilityMessage}
                             </div>
                           ) : (
                             <div
@@ -1949,11 +2205,14 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                                 }))}
                                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
                                 placeholder={activeWorkflowTab === 'rsvp' ? 'Paste RSVP QR payload' : 'Paste logistics QR payload'}
+                                disabled={isManualScannerInputDisabled}
                               />
                               <button
                                 type="button"
                                 onClick={() => submitManualScan(activeWorkflowTab === 'rsvp' ? 'rsvp' : 'logistics')}
                                 className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                style={{ backgroundColor: primaryColor }}
+                                disabled={isManualScannerInputDisabled}
                               >
                                 {activeWorkflowTab === 'rsvp' ? 'Check In' : 'Capture'}
                               </button>
@@ -1985,11 +2244,11 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                     </div>
 
                     <aside className="space-y-3">
-                      <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-500 to-blue-600 p-4 text-white">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-sky-100">Checked In</p>
+                      <div className="rounded-2xl border p-4 text-white" style={checkedInCardStyle}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Checked In</p>
                         <div className="mt-2 flex items-end gap-2">
                           <p className="text-4xl font-bold leading-none">{checkedInCount}</p>
-                          <p className="pb-1 text-sm text-sky-100">{expectedAttendees ? `/ ${expectedAttendees}` : 'attendees'}</p>
+                          <p className="pb-1 text-sm text-white/80">{expectedAttendees ? `/ ${expectedAttendees}` : 'attendees'}</p>
                         </div>
                         <div className="mt-3 h-2 rounded-full bg-white/25">
                           <div
@@ -1997,7 +2256,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                             style={{ width: `${checkedInPercent || 0}%` }}
                           />
                         </div>
-                        <p className="mt-2 text-xs text-sky-100">
+                        <p className="mt-2 text-xs text-white/80">
                           {checkedInPercent !== null ? `${checkedInPercent}% attendance recorded` : 'Attendance baseline not set'}
                         </p>
                       </div>
@@ -2025,7 +2284,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                         </p>
                         <div className="space-y-2">
                           {stats.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                            <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
                               <span>{item.label}</span>
                               <span className="font-semibold text-slate-900">{item.value}</span>
                             </div>
@@ -2090,100 +2349,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
         </div>
       )}
 
-      {completionModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <h3 className="text-base font-semibold text-slate-900">Submit Donation Drive Completion</h3>
-              <button
-                type="button"
-                onClick={closeCompletionModal}
-                className="rounded-md border border-slate-200 p-1 text-slate-500 hover:bg-slate-50"
-                disabled={isSaving}
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3 px-4 py-4">
-              <p className="text-sm text-slate-700">
-                Event: <span className="font-semibold text-slate-900">{completionModal.row?.Event_Title || 'N/A'}</span>
-              </p>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Total Recipients *</label>
-                  <input
-                    value={completionModal.totalRecipients}
-                    onChange={(event) => setCompletionModal((prev) => ({ ...prev, totalRecipients: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                    placeholder="e.g. 120"
-                    disabled={isSaving}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Total Donations Collected *</label>
-                  <input
-                    value={completionModal.totalDonations}
-                    onChange={(event) => setCompletionModal((prev) => ({ ...prev, totalDonations: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                    placeholder="e.g. 85"
-                    disabled={isSaving}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Completion Notes</label>
-                <textarea
-                  value={completionModal.notes}
-                  onChange={(event) => setCompletionModal((prev) => ({ ...prev, notes: event.target.value }))}
-                  className="min-h-[96px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                  placeholder="Brief event outcome and highlights"
-                  disabled={isSaving}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Event Attachments (JPG/PNG/WEBP/PDF) *</label>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
-                  onChange={handleCompletionFileChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                  disabled={isSaving}
-                />
-                <p className="mt-1 text-xs text-slate-500">
-                  {completionModal.files.length
-                    ? `${completionModal.files.length} file(s) selected`
-                    : `Max file size: ${formatFileSize(MAX_EVENT_ASSET_SIZE_BYTES)} each.`}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
-              <button
-                type="button"
-                onClick={closeCompletionModal}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                disabled={isSaving}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitCompletion}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                disabled={isSaving}
-              >
-                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Submit Drive Completion
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
