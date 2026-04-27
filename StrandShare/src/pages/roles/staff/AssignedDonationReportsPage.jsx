@@ -1444,6 +1444,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     isSelectedDriveScannable,
     manualQrInput,
     scannerAvailabilityMessage,
+    setScannerNotice,
   ]);
 
   useEffect(() => {
