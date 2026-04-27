@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Camera,
+  CameraOff,
   CheckCircle2,
   Clock3,
   Loader2,
@@ -24,12 +25,14 @@ const DONATION_DRIVE_EVENT_ASSETS_BUCKET = 'donation_drive_event_assets';
 const MAX_EVENT_ASSET_SIZE_BYTES = 15 * 1024 * 1024;
 const SCAN_DEBOUNCE_MS = 2500;
 const USER_DETAILS_TABLE = 'user_details';
+const UI_SETTINGS_TABLE = 'UI_Settings';
 
 const CAMERA_VIEWPORT_STYLE = {
-  minWidth: '280px',
-  minHeight: '220px',
-  maxWidth: '720px',
-  maxHeight: '480px',
+  width: '100%',
+  maxWidth: '320px',
+  minWidth: '240px',
+  minHeight: '240px',
+  aspectRatio: '1 / 1',
 };
 
 const WORKFLOW_TABS = [
@@ -533,6 +536,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const { theme } = useTheme();
   const staffUserId = Number(userProfile?.user_id || 0) || null;
 
+  const [uiSettings, setUiSettings] = useState(null);
   const [requests, setRequests] = useState([]);
   const [organizationNamesById, setOrganizationNamesById] = useState({});
   const [notice, setNotice] = useState({ kind: '', text: '' });
@@ -559,12 +563,12 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const [eventSearchQuery, setEventSearchQuery] = useState('');
   const [eventFilterId, setEventFilterId] = useState('today');
 
-  const primaryColor = String(theme?.primaryColor || '#0275d8').trim() || '#0275d8';
-  const primaryColorDark = String(theme?.primaryColorDark || primaryColor).trim() || primaryColor;
-  const primaryTextColor = String(theme?.primaryTextColor || '#0f172a').trim() || '#0f172a';
-  const secondaryTextColor = String(theme?.secondaryTextColor || '#64748b').trim() || '#64748b';
-  const pageFontFamily = String(theme?.selectedFont || theme?.fontFamily || 'Poppins').trim() || 'Poppins';
-  const secondaryFontFamily = String(theme?.secondaryFontFamily || pageFontFamily).trim() || pageFontFamily;
+  const primaryColor = String(uiSettings?.Primary_Color || theme?.primaryColor || '#0275d8').trim() || '#0275d8';
+  const primaryTextColor = String(uiSettings?.Primary_Text_Color || theme?.primaryTextColor || '#0f172a').trim() || '#0f172a';
+  const secondaryTextColor = String(uiSettings?.Secondary_Text_Color || theme?.secondaryTextColor || '#64748b').trim() || '#64748b';
+  const backgroundColor = String(uiSettings?.Background_Color || theme?.backgroundColor || '#f8fafc').trim() || '#f8fafc';
+  const pageFontFamily = String(uiSettings?.Font_Family || theme?.selectedFont || theme?.fontFamily || 'Poppins').trim() || 'Poppins';
+  const secondaryFontFamily = String(uiSettings?.Secondary_Font_Family || theme?.secondaryFontFamily || pageFontFamily).trim() || pageFontFamily;
 
   const activeAccentStyle = useMemo(
     () => ({
@@ -585,10 +589,19 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
   const checkedInCardStyle = useMemo(
     () => ({
-      borderColor: withColorAlpha(primaryColor, 0.3),
-      background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColorDark} 100%)`,
+      borderColor: withColorAlpha(primaryColor, 0.35),
+      backgroundColor: withColorAlpha(primaryColor, 0.12),
+      color: primaryTextColor,
     }),
-    [primaryColor, primaryColorDark],
+    [primaryColor, primaryTextColor],
+  );
+
+  const cameraViewportStyle = useMemo(
+    () => ({
+      ...CAMERA_VIEWPORT_STYLE,
+      backgroundColor: withColorAlpha(primaryTextColor, 0.94),
+    }),
+    [primaryTextColor],
   );
 
   const rsvpVideoRef = useRef(null);
@@ -599,6 +612,22 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     logistics: { raw: '', at: 0 },
   });
   const isRsvpProcessingRef = useRef(false);
+
+  const fetchUiSettings = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(UI_SETTINGS_TABLE)
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      setUiSettings(data);
+    }
+  }, []);
 
   const loadAssignedDrives = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -678,8 +707,9 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   }, [staffUserId]);
 
   useEffect(() => {
+    void fetchUiSettings();
     void loadAssignedDrives();
-  }, [loadAssignedDrives]);
+  }, [fetchUiSettings, loadAssignedDrives]);
 
   const tableRows = useMemo(() => {
     return requests.map((row) => {
@@ -793,6 +823,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const isCompletionUnlocked = Boolean(selectedDrive?.canSubmitCompletion);
   const isScannerTabActive = activeWorkflowTab === 'rsvp' || activeWorkflowTab === 'logistics';
   const isScannerLockedByAssignment = activeWorkflowTab === 'rsvp' && !isSelectedDriveAssignedToCurrentStaff;
+  const isScannerBlocked = isScannerLockedByAssignment || !isSelectedDriveScannable;
   const isScannerCameraToggleDisabled = !isSelectedDriveScannable || isScannerLockedByAssignment;
   const isManualScannerInputDisabled = !isSelectedDriveScannable || isScannerLockedByAssignment || isSaving;
 
@@ -1095,7 +1126,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
     if (!isSelectedDriveAssignedToCurrentStaff) {
       const assignmentMessage = 'RSVP scanner is locked. This event is not assigned to your staff account.';
-      setNotice({ kind: 'error', text: assignmentMessage });
       setScannerNotice('rsvp', 'error', assignmentMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1109,7 +1139,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
     if (!isSelectedDriveScannable) {
       const availabilityMessage = scannerAvailabilityMessage || 'RSVP scanner is unavailable for this event schedule.';
-      setNotice({ kind: 'warning', text: availabilityMessage });
       setScannerNotice('rsvp', 'warning', availabilityMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1124,7 +1153,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     const parsedPayload = parseDonationQrPayload(decodedText);
     if (!parsedPayload.userId) {
       const parseMessage = 'QR does not contain a valid donor User ID.';
-      setNotice({ kind: 'error', text: parseMessage });
       setScannerNotice('rsvp', 'error', parseMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1138,7 +1166,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
     if (!parsedPayload.driveId) {
       const missingDriveMessage = 'QR is missing Donation Drive ID. Use the RSVP QR generated for this selected event.';
-      setNotice({ kind: 'error', text: missingDriveMessage });
       setScannerNotice('rsvp', 'error', missingDriveMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1152,7 +1179,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
     if (parsedPayload.driveId && parsedPayload.driveId !== driveId) {
       const mismatchMessage = `QR belongs to drive #${parsedPayload.driveId}, but selected event is #${driveId}.`;
-      setNotice({ kind: 'error', text: mismatchMessage });
       setScannerNotice('rsvp', 'error', mismatchMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1194,7 +1220,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       const registration = registrationResult.data;
       if (!registration?.Registration_ID) {
         const notRegisteredMessage = `User #${parsedPayload.userId} has no RSVP registration for this event.`;
-        setNotice({ kind: 'warning', text: notRegisteredMessage });
         setScannerNotice('rsvp', 'warning', notRegisteredMessage);
         setLastRsvpScan({
           status: 'failed',
@@ -1210,7 +1235,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       if (registrationStatusKey !== 'approved') {
         const registrationStatusLabel = registration.Registration_Status || 'Unknown';
         const notApprovedMessage = `User #${parsedPayload.userId} RSVP is not Approved (current: ${registrationStatusLabel}).`;
-        setNotice({ kind: 'warning', text: notApprovedMessage });
         setScannerNotice('rsvp', 'warning', notApprovedMessage);
         setLastRsvpScan({
           status: 'failed',
@@ -1226,8 +1250,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       if (attendanceStatusKey === 'present') {
         const presentAt = registration.Attendance_Marked_At || registration.Updated_At || nowIso;
         const alreadyPresentMessage = `User #${parsedPayload.userId} is already marked Present (${formatDateTime(presentAt)}).`;
-
-        setNotice({ kind: 'warning', text: alreadyPresentMessage });
         setScannerNotice('rsvp', 'warning', alreadyPresentMessage);
         setLastRsvpScan({
           status: 'already-present',
@@ -1278,8 +1300,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
       const presentAt = updateResult.data.Attendance_Marked_At || updateResult.data.Updated_At || nowIso;
       const successMessage = `RSVP checked in: User #${parsedPayload.userId} marked Present at ${formatDateTime(presentAt)}.`;
-
-      setNotice({ kind: 'success', text: successMessage });
       setScannerNotice('rsvp', 'success', successMessage);
       setLastRsvpScan({
         status: 'success',
@@ -1300,8 +1320,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       });
     } catch (error) {
       const mappedMessage = mapRegistrationSaveError(error?.message);
-
-      setNotice({ kind: 'error', text: mappedMessage });
       setScannerNotice('rsvp', 'error', mappedMessage);
       setLastRsvpScan({
         status: 'failed',
@@ -1334,7 +1352,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   const handleLogisticsScan = useCallback((decodedText) => {
     if (!isSelectedDriveScannable) {
       const availabilityMessage = scannerAvailabilityMessage || 'Logistics scanner is unavailable for this event schedule.';
-      setNotice({ kind: 'warning', text: availabilityMessage });
       setScannerNotice('logistics', 'warning', availabilityMessage);
       setLastLogisticsScan({
         status: 'failed',
@@ -1354,7 +1371,6 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       ? `Logistics scan captured for User #${parsedPayload.userId}. Workflow actions are not connected yet.`
       : 'Logistics scan captured, but no User ID was detected from QR payload.';
 
-    setNotice({ kind: parsedPayload.userId ? 'warning' : 'error', text: infoMessage });
     setScannerNotice('logistics', parsedPayload.userId ? 'warning' : 'error', infoMessage);
     setLastLogisticsScan({
       status: parsedPayload.userId ? 'captured' : 'failed',
@@ -1396,18 +1412,18 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     const isLockedByAssignment = isRsvp && !isSelectedDriveAssignedToCurrentStaff;
 
     if (isLockedByAssignment) {
-      setNotice({ kind: 'error', text: 'RSVP scanner is locked. This event is not assigned to your staff account.' });
+      setScannerNotice('rsvp', 'error', 'RSVP scanner is locked. This event is not assigned to your staff account.');
       return;
     }
 
     if (!isSelectedDriveScannable) {
-      setNotice({ kind: 'warning', text: scannerAvailabilityMessage || 'QR scanner is unavailable for this event schedule.' });
+      setScannerNotice(tabKey, 'warning', scannerAvailabilityMessage || 'QR scanner is unavailable for this event schedule.');
       return;
     }
 
     const nextValue = String(manualQrInput[tabKey] || '').trim();
     if (!nextValue) {
-      setNotice({ kind: 'error', text: 'Enter QR payload text before submitting manual scan.' });
+      setScannerNotice(tabKey, 'error', 'Enter QR payload text before submitting manual scan.');
       return;
     }
 
@@ -1826,7 +1842,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   };
 
   return (
-    <div className="space-y-5" style={{ fontFamily: pageFontFamily }}>
+    <div className="space-y-5" style={{ fontFamily: pageFontFamily, color: primaryTextColor, backgroundColor }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: primaryTextColor }}>
@@ -2159,20 +2175,28 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                             {activeWorkflowTab === 'rsvp' ? scannerState.rsvp.text : scannerState.logistics.text}
                           </div>
 
-                          {(activeWorkflowTab === 'rsvp' && !isSelectedDriveAssignedToCurrentStaff) ? (
-                            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
-                              RSVP scanner is locked because this event is not assigned to your staff account.
-                            </div>
-                          ) : !isSelectedDriveScannable ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-                              {scannerAvailabilityMessage}
+                          {isScannerBlocked ? (
+                            <div
+                              className="mx-auto w-full overflow-hidden rounded-xl border border-slate-200"
+                              style={cameraViewportStyle}
+                            >
+                              <div className="relative h-full w-full">
+                                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                  <div
+                                    className="flex h-16 w-16 items-center justify-center rounded-full"
+                                    style={{ backgroundColor: withColorAlpha(primaryColor, 0.12) }}
+                                  >
+                                    <CameraOff size={30} style={{ color: primaryColor }} />
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           ) : (
                             <div
-                              className="mx-auto w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
-                              style={CAMERA_VIEWPORT_STYLE}
+                              className="mx-auto w-full overflow-hidden rounded-xl border border-slate-200"
+                              style={cameraViewportStyle}
                             >
-                              <div className="relative h-[260px] w-full">
+                              <div className="relative h-full w-full">
                                 <video
                                   ref={activeWorkflowTab === 'rsvp' ? rsvpVideoRef : logisticsVideoRef}
                                   className="h-full w-full object-cover"
@@ -2180,12 +2204,26 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                                   playsInline
                                   muted
                                 />
+                                {!isCameraEnabled && (
+                                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                    <div
+                                      className="flex h-16 w-16 items-center justify-center rounded-full"
+                                      style={{ backgroundColor: withColorAlpha(primaryColor, 0.12) }}
+                                    >
+                                      <CameraOff size={30} style={{ color: primaryColor }} />
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="pointer-events-none absolute inset-0">
-                                  <div className="absolute inset-x-8 top-1/2 h-px -translate-y-1/2 bg-cyan-300/80" />
-                                  <div className="absolute left-4 top-4 h-8 w-8 border-l-4 border-t-4 border-white/70" />
-                                  <div className="absolute right-4 top-4 h-8 w-8 border-r-4 border-t-4 border-white/70" />
-                                  <div className="absolute bottom-4 left-4 h-8 w-8 border-b-4 border-l-4 border-white/70" />
-                                  <div className="absolute bottom-4 right-4 h-8 w-8 border-b-4 border-r-4 border-white/70" />
+                                  {isCameraEnabled && <div className="scanner-beam" />}
+                                  {isCameraEnabled && (
+                                    <>
+                                      <div className="absolute left-4 top-4 h-8 w-8 border-l-4 border-t-4 scanner-corner" />
+                                      <div className="absolute right-4 top-4 h-8 w-8 border-r-4 border-t-4 scanner-corner" />
+                                      <div className="absolute bottom-4 left-4 h-8 w-8 border-b-4 border-l-4 scanner-corner" />
+                                      <div className="absolute bottom-4 right-4 h-8 w-8 border-b-4 border-r-4 scanner-corner" />
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2244,19 +2282,23 @@ export default function AssignedDonationReportsPage({ userProfile }) {
                     </div>
 
                     <aside className="space-y-3">
-                      <div className="rounded-2xl border p-4 text-white" style={checkedInCardStyle}>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Checked In</p>
+                      <div className="rounded-2xl border p-4" style={checkedInCardStyle}>
+                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
+                          Checked In
+                        </p>
                         <div className="mt-2 flex items-end gap-2">
                           <p className="text-4xl font-bold leading-none">{checkedInCount}</p>
-                          <p className="pb-1 text-sm text-white/80">{expectedAttendees ? `/ ${expectedAttendees}` : 'attendees'}</p>
+                          <p className="pb-1 text-sm" style={{ color: secondaryTextColor }}>
+                            {expectedAttendees ? `/ ${expectedAttendees}` : 'attendees'}
+                          </p>
                         </div>
-                        <div className="mt-3 h-2 rounded-full bg-white/25">
+                        <div className="mt-3 h-2 rounded-full" style={{ backgroundColor: withColorAlpha(primaryColor, 0.2) }}>
                           <div
-                            className="h-2 rounded-full bg-white"
-                            style={{ width: `${checkedInPercent || 0}%` }}
+                            className="h-2 rounded-full"
+                            style={{ width: `${checkedInPercent || 0}%`, backgroundColor: primaryColor }}
                           />
                         </div>
-                        <p className="mt-2 text-xs text-white/80">
+                        <p className="mt-2 text-xs" style={{ color: secondaryTextColor }}>
                           {checkedInPercent !== null ? `${checkedInPercent}% attendance recorded` : 'Attendance baseline not set'}
                         </p>
                       </div>

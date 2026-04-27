@@ -130,6 +130,43 @@ button {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes scanner-sweep {
+  0% {
+    top: 12%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    top: 50%;
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 88%;
+    opacity: 0;
+  }
+}
+
+.scanner-beam {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 2px;
+  top: 12%;
+  background-color: var(--color-primary);
+  animation: scanner-sweep 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px var(--color-primary));
+}
+
+.scanner-corner {
+  border-color: var(--color-primary);
+  opacity: 0.7;
+}
+
 .brand-picker-dropdown .react-colorful {
   width: 100% !important;
   height: 174px !important;
