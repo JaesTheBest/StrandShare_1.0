@@ -32,7 +32,6 @@ export default function RoleDashboardShell({
     return activeNavItem?.label || 'Overview';
   }, [currentPage, navItems]);
 
-  const ActivePage = pageComponents[currentPage] || pageComponents[defaultPage] || null;
   const hasSettingsPage = Boolean(pageComponents.settings) || navItems.some((item) => item.id === 'settings');
   const pageWrapperClass = 'flex-1 overflow-auto bg-slate-50 p-6 md:p-8';
 
@@ -75,15 +74,28 @@ export default function RoleDashboardShell({
           pageTitle={pageTitle}
         />
         <div className={pageWrapperClass}>
-          {ActivePage ? (
-            <ActivePage
-              userProfile={userProfile}
-              onNavigate={setCurrentPage}
-              navItems={navItems}
-              currentPage={currentPage}
-            />
-          ) : (
+          {Object.keys(pageComponents).length === 0 ? (
             <div className="p-8 text-slate-600">Page not available.</div>
+          ) : (
+            Object.entries(pageComponents).map(([pageId, PageComponent]) => {
+              if (!PageComponent) {
+                return null;
+              }
+              const isActive = pageId === currentPage;
+              return (
+                <div
+                  key={pageId}
+                  className={isActive ? 'block' : 'hidden'}
+                >
+                  <PageComponent
+                    userProfile={userProfile}
+                    onNavigate={setCurrentPage}
+                    navItems={navItems}
+                    currentPage={currentPage}
+                  />
+                </div>
+              );
+            })
           )}
         </div>
       </div>

@@ -155,13 +155,8 @@ export default function Header({
 
   return (
     <div className="h-20 bg-white border-b border-gray-200 px-8 flex items-center justify-between">
-      {/* Left - Title */}
-      <div className="flex min-w-0 items-center">
-        <h1 className="truncate text-2xl font-bold text-gray-900">{pageTitle}</h1>
-      </div>
-
-      {/* Middle - Search Bar */}
-      <div className="mx-6 flex-1 max-w-xs">
+      {/* Left - Search Bar */}
+      <div className="flex-1 max-w-md">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
