@@ -10,6 +10,7 @@ import HospitalRole from './pages/roles/hospital/HospitalRole';
 import OrganizationRole from './pages/roles/organization/OrganizationRole';
 import OrganizationApplicationPage from './pages/roles/organization/OrganizationApplicationPage';
 import StaffRole from './pages/roles/staff/StaffRole';
+import QAStylistRole from './pages/roles/qa-stylist/QAStylistRole';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 import { logAuditAction } from './lib/auditLogger';
 
@@ -52,6 +53,14 @@ function resolveDashboardByRole(roleValue) {
 
   if (normalizedRole === 'staff') {
     return StaffRole;
+  }
+
+  if (
+    normalizedRole === 'qa stylist'
+    || normalizedRole === 'qastylist'
+    || normalizedRole === 'q a stylist'
+  ) {
+    return QAStylistRole;
   }
 
   return StaffRole;

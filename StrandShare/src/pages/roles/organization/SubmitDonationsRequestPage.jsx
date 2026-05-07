@@ -1,6 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Send, X } from 'lucide-react';
+import {
+  AlertCircle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Users2,
+  X,
+} from 'lucide-react';
 import organizationAddressOptions from '../../../data/organizationAddressOptions.json';
+import { useTheme } from '../../../context/ThemeContext';
 import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
@@ -33,6 +50,33 @@ const DEFAULT_FORM = {
   longitude: '',
   scopeMode: 'own',
 };
+
+const WIZARD_STEPS = [
+  { id: 1, key: 'event', label: 'Event Details', icon: CalendarDays, hint: 'When and what' },
+  { id: 2, key: 'location', label: 'Location', icon: MapPin, hint: 'Where it happens' },
+  { id: 3, key: 'scope', label: 'Scope & Review', icon: Users2, hint: 'Who can join' },
+];
+
+function withColorAlpha(colorValue, alpha, fallback = '#0275d8') {
+  const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  const input = String(colorValue || '').trim();
+
+  const hexMatch = input.match(/^#([0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const r = parseInt(hexMatch[1].slice(0, 2), 16);
+    const g = parseInt(hexMatch[1].slice(2, 4), 16);
+    const b = parseInt(hexMatch[1].slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  }
+
+  const rgbMatch = input.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (rgbMatch) {
+    const [r, g, b] = rgbMatch.slice(1).map((channel) => Math.max(0, Math.min(255, Number(channel) || 0)));
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  }
+
+  return withColorAlpha(fallback, safeAlpha, '#0275d8');
+}
 
 function toUnifiedRegionOptions(addressData) {
   const data = addressData && typeof addressData === 'object' ? addressData : {};
@@ -200,7 +244,7 @@ function mapStatusMeta(statusValue) {
     return {
       label: 'Approved',
       approvalHint: 'Completed by Staff and Super Admin.',
-      className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      tone: 'success',
     };
   }
 
@@ -208,7 +252,7 @@ function mapStatusMeta(statusValue) {
     return {
       label: 'Rejected',
       approvalHint: 'Request closed. Check review notes with approvers.',
-      className: 'border-rose-200 bg-rose-50 text-rose-800',
+      tone: 'danger',
     };
   }
 
@@ -216,7 +260,7 @@ function mapStatusMeta(statusValue) {
     return {
       label: 'Pending Super Admin Approval',
       approvalHint: 'Staff review completed. Waiting for Super Admin decision.',
-      className: 'border-amber-200 bg-amber-50 text-amber-800',
+      tone: 'warning',
     };
   }
 
@@ -224,15 +268,34 @@ function mapStatusMeta(statusValue) {
     return {
       label: 'Pending Staff Approval',
       approvalHint: 'Queued for Staff review before Super Admin.',
-      className: 'border-blue-200 bg-blue-50 text-blue-800',
+      tone: 'info',
     };
   }
 
   return {
     label: String(statusValue || 'Pending'),
     approvalHint: 'Waiting for review updates.',
-    className: 'border-slate-200 bg-slate-50 text-slate-700',
+    tone: 'neutral',
   };
+}
+
+function statusToneStyle(tone, primaryColor) {
+  switch (tone) {
+    case 'success':
+      return { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0', color: '#047857' };
+    case 'danger':
+      return { backgroundColor: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' };
+    case 'warning':
+      return { backgroundColor: '#fffbeb', borderColor: '#fde68a', color: '#b45309' };
+    case 'info':
+      return {
+        backgroundColor: withColorAlpha(primaryColor, 0.12),
+        borderColor: withColorAlpha(primaryColor, 0.4),
+        color: primaryColor,
+      };
+    default:
+      return { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#475569' };
+  }
 }
 
 function toUniqueOrganizationNames(rows) {
@@ -359,6 +422,19 @@ async function uploadProposalAttachment({
 }
 
 export default function SubmitDonationsRequestPage({ userProfile }) {
+  const { theme } = useTheme();
+  const primaryColor = theme?.primaryColor || '#0275d8';
+  const tertiaryColor = theme?.tertiaryColor || '#10b981';
+  const primaryTextColor = theme?.primaryTextColor || '#0f172a';
+  const secondaryTextColor = theme?.secondaryTextColor || '#64748b';
+  const tertiaryTextColor = theme?.tertiaryTextColor || '#94a3b8';
+  const headingFont = theme?.secondaryFontFamily || theme?.fontFamily || 'Poppins';
+  const bodyFont = theme?.fontFamily || 'Poppins';
+
+  const rootStyle = { color: primaryTextColor, fontFamily: `${bodyFont}, sans-serif` };
+  const headingStyle = { color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` };
+  const labelStyle = { color: secondaryTextColor };
+
   const [requirements, setRequirements] = useState(null);
   const [organizationScope, setOrganizationScope] = useState(null);
   const [requests, setRequests] = useState([]);
@@ -373,6 +449,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [stepError, setStepError] = useState('');
 
   const regionOptions = useMemo(() => toUnifiedRegionOptions(PHILIPPINE_ADDRESS_TREE), []);
 
@@ -431,30 +509,12 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
             ? 'Not set'
             : `${requirements.Minimum_Hair_Length} inches`,
       },
-      {
-        label: 'Chemical Treatment',
-        value: boolRuleLabel(Boolean(requirements?.Chemical_Treatment_Status)),
-      },
-      {
-        label: 'Colored Hair',
-        value: boolRuleLabel(Boolean(requirements?.Colored_Hair_Status)),
-      },
-      {
-        label: 'Bleached Hair',
-        value: boolRuleLabel(Boolean(requirements?.Bleached_Hair_Status)),
-      },
-      {
-        label: 'Rebonded Hair',
-        value: boolRuleLabel(Boolean(requirements?.Rebonded_Hair_Status)),
-      },
-      {
-        label: 'Hair Texture Rule',
-        value: String(requirements?.Hair_Texture_Status || 'Not set'),
-      },
-      {
-        label: 'Notes',
-        value: String(requirements?.Notes || 'No notes provided'),
-      },
+      { label: 'Chemical Treatment', value: boolRuleLabel(Boolean(requirements?.Chemical_Treatment_Status)) },
+      { label: 'Colored Hair', value: boolRuleLabel(Boolean(requirements?.Colored_Hair_Status)) },
+      { label: 'Bleached Hair', value: boolRuleLabel(Boolean(requirements?.Bleached_Hair_Status)) },
+      { label: 'Rebonded Hair', value: boolRuleLabel(Boolean(requirements?.Rebonded_Hair_Status)) },
+      { label: 'Hair Texture Rule', value: String(requirements?.Hair_Texture_Status || 'Not set') },
+      { label: 'Notes', value: String(requirements?.Notes || 'No notes provided') },
     ],
     [requirements],
   );
@@ -737,134 +797,93 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
     }
 
     setProposalFile(file);
+    setNotice({ kind: '', text: '' });
   };
 
-  const validateBeforeReview = useCallback(() => {
-    const title = String(form.eventTitle || '').trim();
-    const overview = String(form.eventOverview || '').trim();
+  const validateStep1 = useCallback(() => {
+    if (!String(form.eventTitle || '').trim()) return 'Event title is required.';
+    if (!String(form.eventOverview || '').trim()) return 'Event overview is required.';
     const startTimestamp = toPostgresTimestamp(form.startDate);
     const endTimestamp = toPostgresTimestamp(form.endDate);
-    const setupType = String(form.setupType || '').trim();
-
-    if (!isSupabaseConfigured || !supabase) {
-      return 'Supabase is not configured. Submission is unavailable.';
-    }
-
-    if (!organizationScope?.organizationId) {
-      return 'No organization assignment found. Submission is unavailable.';
-    }
-
-    if (!requirements?.Donation_Requirement_ID) {
-      return 'Donation requirements are not configured yet. Ask Staff/Super Admin to set requirements first.';
-    }
-
-    if (!title) {
-      return 'Event title is required.';
-    }
-
-    if (!overview) {
-      return 'Event overview is required.';
-    }
-
-    if (!startTimestamp || !endTimestamp) {
-      return 'Start date and end date are required.';
-    }
-
+    if (!startTimestamp || !endTimestamp) return 'Start date and end date are required.';
     const parsedStart = new Date(startTimestamp);
     const parsedEnd = new Date(endTimestamp);
-
     if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
       return 'Invalid event schedule. Please pick valid date and time values.';
     }
+    if (parsedStart > parsedEnd) return 'End date must be equal to or later than start date.';
+    if (!String(form.setupType || '').trim()) return 'Donation setup type is required.';
+    if (!proposalFile) return 'Proposal attachment is required and must be a PDF.';
+    return '';
+  }, [form, proposalFile]);
 
-    if (parsedStart > parsedEnd) {
-      return 'End date must be equal to or later than start date.';
-    }
-
-    if (!setupType) {
-      return 'Donation setup type is required.';
-    }
-
-    if (!String(form.street || '').trim()) {
-      return 'Street is required.';
-    }
-
-    if (!String(form.region || '').trim()) {
-      return 'Region is required.';
-    }
-
-    if (!String(form.province || '').trim()) {
-      return 'Province is required.';
-    }
-
-    if (!String(form.city || '').trim()) {
-      return 'City/Municipality is required.';
-    }
-
-    if (!String(form.barangay || '').trim()) {
-      return 'Barangay is required.';
-    }
-
-    if (!String(form.country || '').trim()) {
-      return 'Country is required.';
-    }
-
-    if (form.scopeMode === 'specific' && selectedAllowedOrganizationIds.length < 1) {
-      return 'Select at least one specific organization for this drive.';
-    }
-
-    if (!proposalFile) {
-      return 'Proposal attachment is required and must be a PDF.';
-    }
-
-    const lowerFileName = String(proposalFile.name || '').toLowerCase();
-    const isPdfMime = proposalFile.type === 'application/pdf';
-    const hasPdfExtension = lowerFileName.endsWith('.pdf');
-
-    if (!isPdfMime && !hasPdfExtension) {
-      return 'Proposal attachment must be a PDF file only.';
-    }
-
-    if (Number(proposalFile.size || 0) > MAX_PROPOSAL_FILE_SIZE_BYTES) {
-      return `Proposal PDF must be ${formatFileSize(MAX_PROPOSAL_FILE_SIZE_BYTES)} or smaller.`;
-    }
+  const validateStep2 = useCallback(() => {
+    if (!String(form.street || '').trim()) return 'Street is required.';
+    if (!String(form.region || '').trim()) return 'Region is required.';
+    if (!String(form.province || '').trim()) return 'Province is required.';
+    if (!String(form.city || '').trim()) return 'City/Municipality is required.';
+    if (!String(form.barangay || '').trim()) return 'Barangay is required.';
+    if (!String(form.country || '').trim()) return 'Country is required.';
 
     const latitude = toNumberOrNull(form.latitude);
     const longitude = toNumberOrNull(form.longitude);
-
-    if (String(form.latitude || '').trim() && latitude === null) {
-      return 'Latitude must be a valid number.';
-    }
-
-    if (String(form.longitude || '').trim() && longitude === null) {
-      return 'Longitude must be a valid number.';
-    }
-
-    if (latitude !== null && (latitude < -90 || latitude > 90)) {
-      return 'Latitude must be between -90 and 90.';
-    }
-
-    if (longitude !== null && (longitude < -180 || longitude > 180)) {
-      return 'Longitude must be between -180 and 180.';
-    }
-
+    if (String(form.latitude || '').trim() && latitude === null) return 'Latitude must be a valid number.';
+    if (String(form.longitude || '').trim() && longitude === null) return 'Longitude must be a valid number.';
+    if (latitude !== null && (latitude < -90 || latitude > 90)) return 'Latitude must be between -90 and 90.';
+    if (longitude !== null && (longitude < -180 || longitude > 180)) return 'Longitude must be between -180 and 180.';
     return '';
-  }, [
-    form,
-    organizationScope?.organizationId,
-    proposalFile,
-    requirements?.Donation_Requirement_ID,
-    selectedAllowedOrganizationIds,
-  ]);
+  }, [form]);
+
+  const validateStep3 = useCallback(() => {
+    if (form.scopeMode === 'specific' && selectedAllowedOrganizationIds.length < 1) {
+      return 'Select at least one specific organization for this drive.';
+    }
+    return '';
+  }, [form.scopeMode, selectedAllowedOrganizationIds]);
+
+  const validateBeforeReview = useCallback(() => {
+    if (!isSupabaseConfigured || !supabase) return 'Supabase is not configured. Submission is unavailable.';
+    if (!organizationScope?.organizationId) return 'No organization assignment found. Submission is unavailable.';
+    if (!requirements?.Donation_Requirement_ID) {
+      return 'Donation requirements are not configured yet. Ask Staff/Super Admin to set requirements first.';
+    }
+    return validateStep1() || validateStep2() || validateStep3() || '';
+  }, [organizationScope?.organizationId, requirements?.Donation_Requirement_ID, validateStep1, validateStep2, validateStep3]);
+
+  const handleStepNext = () => {
+    let validationError = '';
+    if (currentStep === 1) validationError = validateStep1();
+    else if (currentStep === 2) validationError = validateStep2();
+    else if (currentStep === 3) validationError = validateStep3();
+
+    if (validationError) {
+      setStepError(validationError);
+      return;
+    }
+
+    setStepError('');
+    if (currentStep < WIZARD_STEPS.length) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const handleStepBack = () => {
+    setStepError('');
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
 
   const handleOpenReviewModal = () => {
     const validationError = validateBeforeReview();
 
     if (validationError) {
+      setStepError(validationError);
       setNotice({ kind: 'error', text: validationError });
       return;
     }
 
+    setStepError('');
     setNotice({ kind: '', text: '' });
     setIsReviewModalOpen(true);
   };
@@ -899,41 +918,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       return;
     }
 
-    const parsedStart = new Date(startTimestamp);
-    const parsedEnd = new Date(endTimestamp);
-
-    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
-      setNotice({ kind: 'error', text: 'Invalid event schedule. Please pick valid date and time values.' });
-      return;
-    }
-
-    if (parsedStart > parsedEnd) {
-      setNotice({ kind: 'error', text: 'End date must be equal to or later than start date.' });
-      return;
-    }
-
     const latitude = toNumberOrNull(form.latitude);
     const longitude = toNumberOrNull(form.longitude);
-
-    if (String(form.latitude || '').trim() && latitude === null) {
-      setNotice({ kind: 'error', text: 'Latitude must be a valid number.' });
-      return;
-    }
-
-    if (String(form.longitude || '').trim() && longitude === null) {
-      setNotice({ kind: 'error', text: 'Longitude must be a valid number.' });
-      return;
-    }
-
-    if (latitude !== null && (latitude < -90 || latitude > 90)) {
-      setNotice({ kind: 'error', text: 'Latitude must be between -90 and 90.' });
-      return;
-    }
-
-    if (longitude !== null && (longitude < -180 || longitude > 180)) {
-      setNotice({ kind: 'error', text: 'Longitude must be between -180 and 180.' });
-      return;
-    }
 
     try {
       setIsSubmitting(true);
@@ -988,28 +974,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         Donation_Setup_Type: setupType,
       };
 
-      const basePayload = {
-        User_ID: actorUserId,
-        Organization_ID: organizationId,
-        Donation_Requirement_ID: Number(requirements?.Donation_Requirement_ID || 0) || null,
-        Event_Title: title,
-        Event_Overview: overview,
-        Start_Date: startTimestamp,
-        End_Date: endTimestamp,
-        Proposal_Attachment: uploadResult.filePath,
-        Street: String(form.street || '').trim(),
-        Region: String(form.region || '').trim(),
-        Barangay: String(form.barangay || '').trim(),
-        City: String(form.city || '').trim(),
-        Province: String(form.province || '').trim(),
-        Country: String(form.country || '').trim(),
-        Longitude: longitude,
-        Latitude: latitude,
-        Is_Open_For_All: isOpenForAll,
-        Status: INITIAL_REQUEST_STATUS,
-        Updated_At: new Date().toISOString(),
-        Donation_Setup_Type: setupType,
-      };
+      const basePayload = { ...payload };
+      delete basePayload.Proposal_Attachment_Bucket;
 
       let { data, error } = await supabase
         .from(DONATION_DRIVE_REQUESTS_TABLE)
@@ -1098,18 +1064,10 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
 
       setRequests((prev) => [data, ...prev]);
       setAllowedGroupsByDriveId((previous) => {
-        if (!driveId) {
+        if (!driveId || !savedAllowedGroups.length) {
           return previous;
         }
-
-        if (!savedAllowedGroups.length) {
-          return previous;
-        }
-
-        return {
-          ...previous,
-          [driveId]: savedAllowedGroups,
-        };
+        return { ...previous, [driveId]: savedAllowedGroups };
       });
       setForm(DEFAULT_FORM);
       setProposalFile(null);
@@ -1122,6 +1080,7 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
       });
       setIsSuccessModalOpen(true);
       setNotice({ kind: 'success', text: 'Donation drive request submitted successfully.' });
+      setCurrentStep(1);
 
       await logAuditAction({
         action: 'donation_drive_requests.create',
@@ -1135,7 +1094,7 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
 
       await logAuditAction({
         action: 'donation_drive_requests.create',
-        description: `Failed to create donation drive request: ${title}`,
+        description: `Failed to create donation drive request: ${form.eventTitle || ''}`,
         resource: DONATION_DRIVE_REQUESTS_TABLE,
         status: 'failed',
         userProfile,
@@ -1166,10 +1125,7 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         { label: 'Start Date', value: formatDateTime(toPostgresTimestamp(form.startDate)) },
         { label: 'End Date', value: formatDateTime(toPostgresTimestamp(form.endDate)) },
         { label: 'Donation Setup Type', value: form.setupType || '-' },
-        {
-          label: 'Drive Scope',
-          value: reviewScopeLabel,
-        },
+        { label: 'Drive Scope', value: reviewScopeLabel },
         { label: 'Street', value: form.street || '-' },
         { label: 'Region', value: form.region || '-' },
         { label: 'Province', value: form.province || '-' },
@@ -1192,413 +1148,553 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         },
       ];
     },
-    [
-      form,
-      organizationScope?.organizationName,
-      proposalFile,
-      requirements?.Donation_Requirement_ID,
-      selectedAllowedOrganizationNames,
-    ],
+    [form, organizationScope?.organizationName, proposalFile, requirements?.Donation_Requirement_ID, selectedAllowedOrganizationNames],
   );
 
-  const inputClass =
-    'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-200';
+  const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2';
+  const inputStyle = { color: primaryTextColor, fontFamily: `${bodyFont}, sans-serif` };
+  const inputFocusRing = { boxShadow: 'none' };
+
+  const fieldLabel = (text, required = true) => (
+    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider" style={labelStyle}>
+      {text} {required ? <span style={{ color: '#dc2626' }}>*</span> : null}
+    </label>
+  );
+
+  const stepCardStyle = {
+    borderColor: withColorAlpha(primaryColor, 0.18),
+  };
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900">Request Donation Drive</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Propose a donation drive event for your organization. Every request goes through Staff review first,
-          then Super Admin approval.
-        </p>
-        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Organization Scope: {organizationScope?.organizationName || 'Not assigned'}
-        </p>
+    <div className="space-y-6" style={rootStyle}>
+      <header
+        className="rounded-2xl border p-5 md:p-6"
+        style={{
+          borderColor: withColorAlpha(primaryColor, 0.25),
+          background: `linear-gradient(135deg, ${withColorAlpha(primaryColor, 0.12)}, ${withColorAlpha(tertiaryColor, 0.08)})`,
+        }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: secondaryTextColor }}>
+              Organization Workspace
+            </p>
+            <h1 className="mt-1 text-3xl font-black tracking-tight md:text-4xl" style={headingStyle}>
+              Request Donation Drive
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm" style={{ color: secondaryTextColor }}>
+              Propose a hair donation drive for your organization. Each request flows through Staff review, then Super Admin approval.
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold" style={{ borderColor: withColorAlpha(primaryColor, 0.35), color: primaryColor }}>
+              <ShieldCheck size={14} />
+              Hosting as: {organizationScope?.organizationName || 'Not assigned'}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => loadPageData()}
+            disabled={isLoading || isSubmitting}
+            className="inline-flex items-center gap-2 rounded-xl border bg-white px-3.5 py-2 text-sm font-semibold shadow-sm hover:shadow disabled:opacity-60"
+            style={{ borderColor: withColorAlpha(primaryColor, 0.35), color: primaryColor }}
+          >
+            {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Refresh
+          </button>
+        </div>
       </header>
 
       {notice.text && (
         <div
-          className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+          className="rounded-xl border px-3 py-2 text-sm font-medium"
+          style={
             notice.kind === 'error'
-              ? 'border-red-200 bg-red-50 text-red-800'
+              ? { borderColor: '#fecaca', backgroundColor: '#fef2f2', color: '#b91c1c' }
               : notice.kind === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                : 'border-amber-200 bg-amber-50 text-amber-900'
-          }`}
+                ? { borderColor: '#a7f3d0', backgroundColor: '#ecfdf5', color: '#047857' }
+                : { borderColor: '#fde68a', backgroundColor: '#fffbeb', color: '#b45309' }
+          }
         >
           {notice.text}
         </div>
       )}
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Donation Requirements</h2>
-            <p className="text-xs text-slate-500">Shown first on purpose. New requests use the latest requirement record.</p>
+      <section className="overflow-hidden rounded-2xl border bg-white" style={stepCardStyle}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: withColorAlpha(primaryColor, 0.12) }}>
+          <div className="flex items-center gap-2">
+            <ClipboardList size={18} style={{ color: primaryColor }} />
+            <h2 className="text-lg font-semibold" style={headingStyle}>Donation Requirements</h2>
           </div>
-          <div className="text-xs text-slate-500">
-            Requirement ID: {requirements?.Donation_Requirement_ID || 'N/A'} | Updated: {formatDateTime(requirements?.Updated_At)}
+          <div className="text-xs" style={{ color: tertiaryTextColor }}>
+            Requirement ID: {requirements?.Donation_Requirement_ID || 'N/A'} - Updated: {formatDateTime(requirements?.Updated_At)}
           </div>
         </div>
 
         {!requirements && isLoading ? (
-          <div className="flex items-center gap-2 px-4 py-5 text-sm text-slate-600">
+          <div className="flex items-center gap-2 px-4 py-5 text-sm" style={{ color: secondaryTextColor }}>
             <Loader2 size={16} className="animate-spin" />
             Loading donation requirements...
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Requirement</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {requirementRows.map((row) => (
-                  <tr key={row.label} className="border-t border-slate-200">
-                    <td className="px-4 py-3 font-medium text-slate-800">{row.label}</td>
-                    <td className="px-4 py-3 text-slate-700">{row.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-2 gap-2 p-3 md:grid-cols-4">
+            {requirementRows.map((row) => (
+              <div key={row.label} className="rounded-lg border bg-slate-50 px-3 py-2" style={{ borderColor: withColorAlpha(primaryColor, 0.1) }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: tertiaryTextColor }}>
+                  {row.label}
+                </p>
+                <p className="mt-1 text-sm font-semibold" style={{ color: primaryTextColor }}>{row.value}</p>
+              </div>
+            ))}
           </div>
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-base font-semibold text-slate-900">Approval Flow</h2>
+      <section className="rounded-2xl border bg-white p-4" style={stepCardStyle}>
+        <h2 className="text-base font-semibold" style={headingStyle}>Approval Flow</h2>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-800">1. Pending Staff Approval</span>
-          <span className="text-slate-400">→</span>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 font-semibold text-amber-800">2. Pending Super Admin Approval</span>
-          <span className="text-slate-400">→</span>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">3. Approved</span>
+          <span className="rounded-full border px-3 py-1 font-semibold" style={statusToneStyle('info', primaryColor)}>
+            1. Pending Staff Approval
+          </span>
+          <ChevronRight size={14} style={{ color: tertiaryTextColor }} />
+          <span className="rounded-full border px-3 py-1 font-semibold" style={statusToneStyle('warning', primaryColor)}>
+            2. Pending Super Admin Approval
+          </span>
+          <ChevronRight size={14} style={{ color: tertiaryTextColor }} />
+          <span className="rounded-full border px-3 py-1 font-semibold" style={statusToneStyle('success', primaryColor)}>
+            3. Approved
+          </span>
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 md:p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
+      <section className="rounded-2xl border bg-white p-5 md:p-6" style={stepCardStyle}>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">New Donation Drive Request</h2>
-            <p className="text-xs text-slate-500">Fields marked with * are required.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => loadPageData()}
-            disabled={isLoading || isSubmitting}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Reload Data
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Event Title <span className="text-rose-500">*</span></label>
-            <input
-              value={form.eventTitle}
-              onChange={handleFieldChange('eventTitle')}
-              className={inputClass}
-              placeholder="e.g. Community Hair Donation Day"
-              disabled={!canSubmit}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Start Date & Time <span className="text-rose-500">*</span></label>
-            <input
-              type="datetime-local"
-              value={form.startDate}
-              onChange={handleFieldChange('startDate')}
-              className={inputClass}
-              disabled={!canSubmit}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">End Date & Time <span className="text-rose-500">*</span></label>
-            <input
-              type="datetime-local"
-              value={form.endDate}
-              onChange={handleFieldChange('endDate')}
-              className={inputClass}
-              disabled={!canSubmit}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Donation Setup Type <span className="text-rose-500">*</span></label>
-            <select
-              value={form.setupType}
-              onChange={handleFieldChange('setupType')}
-              className={inputClass}
-              disabled={!canSubmit}
-            >
-              <option value="">Select setup type</option>
-              <option value="Onsite">Onsite</option>
-              <option value="Offsite">Offsite</option>
-              <option value="Hybrid">Hybrid</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Proposal Attachment (PDF only) <span className="text-rose-500">*</span></label>
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={handleProposalFileChange}
-              className={inputClass}
-              disabled={!canSubmit}
-            />
-            <p className="mt-1 text-[11px] text-slate-500">
-              {proposalFile
-                ? `${proposalFile.name} (${formatFileSize(proposalFile.size)})`
-                : `Maximum file size: ${formatFileSize(MAX_PROPOSAL_FILE_SIZE_BYTES)}.`}
-            </p>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Event Overview <span className="text-rose-500">*</span></label>
-            <textarea
-              value={form.eventOverview}
-              onChange={handleFieldChange('eventOverview')}
-              className={`${inputClass} min-h-[100px] resize-y`}
-              placeholder="Briefly explain your event goals, audience, and expected donor turnout."
-              disabled={!canSubmit}
-            />
+            <h2 className="text-lg font-semibold" style={headingStyle}>New Donation Drive Request</h2>
+            <p className="text-xs" style={{ color: tertiaryTextColor }}>Step {currentStep} of {WIZARD_STEPS.length} - Fields marked * are required.</p>
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Street <span className="text-rose-500">*</span></label>
-            <input value={form.street} onChange={handleFieldChange('street')} className={inputClass} disabled={!canSubmit} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Region <span className="text-rose-500">*</span></label>
-            <select value={form.region} onChange={handleRegionChange} className={inputClass} disabled={!canSubmit}>
-              <option value="">Select region</option>
-              {regionOptions.map((region) => (
-                <option key={region.name} value={region.name}>{region.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Province <span className="text-rose-500">*</span></label>
-            <select
-              value={form.province}
-              onChange={handleProvinceChange}
-              className={inputClass}
-              disabled={!canSubmit || !form.region}
-            >
-              <option value="">Select province</option>
-              {provinceOptions.map((province) => (
-                <option key={province.name} value={province.name}>{province.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">City / Municipality <span className="text-rose-500">*</span></label>
-            {requiresManualCityInput ? (
-              <input
-                value={form.city}
-                onChange={handleFieldChange('city')}
-                className={inputClass}
-                placeholder="Type city/municipality"
-                disabled={!canSubmit || !form.province}
-              />
-            ) : (
-              <select
-                value={form.city}
-                onChange={handleCityChange}
-                className={inputClass}
-                disabled={!canSubmit || !form.province}
-              >
-                <option value="">Select city/municipality</option>
-                {cityOptions.map((city) => (
-                  <option key={city.name} value={city.name}>{city.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Barangay <span className="text-rose-500">*</span></label>
-            {requiresManualBarangayInput ? (
-              <input
-                value={form.barangay}
-                onChange={handleFieldChange('barangay')}
-                className={inputClass}
-                placeholder="Type barangay"
-                disabled={!canSubmit || !form.city}
-              />
-            ) : (
-              <select
-                value={form.barangay}
-                onChange={handleFieldChange('barangay')}
-                className={inputClass}
-                disabled={!canSubmit || !form.city}
-              >
-                <option value="">Select barangay</option>
-                {barangayOptions.map((barangay) => (
-                  <option key={barangay} value={barangay}>{barangay}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Country <span className="text-rose-500">*</span></label>
-            <input value={form.country} onChange={handleFieldChange('country')} className={inputClass} disabled={!canSubmit} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Latitude</label>
-            <input
-              value={form.latitude}
-              onChange={handleFieldChange('latitude')}
-              className={inputClass}
-              placeholder="e.g. 14.5995"
-              disabled={!canSubmit}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Longitude</label>
-            <input
-              value={form.longitude}
-              onChange={handleFieldChange('longitude')}
-              className={inputClass}
-              placeholder="e.g. 120.9842"
-              disabled={!canSubmit}
-            />
-          </div>
-        </div>
+        <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {WIZARD_STEPS.map((step) => {
+            const StepIcon = step.icon;
+            const isActive = currentStep === step.id;
+            const isComplete = currentStep > step.id;
+            const accent = isActive
+              ? { borderColor: primaryColor, backgroundColor: withColorAlpha(primaryColor, 0.08) }
+              : isComplete
+                ? { borderColor: tertiaryColor, backgroundColor: withColorAlpha(tertiaryColor, 0.08) }
+                : { borderColor: '#e2e8f0', backgroundColor: '#ffffff' };
+            const iconColor = isActive ? primaryColor : isComplete ? tertiaryColor : tertiaryTextColor;
 
-        <div className="mt-5">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Donation Drive Scope</p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="drive-scope"
-                checked={form.scopeMode === 'own'}
-                onChange={() => handleScopeChange('own')}
-                disabled={!canSubmit}
-              />
-              <span>
-                <span className="block font-semibold text-slate-900">Only for my organization</span>
-                <span className="text-xs text-slate-500">Only {organizationScope?.organizationName || 'your organization'} can run this drive.</span>
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="drive-scope"
-                checked={form.scopeMode === 'all'}
-                onChange={() => handleScopeChange('all')}
-                disabled={!canSubmit}
-              />
-              <span>
-                <span className="block font-semibold text-slate-900">Open for all organizations</span>
-                <span className="text-xs text-slate-500">Any approved organization can participate once approved.</span>
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="drive-scope"
-                checked={form.scopeMode === 'specific'}
-                onChange={() => handleScopeChange('specific')}
-                disabled={!canSubmit}
-              />
-              <span>
-                <span className="block font-semibold text-slate-900">Specific organizations only</span>
-                <span className="text-xs text-slate-500">Choose selected approved organizations. Your organization is auto-included.</span>
-              </span>
-            </label>
-          </div>
-
-          {form.scopeMode === 'specific' && (
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-              <p className="text-xs font-semibold text-slate-700">Select organizations allowed to access this drive</p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                Host organization included automatically: {organizationScope?.organizationName || 'N/A'}
-              </p>
-
-              {!selectableOrganizations.length ? (
-                <p className="mt-2 text-xs text-slate-500">No other approved and active organizations are available.</p>
-              ) : (
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {selectableOrganizations.map((organization) => {
-                    const organizationId = Number(organization.Organization_ID || 0);
-                    const isSelected = selectedAllowedOrganizationIds.includes(organizationId);
-
-                    return (
-                      <label
-                        key={organizationId}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleAllowedOrganizationToggle(organizationId)}
-                          disabled={!canSubmit}
-                        />
-                        <span className="text-xs font-medium text-slate-700">{organization.Organization_Name}</span>
-                      </label>
-                    );
-                  })}
+            return (
+              <div key={step.id} className="rounded-xl border px-3 py-3" style={accent}>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-full"
+                    style={{
+                      backgroundColor: isActive
+                        ? withColorAlpha(primaryColor, 0.18)
+                        : isComplete
+                          ? withColorAlpha(tertiaryColor, 0.18)
+                          : '#f1f5f9',
+                      color: iconColor,
+                    }}
+                  >
+                    {isComplete ? <CheckCircle2 size={16} /> : <StepIcon size={16} />}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: tertiaryTextColor }}>
+                      Step {step.id}
+                    </p>
+                    <p className="text-sm font-bold" style={{ color: primaryTextColor }}>{step.label}</p>
+                  </div>
                 </div>
-              )}
+                <p className="mt-1 text-[11px]" style={{ color: secondaryTextColor }}>{step.hint}</p>
+              </div>
+            );
+          })}
+        </div>
 
-              <p className="mt-2 text-[11px] text-slate-500">
-                {selectedAllowedOrganizationNames.length
-                  ? `Selected organizations: ${selectedAllowedOrganizationNames.join(', ')}`
-                  : 'No specific organizations selected yet.'}
+        {stepError && (
+          <div
+            className="mb-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+            style={{ borderColor: '#fecaca', backgroundColor: '#fef2f2', color: '#b91c1c' }}
+          >
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <span>{stepError}</span>
+          </div>
+        )}
+
+        {currentStep === 1 && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              {fieldLabel('Event Title')}
+              <input
+                value={form.eventTitle}
+                onChange={handleFieldChange('eventTitle')}
+                className={inputClass}
+                placeholder="e.g. Community Hair Donation Day"
+                disabled={!canSubmit}
+                style={inputStyle}
+                onFocus={(e) => Object.assign(e.target.style, { borderColor: primaryColor, ...inputFocusRing })}
+                onBlur={(e) => { e.target.style.borderColor = '#cbd5e1'; }}
+              />
+            </div>
+
+            <div>
+              {fieldLabel('Start Date & Time')}
+              <input
+                type="datetime-local"
+                value={form.startDate}
+                onChange={handleFieldChange('startDate')}
+                className={inputClass}
+                disabled={!canSubmit}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              {fieldLabel('End Date & Time')}
+              <input
+                type="datetime-local"
+                value={form.endDate}
+                onChange={handleFieldChange('endDate')}
+                className={inputClass}
+                disabled={!canSubmit}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              {fieldLabel('Donation Setup Type')}
+              <select
+                value={form.setupType}
+                onChange={handleFieldChange('setupType')}
+                className={inputClass}
+                disabled={!canSubmit}
+                style={inputStyle}
+              >
+                <option value="">Select setup type</option>
+                <option value="Onsite">Onsite</option>
+                <option value="Offsite">Offsite</option>
+                <option value="Hybrid">Hybrid</option>
+              </select>
+            </div>
+
+            <div>
+              {fieldLabel('Proposal Attachment (PDF only)')}
+              <label
+                className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 text-sm transition hover:bg-slate-50"
+                style={{ borderColor: withColorAlpha(primaryColor, 0.4), color: primaryColor }}
+              >
+                <span className="flex items-center gap-2">
+                  <FileText size={16} />
+                  {proposalFile ? `${proposalFile.name} (${formatFileSize(proposalFile.size)})` : 'Choose PDF file'}
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={handleProposalFileChange}
+                  className="hidden"
+                  disabled={!canSubmit}
+                />
+              </label>
+              <p className="mt-1 text-[11px]" style={{ color: tertiaryTextColor }}>
+                Maximum file size: {formatFileSize(MAX_PROPOSAL_FILE_SIZE_BYTES)}.
               </p>
             </div>
-          )}
-        </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+            <div className="md:col-span-2">
+              {fieldLabel('Event Overview')}
+              <textarea
+                value={form.eventOverview}
+                onChange={handleFieldChange('eventOverview')}
+                className={`${inputClass} min-h-[120px] resize-y`}
+                placeholder="Briefly explain your event goals, audience, and expected donor turnout."
+                disabled={!canSubmit}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
+
+        {currentStep === 2 && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="md:col-span-2 lg:col-span-3">
+              {fieldLabel('Street')}
+              <input value={form.street} onChange={handleFieldChange('street')} className={inputClass} disabled={!canSubmit} style={inputStyle} placeholder="House #, Street name" />
+            </div>
+            <div>
+              {fieldLabel('Region')}
+              <select value={form.region} onChange={handleRegionChange} className={inputClass} disabled={!canSubmit} style={inputStyle}>
+                <option value="">Select region</option>
+                {regionOptions.map((region) => (
+                  <option key={region.name} value={region.name}>{region.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              {fieldLabel('Province')}
+              <select
+                value={form.province}
+                onChange={handleProvinceChange}
+                className={inputClass}
+                disabled={!canSubmit || !form.region}
+                style={inputStyle}
+              >
+                <option value="">Select province</option>
+                {provinceOptions.map((province) => (
+                  <option key={province.name} value={province.name}>{province.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              {fieldLabel('City / Municipality')}
+              {requiresManualCityInput ? (
+                <input
+                  value={form.city}
+                  onChange={handleFieldChange('city')}
+                  className={inputClass}
+                  placeholder="Type city/municipality"
+                  disabled={!canSubmit || !form.province}
+                  style={inputStyle}
+                />
+              ) : (
+                <select
+                  value={form.city}
+                  onChange={handleCityChange}
+                  className={inputClass}
+                  disabled={!canSubmit || !form.province}
+                  style={inputStyle}
+                >
+                  <option value="">Select city/municipality</option>
+                  {cityOptions.map((city) => (
+                    <option key={city.name} value={city.name}>{city.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div>
+              {fieldLabel('Barangay')}
+              {requiresManualBarangayInput ? (
+                <input
+                  value={form.barangay}
+                  onChange={handleFieldChange('barangay')}
+                  className={inputClass}
+                  placeholder="Type barangay"
+                  disabled={!canSubmit || !form.city}
+                  style={inputStyle}
+                />
+              ) : (
+                <select
+                  value={form.barangay}
+                  onChange={handleFieldChange('barangay')}
+                  className={inputClass}
+                  disabled={!canSubmit || !form.city}
+                  style={inputStyle}
+                >
+                  <option value="">Select barangay</option>
+                  {barangayOptions.map((barangay) => (
+                    <option key={barangay} value={barangay}>{barangay}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div>
+              {fieldLabel('Country')}
+              <input value={form.country} onChange={handleFieldChange('country')} className={inputClass} disabled={!canSubmit} style={inputStyle} />
+            </div>
+            <div>
+              {fieldLabel('Latitude', false)}
+              <input
+                value={form.latitude}
+                onChange={handleFieldChange('latitude')}
+                className={inputClass}
+                placeholder="e.g. 14.5995"
+                disabled={!canSubmit}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              {fieldLabel('Longitude', false)}
+              <input
+                value={form.longitude}
+                onChange={handleFieldChange('longitude')}
+                className={inputClass}
+                placeholder="e.g. 120.9842"
+                disabled={!canSubmit}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
+
+        {currentStep === 3 && (
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider" style={labelStyle}>Donation Drive Scope</p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {[
+                  { id: 'own', title: 'Only my organization', desc: `Only ${organizationScope?.organizationName || 'your organization'} can run this drive.` },
+                  { id: 'all', title: 'Open for all organizations', desc: 'Any approved organization can participate once approved.' },
+                  { id: 'specific', title: 'Specific organizations only', desc: 'Choose selected approved organizations. Your organization is auto-included.' },
+                ].map((option) => {
+                  const isSelected = form.scopeMode === option.id;
+                  return (
+                    <label
+                      key={option.id}
+                      className="flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-3 text-sm transition"
+                      style={
+                        isSelected
+                          ? { borderColor: primaryColor, backgroundColor: withColorAlpha(primaryColor, 0.08) }
+                          : { borderColor: '#e2e8f0', backgroundColor: '#ffffff' }
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name="drive-scope"
+                        checked={isSelected}
+                        onChange={() => handleScopeChange(option.id)}
+                        disabled={!canSubmit}
+                        style={{ accentColor: primaryColor }}
+                      />
+                      <span>
+                        <span className="block font-semibold" style={{ color: primaryTextColor }}>{option.title}</span>
+                        <span className="text-xs" style={{ color: secondaryTextColor }}>{option.desc}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {form.scopeMode === 'specific' && (
+              <div className="rounded-xl border px-3 py-3" style={{ borderColor: withColorAlpha(primaryColor, 0.25), backgroundColor: withColorAlpha(primaryColor, 0.04) }}>
+                <p className="text-xs font-semibold" style={{ color: primaryTextColor }}>Select organizations allowed to access this drive</p>
+                <p className="mt-0.5 text-[11px]" style={{ color: secondaryTextColor }}>
+                  Host organization included automatically: {organizationScope?.organizationName || 'N/A'}
+                </p>
+
+                {!selectableOrganizations.length ? (
+                  <p className="mt-2 text-xs" style={{ color: secondaryTextColor }}>No other approved and active organizations are available.</p>
+                ) : (
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {selectableOrganizations.map((organization) => {
+                      const organizationId = Number(organization.Organization_ID || 0);
+                      const isSelected = selectedAllowedOrganizationIds.includes(organizationId);
+
+                      return (
+                        <label
+                          key={organizationId}
+                          className="flex cursor-pointer items-start gap-2 rounded-md border bg-white px-2.5 py-2 text-sm"
+                          style={
+                            isSelected
+                              ? { borderColor: primaryColor, color: primaryTextColor }
+                              : { borderColor: '#e2e8f0', color: primaryTextColor }
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleAllowedOrganizationToggle(organizationId)}
+                            disabled={!canSubmit}
+                            style={{ accentColor: primaryColor }}
+                          />
+                          <span className="text-xs font-medium">{organization.Organization_Name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <p className="mt-2 text-[11px]" style={{ color: secondaryTextColor }}>
+                  {selectedAllowedOrganizationNames.length
+                    ? `Selected organizations: ${selectedAllowedOrganizationNames.join(', ')}`
+                    : 'No specific organizations selected yet.'}
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: withColorAlpha(primaryColor, 0.18) }}>
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} style={{ color: primaryColor }} />
+                <p className="text-sm font-semibold" style={{ color: primaryTextColor }}>Quick Preview</p>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <div><span style={{ color: secondaryTextColor }}>Event:</span> <span className="font-semibold" style={{ color: primaryTextColor }}>{form.eventTitle || '-'}</span></div>
+                <div><span style={{ color: secondaryTextColor }}>Setup:</span> <span className="font-semibold" style={{ color: primaryTextColor }}>{form.setupType || '-'}</span></div>
+                <div><span style={{ color: secondaryTextColor }}>Schedule:</span> <span className="font-semibold" style={{ color: primaryTextColor }}>{formatDateRange(toPostgresTimestamp(form.startDate), toPostgresTimestamp(form.endDate))}</span></div>
+                <div><span style={{ color: secondaryTextColor }}>Location:</span> <span className="font-semibold" style={{ color: primaryTextColor }}>{[form.city, form.province].filter(Boolean).join(', ') || '-'}</span></div>
+                <div className="sm:col-span-2"><span style={{ color: secondaryTextColor }}>Proposal:</span> <span className="font-semibold" style={{ color: primaryTextColor }}>{proposalFile ? proposalFile.name : 'No file selected'}</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: withColorAlpha(primaryColor, 0.12) }}>
           <button
             type="button"
-            onClick={handleOpenReviewModal}
-            disabled={!canSubmit}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            onClick={handleStepBack}
+            disabled={currentStep === 1 || isSubmitting}
+            className="inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
           >
-            <Send size={14} />
-            Review and Submit Request
+            <ChevronLeft size={14} />
+            Back
           </button>
+
+          <div className="text-xs" style={{ color: tertiaryTextColor }}>
+            {currentStep === WIZARD_STEPS.length ? 'Ready to review' : `Step ${currentStep} of ${WIZARD_STEPS.length}`}
+          </div>
+
+          {currentStep < WIZARD_STEPS.length ? (
+            <button
+              type="button"
+              onClick={handleStepNext}
+              disabled={!canSubmit}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Next
+              <ChevronRight size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleOpenReviewModal}
+              disabled={!canSubmit}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <Send size={14} />
+              Review and Submit
+            </button>
+          )}
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="text-lg font-semibold text-slate-900">My Donation Drive Requests</h2>
-          <p className="text-xs text-slate-500">Track if each request is open to all organizations, host-only, or limited to selected organizations.</p>
+      <section className="overflow-hidden rounded-2xl border bg-white" style={stepCardStyle}>
+        <div className="border-b px-4 py-3" style={{ borderColor: withColorAlpha(primaryColor, 0.12) }}>
+          <h2 className="text-lg font-semibold" style={headingStyle}>My Donation Drive Requests</h2>
+          <p className="text-xs" style={{ color: tertiaryTextColor }}>Track if each request is open to all organizations, host-only, or limited to selected organizations.</p>
         </div>
 
         {!requests.length ? (
-          <div className="px-4 py-5 text-sm text-slate-600">
+          <div className="px-4 py-5 text-sm" style={{ color: secondaryTextColor }}>
             {isLoading ? 'Loading requests...' : 'No donation drive requests yet.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50">
+              <thead style={{ backgroundColor: withColorAlpha(primaryColor, 0.08) }}>
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Event</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Schedule</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Attachment</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Scope</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Setup Type</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Updated</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Event</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Schedule</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Attachment</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Scope</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Setup Type</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Status</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Updated</th>
                 </tr>
               </thead>
               <tbody>
@@ -1612,26 +1708,24 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
                   });
 
                   return (
-                    <tr key={row.Donation_Drive_ID} className="border-t border-slate-200 align-top">
-                      <td className="px-4 py-3 text-slate-800">
-                        <p className="font-semibold text-slate-900">{row.Event_Title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{row.Event_Overview || 'No overview provided.'}</p>
+                    <tr key={row.Donation_Drive_ID} className="border-t align-top" style={{ borderColor: '#e2e8f0' }}>
+                      <td className="px-4 py-3" style={{ color: primaryTextColor }}>
+                        <p className="font-semibold">{row.Event_Title}</p>
+                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{row.Event_Overview || 'No overview provided.'}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{formatDateRange(row.Start_Date, row.End_Date)}</td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {row.Proposal_Attachment
-                          ? String(row.Proposal_Attachment).split('/').pop()
-                          : 'No attachment'}
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{formatDateRange(row.Start_Date, row.End_Date)}</td>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>
+                        {row.Proposal_Attachment ? String(row.Proposal_Attachment).split('/').pop() : 'No attachment'}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{scopeLabel}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.Donation_Setup_Type || 'Not set'}</td>
-                      <td className="px-4 py-3 text-slate-700">
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{scopeLabel}</td>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Donation_Setup_Type || 'Not set'}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold" style={statusToneStyle(statusMeta.tone, primaryColor)}>
                           {statusMeta.label}
                         </span>
-                        <p className="mt-1 text-[11px] text-slate-500">{statusMeta.approvalHint}</p>
+                        <p className="mt-1 text-[11px]" style={{ color: tertiaryTextColor }}>{statusMeta.approvalHint}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{formatDateTime(row.Updated_At)}</td>
+                      <td className="px-4 py-3" style={{ color: tertiaryTextColor }}>{formatDateTime(row.Updated_At)}</td>
                     </tr>
                   );
                 })}
@@ -1641,9 +1735,9 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
         )}
       </section>
 
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs" style={{ borderColor: '#e2e8f0', color: secondaryTextColor }}>
         <div className="flex items-start gap-2">
-          {canSubmit ? <CheckCircle2 size={14} className="mt-0.5" /> : <AlertCircle size={14} className="mt-0.5" />}
+          {canSubmit ? <CheckCircle2 size={14} className="mt-0.5" style={{ color: tertiaryColor }} /> : <AlertCircle size={14} className="mt-0.5" style={{ color: '#b45309' }} />}
           <p>
             {canSubmit
               ? `Ready to submit under ${organizationScope?.organizationName || 'your organization'}.`
@@ -1654,13 +1748,14 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
 
       {isReviewModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <h3 className="text-base font-semibold text-slate-900">Final Review Before Submission</h3>
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: withColorAlpha(primaryColor, 0.12) }}>
+              <h3 className="text-base font-semibold" style={headingStyle}>Final Review Before Submission</h3>
               <button
                 type="button"
                 onClick={() => setIsReviewModalOpen(false)}
-                className="rounded-md border border-slate-200 p-1 text-slate-500 hover:bg-slate-50"
+                className="rounded-md border p-1 hover:bg-slate-50"
+                style={{ borderColor: '#e2e8f0', color: secondaryTextColor }}
                 disabled={isSubmitting}
               >
                 <X size={16} />
@@ -1668,19 +1763,19 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
             </div>
 
             <div className="max-h-[68vh] space-y-3 overflow-y-auto px-4 py-4">
-              <p className="text-sm text-slate-600">
+              <p className="text-sm" style={{ color: secondaryTextColor }}>
                 Please check all details below. Click confirm to submit this request for Staff review.
               </p>
 
-              <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="overflow-hidden rounded-lg border" style={{ borderColor: '#e2e8f0' }}>
                 <table className="min-w-full text-sm">
                   <tbody>
                     {reviewRows.map((row) => (
-                      <tr key={row.label} className="border-t border-slate-200 first:border-t-0">
-                        <td className="w-[32%] bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <tr key={row.label} className="border-t first:border-t-0" style={{ borderColor: '#e2e8f0' }}>
+                        <td className="w-[32%] px-3 py-2 text-xs font-semibold uppercase tracking-wide" style={{ backgroundColor: withColorAlpha(primaryColor, 0.06), color: secondaryTextColor }}>
                           {row.label}
                         </td>
-                        <td className="px-3 py-2 text-slate-800">{row.value}</td>
+                        <td className="px-3 py-2" style={{ color: primaryTextColor }}>{row.value}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1688,12 +1783,13 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <div className="flex justify-end gap-2 border-t px-4 py-3" style={{ borderColor: withColorAlpha(primaryColor, 0.12) }}>
               <button
                 type="button"
                 onClick={() => setIsReviewModalOpen(false)}
                 disabled={isSubmitting}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
+                style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
               >
                 Back to Edit
               </button>
@@ -1701,7 +1797,8 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
                 type="button"
                 onClick={handleConfirmSubmit}
                 disabled={isSubmitting}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: primaryColor }}
               >
                 {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 Confirm and Submit
@@ -1713,34 +1810,30 @@ export default function SubmitDonationsRequestPage({ userProfile }) {
 
       {isSuccessModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <h3 className="text-base font-semibold text-slate-900">Request Submitted</h3>
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b px-4 py-3" style={{ borderColor: withColorAlpha(tertiaryColor, 0.25) }}>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={20} style={{ color: tertiaryColor }} />
+                <h3 className="text-base font-semibold" style={headingStyle}>Request Submitted</h3>
+              </div>
             </div>
 
-            <div className="space-y-2 px-4 py-4 text-sm text-slate-700">
-              <p>
-                Your donation drive request has been submitted successfully.
-              </p>
-              <p>
-                <span className="font-semibold text-slate-900">Request ID:</span> {successModalData?.driveId || 'N/A'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-900">Event:</span> {successModalData?.title || 'N/A'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-900">Current Status:</span> {successModalData?.status || INITIAL_REQUEST_STATUS}
-              </p>
-              <p className="text-xs text-slate-500">
+            <div className="space-y-2 px-4 py-4 text-sm" style={{ color: secondaryTextColor }}>
+              <p>Your donation drive request has been submitted successfully.</p>
+              <p><span className="font-semibold" style={{ color: primaryTextColor }}>Request ID:</span> {successModalData?.driveId || 'N/A'}</p>
+              <p><span className="font-semibold" style={{ color: primaryTextColor }}>Event:</span> {successModalData?.title || 'N/A'}</p>
+              <p><span className="font-semibold" style={{ color: primaryTextColor }}>Current Status:</span> {successModalData?.status || INITIAL_REQUEST_STATUS}</p>
+              <p className="text-xs" style={{ color: tertiaryTextColor }}>
                 Approval flow: Pending Staff Approval then Pending Super Admin Approval.
               </p>
             </div>
 
-            <div className="flex justify-end border-t border-slate-200 px-4 py-3">
+            <div className="flex justify-end border-t px-4 py-3" style={{ borderColor: withColorAlpha(tertiaryColor, 0.25) }}>
               <button
                 type="button"
                 onClick={() => setIsSuccessModalOpen(false)}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                style={{ backgroundColor: primaryColor }}
               >
                 Close
               </button>

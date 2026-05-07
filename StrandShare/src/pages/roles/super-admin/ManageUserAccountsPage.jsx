@@ -21,7 +21,7 @@ import {
   isSupabaseConfigured,
 } from '../../../lib/supabaseClient';
 
-const DEFAULT_ROLES = ['Super Admin', 'H-Representative', 'Organization', 'Staff'];
+const DEFAULT_ROLES = ['Super Admin', 'H-Representative', 'Organization', 'Staff', 'QA Stylist'];
 
 function toRoleLabel(roleValue) {
   const normalizedRole = String(roleValue || '')
@@ -55,6 +55,14 @@ function toRoleLabel(roleValue) {
 
   if (normalizedRole === 'staff') {
     return 'Staff';
+  }
+
+  if (
+    normalizedRole === 'qa stylist'
+    || normalizedRole === 'qastylist'
+    || normalizedRole === 'q a stylist'
+  ) {
+    return 'QA Stylist';
   }
 
   return roleValue || 'N/A';

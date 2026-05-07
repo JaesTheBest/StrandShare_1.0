@@ -17,6 +17,13 @@ import { useTheme } from '../../../context/ThemeContext';
 import jsQR from 'jsqr';
 import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
+import {
+  HAIR_SUBMISSION_STATUS,
+  parseWaybillQrPayload,
+  updateSubmissionStatus,
+} from '../../../lib/hairSubmissionWorkflow';
+
+const HAIR_SUBMISSIONS_TABLE = 'Hair_Submissions';
 
 const DONATION_DRIVE_REQUESTS_TABLE = 'Donation_Drive_Requests';
 const DONATION_DRIVE_REGISTRATIONS_TABLE = 'Donation_Drive_Registrations';
@@ -1349,7 +1356,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     userProfile,
   ]);
 
-  const handleLogisticsScan = useCallback((decodedText) => {
+  const handleLogisticsScan = useCallback(async (decodedText) => {
     if (!isSelectedDriveScannable) {
       const availabilityMessage = scannerAvailabilityMessage || 'Logistics scanner is unavailable for this event schedule.';
       setScannerNotice('logistics', 'warning', availabilityMessage);
@@ -1364,14 +1371,150 @@ export default function AssignedDonationReportsPage({ userProfile }) {
       return;
     }
 
-    const parsedPayload = parseDonationQrPayload(decodedText);
     const nowIso = new Date().toISOString();
+    const trimmed = String(decodedText || '').trim();
+    const waybill = parseWaybillQrPayload(trimmed);
+
+    if (waybill && (waybill.submissionId || waybill.submissionCode)) {
+      try {
+        let lookup = null;
+        if (waybill.submissionId) {
+          lookup = await supabase
+            .from(HAIR_SUBMISSIONS_TABLE)
+            .select('Submission_ID, User_ID, Donation_Drive_ID, Status, Submission_Code')
+            .eq('Submission_ID', waybill.submissionId)
+            .maybeSingle();
+        } else if (waybill.submissionCode) {
+          lookup = await supabase
+            .from(HAIR_SUBMISSIONS_TABLE)
+            .select('Submission_ID, User_ID, Donation_Drive_ID, Status, Submission_Code')
+            .eq('Submission_Code', waybill.submissionCode)
+            .maybeSingle();
+        }
+
+        if (lookup?.error) {
+          throw lookup.error;
+        }
+
+        const submission = lookup?.data;
+        if (!submission?.Submission_ID) {
+          const message = `No hair submission found for waybill ${waybill.submissionCode || waybill.submissionId}.`;
+          setScannerNotice('logistics', 'error', message);
+          setLastLogisticsScan({
+            status: 'failed',
+            userId: null,
+            driveId: selectedDriveId,
+            scannedAt: nowIso,
+            raw: trimmed,
+            reason: message,
+          });
+          return;
+        }
+
+        if (Number(submission.Donation_Drive_ID) !== Number(selectedDriveId)) {
+          const message = `Waybill ${submission.Submission_Code || submission.Submission_ID} belongs to a different drive.`;
+          setScannerNotice('logistics', 'error', message);
+          setLastLogisticsScan({
+            status: 'failed',
+            userId: submission.User_ID || null,
+            driveId: submission.Donation_Drive_ID,
+            scannedAt: nowIso,
+            raw: trimmed,
+            reason: message,
+          });
+          return;
+        }
+
+        const currentStatus = String(submission.Status || '').toLowerCase();
+        if (currentStatus === HAIR_SUBMISSION_STATUS.CUT_SHIPPED.toLowerCase()
+          || currentStatus === HAIR_SUBMISSION_STATUS.RECEIVED.toLowerCase()
+          || currentStatus === HAIR_SUBMISSION_STATUS.APPROVED.toLowerCase()
+          || currentStatus === HAIR_SUBMISSION_STATUS.REJECTED.toLowerCase()
+          || currentStatus === HAIR_SUBMISSION_STATUS.BUNDLED.toLowerCase()
+          || currentStatus === HAIR_SUBMISSION_STATUS.WIG_CREATED.toLowerCase()) {
+          const message = `Waybill ${submission.Submission_Code || submission.Submission_ID} already past Cut & Shipped (current: ${submission.Status}).`;
+          setScannerNotice('logistics', 'warning', message);
+          setLastLogisticsScan({
+            status: 'duplicate',
+            userId: submission.User_ID,
+            driveId: submission.Donation_Drive_ID,
+            scannedAt: nowIso,
+            raw: trimmed,
+            reason: message,
+          });
+          return;
+        }
+
+        const { error: updateError } = await updateSubmissionStatus({
+          submissionId: submission.Submission_ID,
+          nextStatus: HAIR_SUBMISSION_STATUS.CUT_SHIPPED,
+          donorUserId: submission.User_ID,
+          submissionCode: submission.Submission_Code,
+          eventTitle: selectedEventName,
+          changedBy: Number(userProfile?.user_id || 0) || null,
+        });
+
+        if (updateError) throw updateError;
+
+        const successMessage = `Waybill ${submission.Submission_Code || submission.Submission_ID} marked Cut & Shipped. Donor notified.`;
+        setScannerNotice('logistics', 'success', successMessage);
+        setLastLogisticsScan({
+          status: 'success',
+          userId: submission.User_ID,
+          driveId: submission.Donation_Drive_ID,
+          scannedAt: nowIso,
+          raw: trimmed,
+          reason: successMessage,
+        });
+
+        setLogisticsScanHistoryRows((previous) => {
+          const nextRow = {
+            id: `wb-${submission.Submission_ID}-${Date.now()}`,
+            driveId: selectedDriveId,
+            eventName: selectedEventName,
+            scannedAt: nowIso,
+            userId: submission.User_ID,
+            userName: `User #${submission.User_ID} - ${submission.Submission_Code || `HS-${submission.Submission_ID}`}`,
+            status: 'Cut & Shipped',
+          };
+          return [nextRow, ...previous].slice(0, 200);
+        });
+
+        if (submission.User_ID) {
+          void loadUserNamesByIds([submission.User_ID]);
+        }
+
+        await logAuditAction({
+          action: 'hair_submissions.cut_shipped',
+          description: `Marked waybill ${submission.Submission_Code || submission.Submission_ID} as Cut & Shipped`,
+          resource: HAIR_SUBMISSIONS_TABLE,
+          status: 'success',
+          userProfile,
+        });
+
+        return;
+      } catch (error) {
+        const message = error?.message || 'Unable to update waybill status.';
+        setScannerNotice('logistics', 'error', message);
+        setLastLogisticsScan({
+          status: 'failed',
+          userId: null,
+          driveId: selectedDriveId,
+          scannedAt: nowIso,
+          raw: trimmed,
+          reason: message,
+        });
+        return;
+      }
+    }
+
+    const parsedPayload = parseDonationQrPayload(decodedText);
 
     const infoMessage = parsedPayload.userId
-      ? `Logistics scan captured for User #${parsedPayload.userId}. Workflow actions are not connected yet.`
-      : 'Logistics scan captured, but no User ID was detected from QR payload.';
+      ? `Scan captured for User #${parsedPayload.userId}, but it does not match a hair submission waybill.`
+      : 'Scan captured, but no waybill or User ID was detected.';
 
-    setScannerNotice('logistics', parsedPayload.userId ? 'warning' : 'error', infoMessage);
+    setScannerNotice('logistics', 'warning', infoMessage);
     setLastLogisticsScan({
       status: parsedPayload.userId ? 'captured' : 'failed',
       userId: parsedPayload.userId,
@@ -1405,6 +1548,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     selectedDriveId,
     selectedEventName,
     setScannerNotice,
+    userProfile,
   ]);
 
   const submitManualScan = useCallback((tabKey) => {
@@ -1430,7 +1574,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
     if (tabKey === 'rsvp') {
       void handleRsvpScan(nextValue);
     } else {
-      handleLogisticsScan(nextValue);
+      void handleLogisticsScan(nextValue);
     }
 
     setManualQrInput((previous) => ({
@@ -1569,7 +1713,7 @@ export default function AssignedDonationReportsPage({ userProfile }) {
             if (scannerTab === 'rsvp') {
               void handleRsvpScan(decodedText);
             } else {
-              handleLogisticsScan(decodedText);
+              void handleLogisticsScan(decodedText);
             }
           } catch (error) {
             // Ignore frame-level decode issues and continue scanning.

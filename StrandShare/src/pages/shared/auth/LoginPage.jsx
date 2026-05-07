@@ -3,6 +3,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Heart, Coins, ShieldCheck, QrCode } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 import { logAuditAction } from '../../../lib/auditLogger';
+import TransitionDoors from '../../../components/transitions/TransitionDoors';
 
 const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
@@ -665,7 +666,29 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     setIsSubmitting(false);
   };
 
+  const incomingTransition = (() => {
+    try {
+      return typeof window !== 'undefined' ? sessionStorage.getItem('strandshare:incoming-transition') : '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const [doorsDirection, setDoorsDirection] = useState(incomingTransition === 'login' ? 'opening' : null);
+
+  useEffect(() => {
+    if (incomingTransition === 'login') {
+      try { sessionStorage.removeItem('strandshare:incoming-transition'); } catch { /* ignore */ }
+    }
+  }, [incomingTransition]);
+
   return (
+    <>
+    <TransitionDoors
+      direction={doorsDirection}
+      color={theme?.primaryColor || '#b8955a'}
+      onComplete={() => setDoorsDirection(null)}
+    />
     <div className="flex min-h-screen bg-white">
       {/* Left Pane - Branding */}
       <div
@@ -1064,5 +1087,6 @@ export default function LoginPage({ authNotice, onClearNotice }) {
         </div>
       </div>
     </div>
+    </>
   );
 }

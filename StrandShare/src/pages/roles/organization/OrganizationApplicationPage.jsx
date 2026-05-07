@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../../../context/ThemeContext';
 import { supabase } from '../../../lib/supabaseClient';
 import organizationAddressOptions from '../../../data/organizationAddressOptions.json';
+import { TransitionFlipEntrance } from '../../../components/transitions/TransitionFlip';
 
 const USERS_TABLE = 'users';
 const USER_DETAILS_TABLE = 'user_details';
@@ -1073,6 +1074,22 @@ export default function OrganizationApplicationPage() {
     }
   };
 
+  const incomingTransition = (() => {
+    try {
+      return typeof window !== 'undefined' ? sessionStorage.getItem('strandshare:incoming-transition') : '';
+    } catch {
+      return '';
+    }
+  })();
+
+  useEffect(() => {
+    if (incomingTransition === 'apply') {
+      try { sessionStorage.removeItem('strandshare:incoming-transition'); } catch { /* ignore */ }
+    }
+  }, [incomingTransition]);
+
+  const Wrapper = incomingTransition === 'apply' ? TransitionFlipEntrance : React.Fragment;
+
   if (isSubmissionComplete) {
     return (
       <div className="min-h-screen px-4 py-8 md:px-8" style={{ backgroundColor }}>
@@ -1134,6 +1151,7 @@ export default function OrganizationApplicationPage() {
   }
 
   return (
+    <Wrapper>
     <div className="min-h-screen px-4 py-8 md:px-8" style={{ backgroundColor }}>
       <div className="mx-auto max-w-4xl">
         <button
@@ -1746,5 +1764,6 @@ export default function OrganizationApplicationPage() {
         </section>
       </div>
     </div>
+    </Wrapper>
   );
 }

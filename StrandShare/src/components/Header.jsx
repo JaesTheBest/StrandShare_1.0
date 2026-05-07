@@ -84,6 +84,14 @@ function resolveDisplayRole(roleValue) {
     return 'Staff';
   }
 
+  if (
+    normalizedRole === 'qa stylist'
+    || normalizedRole === 'qastylist'
+    || normalizedRole === 'q a stylist'
+  ) {
+    return 'QA Stylist';
+  }
+
   return roleValue;
 }
 

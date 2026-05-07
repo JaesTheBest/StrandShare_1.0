@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Mail, MapPin, Phone } from 'lucide-react';
+import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
+import TransitionDoors from '../../components/transitions/TransitionDoors';
+import { TransitionFlipExit } from '../../components/transitions/TransitionFlip';
 import './landing-scroll.css';
 
 /* ─── static content ─────────────────────────────────────────── */
@@ -72,7 +75,46 @@ function parseRgbChannels(hex, fallback = [184, 149, 90]) {
   return fallback;
 }
 
-function goTo(path) { window.location.assign(path); }
+function goToHard(path) { window.location.assign(path); }
+
+/** Apple-style scroll-scrubbed character reveal. */
+function ScrollRevealText({ children, className }) {
+  const ref = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ['start 0.85', 'start 0.25'],
+  });
+
+  const text = String(children);
+  const total = text.length;
+  return (
+    <span ref={ref} className={className}>
+      {text.split('').map((ch, i) => {
+        if (ch === ' ') return <span key={i}>&nbsp;</span>;
+        const start = i / total;
+        const end = (i + 1.5) / total;
+        return (
+          <ScrollRevealChar key={i} progress={scrollYProgress} start={start} end={end}>
+            {ch}
+          </ScrollRevealChar>
+        );
+      })}
+    </span>
+  );
+}
+
+function ScrollRevealChar({ progress, start, end, children }) {
+  const opacity = useTransform(progress, [start, end], [0.18, 1]);
+  const y = useTransform(progress, [start, end], [16, 0]);
+  const filter = useTransform(progress, [start, end], ['blur(8px)', 'blur(0px)']);
+  return (
+    <motion.span
+      style={{ opacity, y, filter, display: 'inline-block', willChange: 'transform' }}
+    >
+      {children}
+    </motion.span>
+  );
+}
 
 /* ─── canvas helpers ─────────────────────────────────────────── */
 function setupHeroCanvas(canvas, getThemeRgb) {
@@ -239,6 +281,40 @@ export default function LandingPage() {
   const [navScrolled, setNavScrolled] = useState(false);
   const [openFaq,    setOpenFaq]    = useState(-1);
 
+  /* transitions */
+  const [exitTransition, setExitTransition] = useState(null); // 'login' | 'apply' | null
+  const pendingPathRef = useRef(null);
+
+  const handleNavigate = useCallback((path) => {
+    if (exitTransition) return;
+    if (path === '/login') {
+      pendingPathRef.current = path;
+      setExitTransition('login');
+    } else if (path === '/apply-organization') {
+      pendingPathRef.current = path;
+      setExitTransition('apply');
+    } else {
+      goToHard(path);
+    }
+  }, [exitTransition]);
+
+  const handleTransitionDone = useCallback(() => {
+    const path = pendingPathRef.current;
+    if (path) {
+      sessionStorage.setItem('strandshare:incoming-transition', exitTransition || '');
+      goToHard(path);
+    }
+  }, [exitTransition]);
+
+  /* scroll-driven Apple-style effects */
+  const { scrollY, scrollYProgress } = useScroll();
+  const scrollProgressX = useSpring(scrollYProgress, { stiffness: 90, damping: 20, mass: 0.4 });
+  const heroScale = useTransform(scrollY, [0, 600], [1, 0.92]);
+  const heroOpacity = useTransform(scrollY, [0, 500], [1, 0]);
+  const heroY = useTransform(scrollY, [0, 600], [0, -90]);
+  const heroBgRotate = useTransform(scrollY, [0, 1000], [0, 8]);
+  const heroBgScale = useTransform(scrollY, [0, 800], [1, 1.18]);
+
   /* smooth scroll */
   const smoothTo = useCallback((id) => {
     const el = document.getElementById(id);
@@ -309,6 +385,30 @@ export default function LandingPage() {
   const marqueeDouble = [...marqueeItems, ...marqueeItems];
 
   return (
+    <TransitionFlipExit
+      trigger={exitTransition === 'apply'}
+      onComplete={handleTransitionDone}
+    >
+      <motion.div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '3px',
+          transformOrigin: '0% 50%',
+          scaleX: scrollProgressX,
+          background: primaryColor,
+          zIndex: 9000,
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      />
+      <TransitionDoors
+        direction={exitTransition === 'login' ? 'closing' : null}
+        color={primaryColor}
+        onComplete={handleTransitionDone}
+      />
     <div className="landing-scroll-root" style={cssVars} ref={rootRef}>
 
       {/* ── NAV ─────────────────────────────────────── */}
@@ -329,16 +429,24 @@ export default function LandingPage() {
         </div>
 
         <div className={`nav-actions${heroVis ? ' vis' : ''}`}>
-          <button type="button" className="nav-login" onClick={() => goTo('/login')}>Login</button>
-          <button type="button" className="nav-cta"   onClick={() => goTo('/apply-organization')}>Apply Organization</button>
+          <button type="button" className="nav-login" onClick={() => handleNavigate('/login')}>Login</button>
+          <button type="button" className="nav-cta"   onClick={() => handleNavigate('/apply-organization')}>Apply Organization</button>
         </div>
       </nav>
 
       {/* ── HERO ────────────────────────────────────── */}
       <section id="hero">
-        <canvas ref={heroCanvasRef} className="landing-stars" aria-hidden="true" />
+        <motion.canvas
+          ref={heroCanvasRef}
+          className="landing-stars"
+          aria-hidden="true"
+          style={{ rotate: heroBgRotate, scale: heroBgScale }}
+        />
 
-        <div className="hero-inner">
+        <motion.div
+          className="hero-inner"
+          style={{ scale: heroScale, opacity: heroOpacity, y: heroY }}
+        >
           <p className={`hero-badge${heroVis ? ' vis' : ''}`}>{brandTagline}</p>
 
           <h1 className="hero-title">
@@ -359,14 +467,14 @@ export default function LandingPage() {
           </p>
 
           <div className={`hero-ctas${heroVis ? ' vis' : ''}`}>
-            <button type="button" className="btn-primary" onClick={() => goTo('/apply-organization')}>
+            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
               Apply As Organization <ArrowRight size={15} />
             </button>
             <button type="button" className="btn-outline" onClick={() => smoothTo('about')}>
               Learn More
             </button>
           </div>
-        </div>
+        </motion.div>
 
         <div className="scroll-hint">Scroll</div>
       </section>
@@ -478,7 +586,7 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <button type="button" className="btn-primary" onClick={() => goTo('/apply-organization')}>
+          <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
             Open Application Form <ArrowRight size={15} />
           </button>
         </div>
@@ -515,10 +623,10 @@ export default function LandingPage() {
             building a better support system for those who need it most.
           </p>
           <div className="cta-btns">
-            <button type="button" className="btn-primary" onClick={() => goTo('/apply-organization')}>
+            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
               Apply As Organization <ArrowRight size={15} />
             </button>
-            <button type="button" className="btn-outline" onClick={() => goTo('/login')}>
+            <button type="button" className="btn-outline" onClick={() => handleNavigate('/login')}>
               Login to Dashboard
             </button>
           </div>
@@ -549,5 +657,6 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
+    </TransitionFlipExit>
   );
 }

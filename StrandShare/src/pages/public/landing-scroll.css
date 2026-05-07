@@ -99,12 +99,14 @@
 }
 .hero-title{
   font-family:var(--font-serif,'Cormorant Garamond',serif);
-  font-size:clamp(3.5rem,9vw,8.5rem);
-  font-weight:300;line-height:.93;letter-spacing:-.02em;margin-bottom:2rem;
+  font-size:clamp(3rem,7.6vw,7rem);
+  font-weight:300;line-height:1.05;letter-spacing:-.02em;margin-bottom:2rem;
   color:var(--color-text-primary,#0f0d0a);
+  padding:0 .4em;
+  text-wrap:balance;
 }
 .hero-title .line{
-  display:block;overflow:hidden;
+  display:block;overflow:hidden;padding:.04em .14em;
 }
 .hero-title .line span{color:var(--color-primary,#b8955a);font-style:italic}
 .hero-title .line-inner{
@@ -160,16 +162,55 @@
 /* ── MARQUEE ─────────────────────────────────────── */
 .marquee-band{
   overflow:hidden;background:var(--color-primary,#b8955a);
-  padding:13px 0;display:flex;
+  padding:13px 0;display:flex;position:relative;
 }
-.m-track{display:flex;white-space:nowrap;animation:marq 24s linear infinite}
-.m-track:nth-child(2){animation-delay:-12s}
+.marquee-band:hover .m-track{animation-play-state:paused}
+.m-track{
+  display:flex;white-space:nowrap;
+  animation:marq 28s linear infinite;
+  will-change:transform;
+}
+.m-track:nth-child(2){animation-delay:-14s}
 .m-item{
   display:inline-flex;align-items:center;gap:20px;padding:0 20px;
   font-size:.7rem;font-weight:600;letter-spacing:.16em;
   text-transform:uppercase;color:var(--color-bg,#f5f0e8);flex-shrink:0;
 }
 .m-dot{width:3px;height:3px;border-radius:50%;background:rgba(245,240,232,.5)}
+@keyframes marq{
+  0%{transform:translateX(0)}
+  100%{transform:translateX(-50%)}
+}
+
+/* ── PAGE TRANSITIONS ────────────────────────────── */
+.transition-doors{
+  position:fixed;inset:0;z-index:9999;pointer-events:none;
+  display:flex;
+}
+.transition-doors-panel{
+  flex:1 1 50%;background:var(--color-primary,#b8955a);
+  display:flex;align-items:center;justify-content:center;
+}
+.transition-doors-panel.left{transform-origin:left center;}
+.transition-doors-panel.right{transform-origin:right center;}
+.transition-flip-stage{
+  perspective:1600px;perspective-origin:50% 40%;
+  min-height:100vh;
+}
+.transition-flip-card{
+  transform-style:preserve-3d;backface-visibility:hidden;
+  min-height:100vh;
+}
+
+/* ── ACCESSIBILITY ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce){
+  .m-track{animation:none}
+  .scroll-hint{animation:none}
+  .landing-scroll-root *{
+    transition-duration:.01ms !important;
+    animation-duration:.01ms !important;
+  }
+}
 
 /* ── ABOUT ───────────────────────────────────────── */
 #about{
