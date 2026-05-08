@@ -119,7 +119,6 @@ export default function DonationEventHistoryPage({ userProfile }) {
   const rootStyle = { color: primaryTextColor, fontFamily: `${bodyFont}, sans-serif` };
   const headingStyle = { color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` };
 
-  const [organizationId, setOrganizationId] = useState(null);
   const [organizationName, setOrganizationName] = useState('');
   const [drives, setDrives] = useState([]);
   const [attendeeCountsByDriveId, setAttendeeCountsByDriveId] = useState({});
@@ -155,7 +154,6 @@ export default function DonationEventHistoryPage({ userProfile }) {
 
       const preferred = resolvePreferredMembership(membershipResult.data || []);
       if (!preferred?.Organization_ID) {
-        setOrganizationId(null);
         setOrganizationName('');
         setDrives([]);
         setNotice({ kind: 'warning', text: 'No organization membership found for your account.' });
@@ -163,7 +161,6 @@ export default function DonationEventHistoryPage({ userProfile }) {
       }
 
       const orgId = Number(preferred.Organization_ID || 0) || null;
-      setOrganizationId(orgId);
       setOrganizationName(String(preferred?.Organizations?.Organization_Name || '').trim());
 
       const drivesResult = await supabase

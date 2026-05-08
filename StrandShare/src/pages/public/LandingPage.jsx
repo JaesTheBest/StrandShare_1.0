@@ -77,45 +77,6 @@ function parseRgbChannels(hex, fallback = [184, 149, 90]) {
 
 function goToHard(path) { window.location.assign(path); }
 
-/** Apple-style scroll-scrubbed character reveal. */
-function ScrollRevealText({ children, className }) {
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ['start 0.85', 'start 0.25'],
-  });
-
-  const text = String(children);
-  const total = text.length;
-  return (
-    <span ref={ref} className={className}>
-      {text.split('').map((ch, i) => {
-        if (ch === ' ') return <span key={i}>&nbsp;</span>;
-        const start = i / total;
-        const end = (i + 1.5) / total;
-        return (
-          <ScrollRevealChar key={i} progress={scrollYProgress} start={start} end={end}>
-            {ch}
-          </ScrollRevealChar>
-        );
-      })}
-    </span>
-  );
-}
-
-function ScrollRevealChar({ progress, start, end, children }) {
-  const opacity = useTransform(progress, [start, end], [0.18, 1]);
-  const y = useTransform(progress, [start, end], [16, 0]);
-  const filter = useTransform(progress, [start, end], ['blur(8px)', 'blur(0px)']);
-  return (
-    <motion.span
-      style={{ opacity, y, filter, display: 'inline-block', willChange: 'transform' }}
-    >
-      {children}
-    </motion.span>
-  );
-}
-
 /* ─── canvas helpers ─────────────────────────────────────────── */
 function setupHeroCanvas(canvas, getThemeRgb) {
   if (!canvas) return () => {};

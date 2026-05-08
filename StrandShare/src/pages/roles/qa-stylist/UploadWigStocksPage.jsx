@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Boxes,
@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
-  Package,
   PackagePlus,
   PenTool,
   RefreshCw,
