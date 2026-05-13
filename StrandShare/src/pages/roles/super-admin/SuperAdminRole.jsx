@@ -20,6 +20,7 @@ import BackupPage from './BackupPage';
 import SettingsPage from './SettingsPage';
 import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
 import ApproveDonationDrivesPage from './ApproveDonationDrivesPage';
+import LegalDocumentsPage from '../../shared/features/LegalDocumentsPage';
 
 const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,6 +29,7 @@ const superAdminNavItems = [
   { id: 'manage-organization-applications', label: 'Manage Organization Applications', icon: ShieldCheck },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: ClipboardList },
   { id: 'approve-donation-drives', label: 'Approve Donation Drives', icon: ShieldCheck },
+  { id: 'legal-documents', label: 'Legal Documents', icon: FileText },
   { id: 'generate-reports', label: 'Generate Reports', icon: FileText },
   { id: 'audit-trails', label: 'Audit Trails', icon: ClipboardList },
   { id: 'backup', label: 'Backup', icon: HardDrive },
@@ -41,6 +43,7 @@ const superAdminPageComponents = {
   'manage-organization-applications': ManageOrganizationApplicationsPage,
   'manage-donation-requirements': ManageDonationRequirementsPage,
   'approve-donation-drives': ApproveDonationDrivesPage,
+  'legal-documents': LegalDocumentsPage,
   'generate-reports': GenerateReportsPage,
   'audit-trails': AuditTrailsPage,
   backup: BackupPage,

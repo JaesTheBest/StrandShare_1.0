@@ -78,6 +78,7 @@ function formatDateTime(value) {
   const parsed = toDateValue(value);
   if (!parsed) return 'N/A';
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -89,7 +90,7 @@ function formatDateTime(value) {
 function formatDateOnly(value) {
   const parsed = toDateValue(value);
   if (!parsed) return 'Date TBD';
-  return parsed.toLocaleDateString('en-PH', { month: 'short', day: '2-digit' });
+  return parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: '2-digit' });
 }
 
 function formatDateRange(startValue, endValue) {
@@ -698,11 +699,11 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
   };
 
   return (
-    <div className="p-6 space-y-6" style={pageStyle}>
+    <div className="space-y-6" style={pageStyle}>
       <div className="space-y-5">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Dashboard</h2>
-          <p className="text-sm text-gray-600">See what needs action, what's happening, and what approvals are pending.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-gray-600">See what needs action, what's happening, and what approvals are pending.</p>
         </div>
 
         {notice.text ? (
@@ -722,7 +723,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           <button
             type="button"
             onClick={() => typeof onNavigate === 'function' && onNavigate(urgentItems[0]?.queuePageId || 'manage-user-accounts')}
-            className={`rounded-lg border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md ${cardPaddingClass}`}
+            className={`rounded-xl border border-gray-200 bg-white text-left ${cardPaddingClass}`}
           >
             <div className="flex items-start justify-between">
               <div>
@@ -739,7 +740,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           <button
             type="button"
             onClick={() => typeof onNavigate === 'function' && onNavigate('approve-donation-drives')}
-            className={`rounded-lg border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md ${cardPaddingClass}`}
+            className={`rounded-xl border border-gray-200 bg-white text-left ${cardPaddingClass}`}
           >
             <div className="mb-3 flex items-start justify-between">
               <div>
@@ -761,7 +762,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           <button
             type="button"
             onClick={() => typeof onNavigate === 'function' && onNavigate('approve-donation-drives')}
-            className={`rounded-lg border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md ${cardPaddingClass}`}
+            className={`rounded-xl border border-gray-200 bg-white text-left ${cardPaddingClass}`}
           >
             <div className="mb-3 flex items-start justify-between">
               <div>
@@ -786,7 +787,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           <button
             type="button"
             onClick={() => typeof onNavigate === 'function' && onNavigate('manage-user-accounts')}
-            className={`rounded-lg border border-gray-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md ${cardPaddingClass}`}
+            className={`rounded-xl border border-gray-200 bg-white text-left ${cardPaddingClass}`}
           >
             <div className="flex items-start justify-between">
               <div>
@@ -803,7 +804,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
-            <section className={`rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md ${cardPaddingClass}`}>
+            <section className={`rounded-xl border border-gray-200 bg-white ${cardPaddingClass}`}>
               <div className="mb-5">
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Action Center</p>
                 <h3 className="text-xl font-bold text-slate-900">Needs your attention</h3>
@@ -959,7 +960,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           </div>
 
           <div className="space-y-4 lg:col-span-1">
-            <section className={`rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md ${compactMode ? 'p-3' : 'p-4'}`}>
+            <section className={`rounded-xl border border-gray-200 bg-white ${compactMode ? 'p-3' : 'p-4'}`}>
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">System Pulse</p>
@@ -1124,7 +1125,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
             </section>
 
             {showSnapshotCard ? (
-              <section className={`rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md ${compactMode ? 'p-3' : 'p-4'}`}>
+              <section className={`rounded-xl border border-gray-200 bg-white ${compactMode ? 'p-3' : 'p-4'}`}>
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Snapshot</p>
                 <h3 className="mt-1 text-2xl font-bold text-slate-900">Key counts</h3>
                 <div className="mt-3 grid grid-cols-2 gap-3">
@@ -1160,7 +1161,7 @@ export default function SuperAdminOverviewPage({ onNavigate }) {
           </div>
         </div>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+        <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
           <div className="mb-5">
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Approvals Summary</p>
             <h3 className="text-2xl font-bold text-slate-900">Pending + oldest waiting</h3>

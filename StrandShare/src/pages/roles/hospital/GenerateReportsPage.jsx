@@ -249,6 +249,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -770,7 +771,7 @@ export default function GenerateReportsPage({ userProfile }) {
 
       buckets.push({
         key,
-        week: bucketDate.toLocaleDateString('en-PH', { month: 'short', day: '2-digit' }),
+        week: bucketDate.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: '2-digit' }),
         requested: 0,
         completed: 0,
       });

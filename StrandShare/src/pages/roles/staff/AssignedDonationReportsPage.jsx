@@ -283,6 +283,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -321,6 +322,7 @@ function formatTimeOnly(value) {
   }
 
   return parsed.toLocaleTimeString('en-PH', {
+    timeZone: 'Asia/Manila',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -346,6 +348,7 @@ function formatDateOnly(value) {
   }
 
   return parsed.toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',

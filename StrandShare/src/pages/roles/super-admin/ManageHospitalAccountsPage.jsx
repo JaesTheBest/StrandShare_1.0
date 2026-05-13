@@ -108,6 +108,7 @@ function formatDateTime(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -1150,10 +1151,10 @@ export default function ManageHospitalAccountsPage() {
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Manage H-Representative Accounts</h2>
+          <h1 className="text-3xl font-bold text-gray-900">Manage H-Representative Accounts</h1>
           <p className="text-sm text-gray-600 mt-1">
             Add and maintain hospital records used by H-Representative, patients, and wig request routing.
           </p>
@@ -1200,7 +1201,7 @@ export default function ManageHospitalAccountsPage() {
       </div>
 
       {activeTab === 'manage' && (
-        <section className={cardClass()} style={{ borderColor: `${theme.secondaryColor}33` }}>
+        <section className={cardClass()}>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
             <div className="relative w-full md:max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -1326,7 +1327,7 @@ export default function ManageHospitalAccountsPage() {
       )}
 
       {activeTab === 'assign' && (
-        <section className={cardClass()} style={{ borderColor: `${theme.secondaryColor}33` }}>
+        <section className={cardClass()}>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Assign H-Representative To H-Representative</h3>

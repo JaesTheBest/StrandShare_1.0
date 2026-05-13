@@ -10,7 +10,9 @@ function formatTime(value) {
     return value;
   }
 
-  return `${parsed.toLocaleDateString()} ${parsed.toLocaleTimeString()}`;
+  const datePart = parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const timePart = parsed.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${datePart} ${timePart}`;
 }
 
 function getBackupIdFromResource(resource = '') {

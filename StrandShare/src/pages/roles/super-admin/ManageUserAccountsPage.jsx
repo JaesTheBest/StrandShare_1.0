@@ -460,11 +460,11 @@ export default function ManageUserAccountsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Manage User Accounts</h2>
-          <p className="text-sm text-gray-600">Invite users, upgrade roles, and monitor account access windows.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Manage User Accounts</h1>
+          <p className="mt-1 text-sm text-gray-600">Invite users, upgrade roles, and monitor account access windows.</p>
         </div>
         <button
           onClick={() => {
@@ -479,34 +479,35 @@ export default function ManageUserAccountsPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-4 mb-4">
-        <div className="w-64">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Role</label>
-          <Select
-            isMulti
-            options={roleOptions}
-            value={roleFilter}
-            onChange={(value) => setRoleFilter(value || [])}
-            placeholder="All Roles"
-            classNamePrefix="react-select"
-            styles={selectStyles}
-          />
+      <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
+        <div className="mb-4 flex flex-wrap gap-4">
+          <div className="w-64">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Role</label>
+            <Select
+              isMulti
+              options={roleOptions}
+              value={roleFilter}
+              onChange={(value) => setRoleFilter(value || [])}
+              placeholder="All Roles"
+              classNamePrefix="react-select"
+              styles={selectStyles}
+            />
+          </div>
+          <div className="w-64">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
+            <Select
+              isMulti
+              options={statusOptions}
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value || [])}
+              placeholder="All Status"
+              classNamePrefix="react-select"
+              styles={selectStyles}
+            />
+          </div>
         </div>
-        <div className="w-64">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
-          <Select
-            isMulti
-            options={statusOptions}
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value || [])}
-            placeholder="All Status"
-            classNamePrefix="react-select"
-            styles={selectStyles}
-          />
-        </div>
-      </div>
 
-      <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
+        <div className="overflow-hidden rounded-lg border border-gray-200">
         {loading ? (
           <div className="p-10 flex justify-center text-gray-700 gap-2">
             <Loader2 className="animate-spin" /> Loading...
@@ -559,6 +560,7 @@ export default function ManageUserAccountsPage() {
                     <td className="p-4 text-gray-700">
                       {user.joinedDate
                         ? new Date(user.joinedDate).toLocaleDateString('en-US', {
+                            timeZone: 'Asia/Manila',
                             month: 'long',
                             day: 'numeric',
                             year: 'numeric',
@@ -615,7 +617,8 @@ export default function ManageUserAccountsPage() {
             </tbody>
           </table>
         )}
-      </div>
+        </div>
+      </section>
 
       {detailsUser && typeof document !== 'undefined'
         ? createPortal(
@@ -722,6 +725,7 @@ export default function ManageUserAccountsPage() {
                 <p style={{ color: primaryTextColor }}>
                   {detailsUser.joinedDate
                     ? new Date(detailsUser.joinedDate).toLocaleDateString('en-US', {
+                        timeZone: 'Asia/Manila',
                         month: 'long',
                         day: 'numeric',
                         year: 'numeric',

@@ -48,7 +48,16 @@ function normalizeRole(value = '') {
 function toIsoOrNull(value = '') {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  return new Date(raw).toISOString();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+  const fallback = new Date(raw);
+  if (Number.isNaN(fallback.getTime())) return null;
+  return fallback.toISOString();
 }
 
 function formatDate(value) {
@@ -56,6 +65,7 @@ function formatDate(value) {
 
   try {
     return new Date(value).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila',
       year: 'numeric',
       month: 'short',
       day: '2-digit',
@@ -76,6 +86,7 @@ function formatAccessWindowLabel(accessStart, accessEnd) {
     if (!value) return '-';
     try {
       return new Date(value).toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila',
         year: 'numeric',
         month: 'short',
         day: '2-digit',

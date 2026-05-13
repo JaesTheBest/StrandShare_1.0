@@ -9,7 +9,9 @@ function formatTimestamp(value) {
     return value;
   }
 
-  return `${parsed.toLocaleDateString()} ${parsed.toLocaleTimeString()}`;
+  const datePart = parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const timePart = parsed.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${datePart} ${timePart}`;
 }
 
 export default function AuditTrailsPage() {
@@ -93,7 +95,8 @@ export default function AuditTrailsPage() {
     });
   }, [logs, searchQuery]);
 
-  const eventsToday = filteredLogs.filter((row) => row.time.startsWith(new Date().toLocaleDateString())).length;
+  const todayPhtDateString = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const eventsToday = filteredLogs.filter((row) => row.time.startsWith(todayPhtDateString)).length;
   const failedActions = filteredLogs.filter((row) => String(row.status).toLowerCase() === 'failed').length;
   const uniqueUsers = new Set(filteredLogs.map((row) => row.userEmail)).size;
 

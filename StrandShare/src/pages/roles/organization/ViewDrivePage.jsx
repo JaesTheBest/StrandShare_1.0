@@ -70,14 +70,14 @@ function formatDateOnly(value) {
   if (!value) return 'Date TBD';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'Date TBD';
-  return parsed.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' });
+  return parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit' });
 }
 
 function formatTimeOnly(value) {
   if (!value) return 'Time TBD';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'Time TBD';
-  return parsed.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  return parsed.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDateRange(startDate, endDate) {

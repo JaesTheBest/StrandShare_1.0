@@ -58,7 +58,7 @@ function formatDate(value) {
   if (!value) return 'N/A';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
-  return parsed.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' });
+  return parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit' });
 }
 
 function formatDateRange(startDate, endDate) {

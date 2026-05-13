@@ -192,7 +192,13 @@ function toPostgresTimestamp(value) {
     return null;
   }
 
-  return raw.length === 16 ? `${raw}:00` : raw;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`;
+  }
+
+  return raw;
 }
 
 function formatDateTime(value) {
@@ -206,6 +212,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',

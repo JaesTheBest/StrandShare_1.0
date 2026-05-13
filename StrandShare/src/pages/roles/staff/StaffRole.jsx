@@ -17,6 +17,7 @@ import UpdateWigRequestStatusPage from './UpdateWigRequestStatusPage';
 import ScheduleAppointmentsPage from './ScheduleAppointmentsPage';
 import SettingsPage from './SettingsPage';
 import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
+import LegalDocumentsPage from '../../shared/features/LegalDocumentsPage';
 
 const staffNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const staffNavItems = [
   { id: 'update-wig-request-status', label: 'Update Wig Request Status', icon: Package },
   { id: 'schedule-appointments', label: 'Schedule Appointments', icon: Calendar },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: CheckCircle },
+  { id: 'legal-documents', label: 'Legal Documents', icon: FileText },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -37,6 +39,7 @@ const staffPageComponents = {
   'update-wig-request-status': UpdateWigRequestStatusPage,
   'schedule-appointments': ScheduleAppointmentsPage,
   'manage-donation-requirements': ManageDonationRequirementsPage,
+  'legal-documents': LegalDocumentsPage,
   settings: SettingsPage,
 };
 

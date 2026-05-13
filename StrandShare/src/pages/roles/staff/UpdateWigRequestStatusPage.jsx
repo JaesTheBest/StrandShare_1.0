@@ -172,7 +172,7 @@ function statusClass(statusValue) {
   const key = getCanonicalStatusKey(statusValue);
 
   if (key === 'accepted_allocated') return 'bg-emerald-100 text-emerald-700';
-  if (key === 'accepted_no_wig') return 'bg-rose-100 text-rose-700';
+  if (key === 'accepted_no_wig') return 'bg-lime-100 text-lime-700';
   if (key === 'in_production') return 'bg-sky-100 text-sky-700';
   if (key === 'to_be_release') return 'bg-indigo-100 text-indigo-700';
   if (key === 'releasing') return 'bg-teal-100 text-teal-700';
@@ -250,6 +250,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -264,21 +265,39 @@ function toDateTimeLocalValue(value) {
     return '';
   }
 
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const day = String(parsed.getDate()).padStart(2, '0');
-  const hours = String(parsed.getHours()).padStart(2, '0');
-  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const parts = Object.fromEntries(
+    formatter.formatToParts(parsed).map((part) => [part.type, part.value]),
+  );
+
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`;
 }
 
 function toIsoFromDateTimeLocal(value) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toISOString();
+  }
+  const fallback = new Date(raw);
+  if (Number.isNaN(fallback.getTime())) {
     return '';
   }
-  return parsed.toISOString();
+  return fallback.toISOString();
 }
 
 function isAbsoluteUrl(value) {

@@ -196,6 +196,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -215,6 +216,7 @@ function formatShortDate(value) {
   }
 
   return parsed.toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
     month: 'short',
     day: '2-digit',
   });
@@ -259,7 +261,7 @@ function statusBadgeClass(statusKey) {
   if (statusKey === 'to_be_release') return 'bg-indigo-100 text-indigo-700';
   if (statusKey === 'in_production') return 'bg-sky-100 text-sky-700';
   if (statusKey === 'accepted_allocated') return 'bg-green-100 text-green-700';
-  if (statusKey === 'accepted_no_wig') return 'bg-rose-100 text-rose-700';
+  if (statusKey === 'accepted_no_wig') return 'bg-lime-100 text-lime-700';
   if (statusKey === 'rejected') return 'bg-red-100 text-red-700';
   if (statusKey === 'cancelled') return 'bg-slate-200 text-slate-700';
   return 'bg-amber-100 text-amber-700';
@@ -563,7 +565,7 @@ export default function DashboardPage({ userProfile, onNavigate }) {
       const key = bucketDate.toISOString().slice(0, 10);
       buckets.push({
         key,
-        week: bucketDate.toLocaleDateString('en-PH', { month: 'short', day: '2-digit' }),
+        week: bucketDate.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: '2-digit' }),
         requested: 0,
         completed: 0,
       });

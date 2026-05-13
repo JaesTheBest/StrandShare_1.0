@@ -11,7 +11,7 @@ import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
 import ManagePatientsPage from './ManagePatientsPage';
 import WigRequestPage from './WigRequestPage';
-import FittingReleaseSchedulingPage from './FittingReleaseSchedulingPage';
+import ReleaseDateApprovalPage from './ReleaseDateApprovalPage';
 import GenerateReportsPage from './GenerateReportsPage';
 import SettingsPage from './SettingsPage';
 
@@ -28,7 +28,7 @@ const hospitalPageComponents = {
   dashboard: DashboardPage,
   'manage-patients': ManagePatientsPage,
   'wig-request': WigRequestPage,
-  'fitting-release': FittingReleaseSchedulingPage,
+  'fitting-release': ReleaseDateApprovalPage,
   reports: GenerateReportsPage,
   settings: SettingsPage,
 };

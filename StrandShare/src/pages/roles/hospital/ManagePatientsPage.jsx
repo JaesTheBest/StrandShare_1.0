@@ -2,12 +2,22 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
   FileText,
   Loader2,
+  Mail,
+  Paperclip,
   Plus,
   RefreshCw,
   Search,
+  Stethoscope,
   UploadCloud,
+  User,
+  UserPlus,
+  Users,
+  X,
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../../../context/ThemeContext';
@@ -23,6 +33,8 @@ const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const HOSPITALS_TABLE = 'Hospitals';
 const PATIENT_ASSETS_BUCKET = 'patient_assets';
 const PH_MOBILE_REGEX = /^\+63 9\d{2} \d{3} \d{4}$/;
+const PHT_TIMEZONE = 'Asia/Manila';
+const PHT_OFFSET = '+08:00';
 let patientInviteAdminClient = null;
 
 const EMPTY_FORM = {
@@ -48,6 +60,14 @@ const GENDER_OPTIONS = [
   { id: 'Female', label: 'Female' },
   { id: 'Other', label: 'Other' },
   { id: 'Prefer not to say', label: 'Prefer not to say' },
+];
+
+const WIZARD_STEPS = [
+  { id: 1, label: 'Account', icon: Mail },
+  { id: 2, label: 'Identity', icon: User },
+  { id: 3, label: 'Clinical', icon: Stethoscope },
+  { id: 4, label: 'Attachments', icon: Paperclip },
+  { id: 5, label: 'Review', icon: ClipboardList },
 ];
 
 function normalizeText(value) {
@@ -124,13 +144,14 @@ function formatDateTime(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
 
-  return parsed.toLocaleString('en-PH', {
+  return `${parsed.toLocaleString('en-PH', {
+    timeZone: PHT_TIMEZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  });
+  })} PHT`;
 }
 
 function computeAgeFromBirthdate(birthdateValue) {
@@ -255,18 +276,45 @@ function isValidPhilippineMobileNumber(value) {
 
 function formatDateForInput(value) {
   if (!value) return '';
-  const parsed = new Date(value);
+  const parsed = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(parsed.getTime())) return '';
-  const pad = (part) => String(part).padStart(2, '0');
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PHT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(parsed).map((part) => [part.type, part.value]),
+  );
+
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`;
+}
+
+function phtDateTimeLocalToDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}${PHT_OFFSET}`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function toIsoOrNull(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
+  const parsed = phtDateTimeLocalToDate(value);
+  return parsed ? parsed.toISOString() : null;
 }
 
 function buildDisplayName({ firstName, middleName, lastName, suffix }) {
@@ -453,6 +501,13 @@ export default function ManagePatientsPage({ userProfile }) {
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [successPopup, setSuccessPopup] = useState({ open: false, text: '' });
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
+
+  const [activeTab, setActiveTab] = useState('directory');
+  const [wizardStep, setWizardStep] = useState(1);
+  const [stepError, setStepError] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [genderFilter, setGenderFilter] = useState('all');
+  const [filesFilter, setFilesFilter] = useState('all');
 
   const patientUsersById = useMemo(() => {
     const map = new Map();
@@ -667,25 +722,41 @@ export default function ManagePatientsPage({ userProfile }) {
   }, [patients, patientUsersById, resolveAssetUrl]);
 
   const filteredPatients = useMemo(() => {
-    const query = normalizeText(patientSearchTerm);
-    if (!query) {
-      return enrichedPatients;
+    let results = enrichedPatients;
+
+    if (genderFilter !== 'all') {
+      results = results.filter((patient) => patient.gender === genderFilter);
     }
 
-    return enrichedPatients.filter((patient) => {
-      const searchableValues = [
-        patient.fullName,
-        patient.age,
-        patient.gender,
-        patient.Medical_Condition,
-        patient.Patient_Code,
-      ]
-        .map((value) => normalizeText(value))
-        .filter(Boolean);
+    if (filesFilter === 'with_picture') {
+      results = results.filter((patient) => Boolean(patient.Patient_Picture));
+    } else if (filesFilter === 'with_document') {
+      results = results.filter((patient) => Boolean(patient.Medical_Document));
+    } else if (filesFilter === 'with_both') {
+      results = results.filter((patient) => Boolean(patient.Patient_Picture) && Boolean(patient.Medical_Document));
+    } else if (filesFilter === 'missing') {
+      results = results.filter((patient) => !patient.Patient_Picture || !patient.Medical_Document);
+    }
 
-      return searchableValues.some((value) => value.includes(query));
-    });
-  }, [enrichedPatients, patientSearchTerm]);
+    const query = normalizeText(patientSearchTerm);
+    if (query) {
+      results = results.filter((patient) => {
+        const searchableValues = [
+          patient.fullName,
+          patient.age,
+          patient.gender,
+          patient.Medical_Condition,
+          patient.Patient_Code,
+        ]
+          .map((value) => normalizeText(value))
+          .filter(Boolean);
+
+        return searchableValues.some((value) => value.includes(query));
+      });
+    }
+
+    return results;
+  }, [enrichedPatients, patientSearchTerm, genderFilter, filesFilter]);
 
   const resetForm = useCallback(() => {
     setForm({
@@ -694,7 +765,76 @@ export default function ManagePatientsPage({ userProfile }) {
     });
     setPatientPictureFile(null);
     setMedicalDocumentFile(null);
+    setWizardStep(1);
+    setStepError('');
   }, []);
+
+  const validateCurrentStep = useCallback(() => {
+    if (wizardStep === 1) {
+      const email = String(form.email || '').trim();
+      if (!email) return 'Patient email is required.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
+      if (!isValidPatientCode(form.patientCode)) return 'Patient code must be PT plus 6 digits (example: PT123456).';
+      const accessStart = String(form.accessStart || '').trim();
+      const accessEnd = String(form.accessEnd || '').trim();
+      if ((accessStart && !accessEnd) || (!accessStart && accessEnd)) {
+        return 'Set both Access Start and Access End, or leave both empty.';
+      }
+      const accessStartDate = phtDateTimeLocalToDate(accessStart);
+      const accessEndDate = phtDateTimeLocalToDate(accessEnd);
+      if (accessStartDate && accessStartDate.getTime() < Date.now()) {
+        return 'Access Start cannot be in the past (Philippine Time).';
+      }
+      if (accessStartDate && accessEndDate && accessEndDate.getTime() <= accessStartDate.getTime()) {
+        return 'Access End must be later than Access Start.';
+      }
+      return '';
+    }
+
+    if (wizardStep === 2) {
+      if (!String(form.firstName || '').trim()) return 'First name is required.';
+      if (!String(form.lastName || '').trim()) return 'Last name is required.';
+      if (!String(form.birthdate || '').trim()) return 'Birthdate is required.';
+      if (new Date(form.birthdate) > new Date()) return 'Birthdate cannot be in the future.';
+      if (!normalizePatientGender(form.gender)) return 'Gender is required.';
+      return '';
+    }
+
+    if (wizardStep === 3) {
+      const contact = String(form.guardianContactNumber || '').trim();
+      if (contact && !isValidPhilippineMobileNumber(contact)) {
+        return 'Guardian contact number must use +63 912 345 6789 format.';
+      }
+      if (String(form.dateOfDiagnosis || '').trim() && new Date(form.dateOfDiagnosis) > new Date()) {
+        return 'Date of diagnosis cannot be in the future.';
+      }
+      return '';
+    }
+
+    return '';
+  }, [wizardStep, form]);
+
+  const handleNextStep = useCallback(() => {
+    const error = validateCurrentStep();
+    if (error) {
+      setStepError(error);
+      return;
+    }
+    setStepError('');
+    setWizardStep((step) => Math.min(step + 1, WIZARD_STEPS.length));
+  }, [validateCurrentStep]);
+
+  const handlePrevStep = useCallback(() => {
+    setStepError('');
+    setWizardStep((step) => Math.max(step - 1, 1));
+  }, []);
+
+  const goToStep = useCallback((targetStep) => {
+    if (targetStep < wizardStep) {
+      setStepError('');
+      setWizardStep(targetStep);
+    }
+  }, [wizardStep]);
 
   const handleInputChange = useCallback((event) => {
     const { name, value } = event.target;
@@ -838,7 +978,7 @@ export default function ManagePatientsPage({ userProfile }) {
       recipient_name: displayName || '',
       review_notes: '',
       has_access_window: Boolean(accessStart || accessEnd),
-      access_window: accessStart && accessEnd ? `${accessStart} to ${accessEnd}` : '',
+      access_window: accessStart && accessEnd ? `${formatDateTime(accessStart)} to ${formatDateTime(accessEnd)}` : '',
       temporary_password: temporaryPassword || '',
       display_name: displayName || '',
       full_name: displayName || '',
@@ -1039,6 +1179,10 @@ export default function ManagePatientsPage({ userProfile }) {
     if (submitLockRef.current || isSaving) {
       return;
     }
+    if (wizardStep < WIZARD_STEPS.length) {
+      handleNextStep();
+      return;
+    }
     submitLockRef.current = true;
 
     if (!isSupabaseConfigured || !supabase) {
@@ -1121,7 +1265,7 @@ export default function ManagePatientsPage({ userProfile }) {
     }
 
     if (accessStartIso && new Date(accessStartIso) < new Date()) {
-      setNotice({ kind: 'error', text: 'Access Start cannot be in the past.' });
+      setNotice({ kind: 'error', text: 'Access Start cannot be in the past (Philippine Time).' });
       submitLockRef.current = false;
       return;
     }
@@ -1296,6 +1440,7 @@ export default function ManagePatientsPage({ userProfile }) {
 
       resetForm();
       setNotice({ kind: '', text: '' });
+      setActiveTab('directory');
       setSuccessPopup({
         open: true,
         text: 'Patient was added and login credentials submitted.',
@@ -1351,6 +1496,7 @@ export default function ManagePatientsPage({ userProfile }) {
     await fetchPatients();
   };
 
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1361,28 +1507,8 @@ export default function ManagePatientsPage({ userProfile }) {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={refreshPageData}
-          disabled={isResolvingHospital || isLoadingPatients || isSaving}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
-          style={{
-            borderColor: `${theme.primaryColor}33`,
-            backgroundColor: `${theme.primaryColor}12`,
-            color: theme.primaryColor,
-          }}
-        >
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </div>
-
-      <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">H-Representative Assignment</h2>
-            <p className="mt-1 text-xs text-gray-500">Hospital assignment is automatically resolved from Hospital_Representative.</p>
-          </div>
-          <div className="text-xs text-gray-600">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
             {isResolvingHospital ? (
               <span className="inline-flex items-center gap-1">
                 <Loader2 size={13} className="animate-spin" /> Resolving hospital...
@@ -1395,8 +1521,49 @@ export default function ManagePatientsPage({ userProfile }) {
               <span className="font-medium text-red-700">No hospital assignment found</span>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={refreshPageData}
+            disabled={isResolvingHospital || isLoadingPatients || isSaving}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
+            style={{
+              borderColor: `${theme.primaryColor}33`,
+              backgroundColor: `${theme.primaryColor}12`,
+              color: theme.primaryColor,
+            }}
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
         </div>
-      </section>
+      </div>
+
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex flex-wrap gap-1">
+          {[
+            { id: 'directory', label: 'Patient Directory', icon: Users },
+            { id: 'add', label: 'Add New Patient', icon: UserPlus },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            const TabIcon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className="inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors"
+                style={{
+                  borderColor: isActive ? theme.primaryColor : 'transparent',
+                  color: isActive ? theme.primaryColor : '#4b5563',
+                }}
+              >
+                <TabIcon size={16} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       {notice.kind === 'error' && notice.text && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
@@ -1405,419 +1572,728 @@ export default function ManagePatientsPage({ userProfile }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
-        <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Existing Patients</h2>
-              <p className="mt-1 text-xs text-gray-500">Showing full name, age, and gender from users and user_details.</p>
-            </div>
-            <p className="text-xs text-gray-500">Showing {filteredPatients.length} of {enrichedPatients.length}</p>
-          </div>
-
-          <div className="relative mb-4">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={patientSearchTerm}
-              onChange={(event) => setPatientSearchTerm(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2"
-              style={{ '--tw-ring-color': theme.primaryColor }}
-              placeholder="Search by name, age, gender, medical condition, or PT code"
-            />
-          </div>
-
-          {isLoadingPatients ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-gray-700">
-              <Loader2 className="animate-spin" size={18} /> Loading patients...
-            </div>
-          ) : filteredPatients.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
-              No patients matched your current filter.
-            </div>
-          ) : (
-            <div className="max-h-[650px] overflow-auto rounded-lg border border-gray-200">
-              <table className="min-w-full text-sm">
-                <thead className="sticky top-0 z-[1] text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryTextColor || '#111827' }}>
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Patient Full Name</th>
-                    <th className="px-4 py-3 text-left font-semibold">Age</th>
-                    <th className="px-4 py-3 text-left font-semibold">Gender</th>
-                    <th className="px-4 py-3 text-left font-semibold">Medical Condition</th>
-                    <th className="px-4 py-3 text-left font-semibold">Assets</th>
-                    <th className="px-4 py-3 text-left font-semibold">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPatients.map((patient) => (
-                    <tr key={patient.Patient_ID} className="border-t border-gray-200 align-top">
-                      <td className="px-4 py-3 text-gray-800">{patient.fullName}</td>
-                      <td className="px-4 py-3 text-gray-700">{patient.age}</td>
-                      <td className="px-4 py-3 text-gray-700">{patient.gender}</td>
-                      <td className="max-w-xs break-words px-4 py-3 text-gray-700">{patient.Medical_Condition || 'N/A'}</td>
-                      <td className="px-4 py-3 text-gray-700">
-                        <div className="flex flex-col gap-1">
-                          {patient.Patient_Picture ? (
-                            patient.pictureUrl ? (
-                              <a href={patient.pictureUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
-                                View Picture
-                              </a>
-                            ) : (
-                              <span className="break-all text-xs text-gray-500">{patient.Patient_Picture}</span>
-                            )
-                          ) : (
-                            <span className="text-xs text-gray-400">No picture</span>
-                          )}
-
-                          {patient.Medical_Document ? (
-                            patient.documentUrl ? (
-                              <a href={patient.documentUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">
-                                View Document
-                              </a>
-                            ) : (
-                              <span className="break-all text-xs text-gray-500">{patient.Medical_Document}</span>
-                            )
-                          ) : (
-                            <span className="text-xs text-gray-400">No document</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{formatDateTime(patient.Created_At)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Create Patient Account And Record</h2>
-            <p className="mt-1 text-xs text-gray-500">This will create auth signup, users, user_details, and patients records in one submit.</p>
-          </div>
-
-          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-            <p className="text-xs font-semibold text-gray-800">Quick Guide</p>
-            <p className="mt-1 text-xs text-gray-600">1) Enter email and profile details. 2) Set optional access window (start and end together). 3) Confirm PT code format (PT + 6 digits). 4) Submit to send invite email with PT code and temporary password.</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4" style={{ '--tw-ring-color': theme.primaryColor }}>
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Account Setup</p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Email (required)</label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={form.email}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="patient@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Code (PT + 6 digits)</label>
-                  <div className="flex gap-2">
-                    <input
-                      name="patientCode"
-                      value={form.patientCode}
-                      onChange={handleInputChange}
-                      maxLength={8}
-                      required
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 uppercase outline-none focus:ring-2"
-                      placeholder="PT123456"
-                    />
-                    <button
-                      type="button"
-                      onClick={generatePatientCode}
-                      className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                    >
-                      Auto
-                    </button>
-                  </div>
-                  <p className="mt-1 text-[11px] text-gray-500">Temporary password is generated automatically during save.</p>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Access Start (optional)</label>
-                  <input
-                    type="datetime-local"
-                    name="accessStart"
-                    value={form.accessStart}
-                    onChange={handleInputChange}
-                    min={nowLocalDateTimeValue}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Access End (optional)</label>
-                  <input
-                    type="datetime-local"
-                    name="accessEnd"
-                    value={form.accessEnd}
-                    onChange={handleInputChange}
-                    min={form.accessStart || nowLocalDateTimeValue}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  />
-                  <p className="mt-1 text-[11px] text-gray-500">Set both Access Start and Access End, or leave both empty.</p>
-                </div>
+      {activeTab === 'directory' && (
+        <div className="space-y-5">
+          <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Patient Directory</h2>
+                <p className="mt-1 text-xs text-gray-500">Click a row to view the full patient profile. All times shown in Philippine Time (PHT).</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-gray-500">Showing {filteredPatients.length} of {enrichedPatients.length}</p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('add')}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white"
+                  style={{ backgroundColor: theme.primaryColor }}
+                >
+                  <Plus size={14} /> Add Patient
+                </button>
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Identity Details</p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">First Name (required)</label>
-                  <input
-                    name="firstName"
-                    value={form.firstName}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="First name"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Middle Name</label>
-                  <input
-                    name="middleName"
-                    value={form.middleName}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="Middle name"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Last Name (required)</label>
-                  <input
-                    name="lastName"
-                    value={form.lastName}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="Last name"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Suffix</label>
-                  <input
-                    name="suffix"
-                    value={form.suffix}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="Jr, Sr, III"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Birthdate (required)</label>
-                  <input
-                    type="date"
-                    name="birthdate"
-                    value={form.birthdate}
-                    onChange={handleInputChange}
-                    max={todayDateValue}
-                    required
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Gender (required)</label>
-                  <select
-                    name="gender"
-                    value={form.gender}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  >
-                    <option value="">Select gender</option>
-                    {GENDER_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                Computed Age Preview: <span className="font-semibold text-gray-900">{computedAgeFromForm || 'N/A'}</span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Clinical Details</p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Date of Diagnosis</label>
-                  <input
-                    name="dateOfDiagnosis"
-                    value={form.dateOfDiagnosis}
-                    onChange={handleInputChange}
-                    type="date"
-                    max={todayDateValue}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Full Name of Guardian</label>
-                  <input
-                    name="guardian"
-                    value={form.guardian}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="Guardian full name"
-                  />
-                </div>
-
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Contact Number</label>
-                  <input
-                    name="guardianContactNumber"
-                    value={form.guardianContactNumber}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="+63 912 345 6789"
-                    maxLength={16}
-                  />
-                  <p className="mt-1 text-[11px] text-gray-500">Numbers only. Format: +63 912 345 6789</p>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Relationship</label>
-                  <input
-                    name="guardianRelationship"
-                    value={form.guardianRelationship}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="e.g., Mother"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-1 block text-sm font-medium text-gray-700">Medical Condition</label>
+            <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
-                  name="medicalCondition"
-                  value={form.medicalCondition}
-                  onChange={handleInputChange}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                  placeholder="Medical condition summary"
+                  value={patientSearchTerm}
+                  onChange={(event) => setPatientSearchTerm(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2"
+                  style={{ '--tw-ring-color': theme.primaryColor }}
+                  placeholder="Search by name, age, gender, medical condition, or PT code"
                 />
               </div>
-            </div>
 
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Attachments</p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Patient Picture</label>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
-                    <UploadCloud size={15} className="text-gray-600" />
-                    <span className="text-sm text-gray-700">Choose image</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(event) => setPatientPictureFile(event.target.files?.[0] || null)}
-                      className="hidden"
-                    />
-                  </label>
-                  <p className="mt-1 break-all text-xs text-gray-500">{patientPictureFile?.name || 'No file selected.'}</p>
+              <div className="flex gap-2">
+                <select
+                  value={genderFilter}
+                  onChange={(event) => setGenderFilter(event.target.value)}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2"
+                  style={{ '--tw-ring-color': theme.primaryColor }}
+                  aria-label="Filter by gender"
+                >
+                  <option value="all">All Genders</option>
+                  {GENDER_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
 
-                  {patientPicturePreviewUrl && (
-                    <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
-                      <img
-                        src={patientPicturePreviewUrl}
-                        alt="Patient preview"
-                        className="h-36 w-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
+                <select
+                  value={filesFilter}
+                  onChange={(event) => setFilesFilter(event.target.value)}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2"
+                  style={{ '--tw-ring-color': theme.primaryColor }}
+                  aria-label="Filter by attachments"
+                >
+                  <option value="all">All Files</option>
+                  <option value="with_picture">With Picture</option>
+                  <option value="with_document">With Document</option>
+                  <option value="with_both">With Both</option>
+                  <option value="missing">Missing Files</option>
+                </select>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Medical Document</label>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
-                    <FileText size={15} className="text-gray-600" />
-                    <span className="text-sm text-gray-700">Choose file (PDF/image)</span>
-                    <input
-                      type="file"
-                      accept=".pdf,image/*"
-                      onChange={(event) => setMedicalDocumentFile(event.target.files?.[0] || null)}
-                      className="hidden"
-                    />
-                  </label>
-                  <p className="mt-1 break-all text-xs text-gray-500">{medicalDocumentFile?.name || 'No file selected.'}</p>
-
-                  {medicalDocumentPreviewUrl && isMedicalDocumentImage && (
-                    <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
-                      <img
-                        src={medicalDocumentPreviewUrl}
-                        alt="Medical document preview"
-                        className="h-36 w-full object-cover"
-                      />
-                    </div>
-                  )}
-
-                  {medicalDocumentPreviewUrl && !isMedicalDocumentImage && isMedicalDocumentPdf && (
-                    <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2">
-                      <iframe
-                        title="Medical document PDF preview"
-                        src={medicalDocumentPreviewUrl}
-                        className="h-40 w-full rounded border border-gray-100"
-                      />
-                      <a
-                        href={medicalDocumentPreviewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:underline"
-                      >
-                        Open PDF preview
-                      </a>
-                    </div>
-                  )}
-
-                  {medicalDocumentPreviewUrl && !isMedicalDocumentImage && !isMedicalDocumentPdf && (
-                    <p className="mt-2 text-xs text-gray-500">Preview is not available for this file type.</p>
-                  )}
-                </div>
+                {(genderFilter !== 'all' || filesFilter !== 'all' || patientSearchTerm) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGenderFilter('all');
+                      setFilesFilter('all');
+                      setPatientSearchTerm('');
+                    }}
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            {isLoadingPatients ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-gray-700">
+                <Loader2 className="animate-spin" size={18} /> Loading patients...
+              </div>
+            ) : filteredPatients.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center">
+                <Users size={28} className="mx-auto text-gray-300" />
+                <p className="mt-2 text-sm font-semibold text-gray-700">No patients found</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {patientSearchTerm ? 'Try a different search term.' : 'Start by adding your first patient.'}
+                </p>
+                {!patientSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('add')}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white"
+                    style={{ backgroundColor: theme.primaryColor }}
+                  >
+                    <Plus size={14} /> Add First Patient
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="max-h-[650px] overflow-auto rounded-lg border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-[1] text-sm" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryTextColor || '#111827' }}>
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">PT Code</th>
+                      <th className="px-4 py-3 text-left font-semibold">Patient Full Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">Age</th>
+                      <th className="px-4 py-3 text-left font-semibold">Gender</th>
+                      <th className="px-4 py-3 text-left font-semibold">Medical Condition</th>
+                      <th className="px-4 py-3 text-left font-semibold">Created</th>
+                      <th className="px-4 py-3 text-right font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPatients.map((patient) => (
+                      <tr
+                        key={patient.Patient_ID}
+                        className="cursor-pointer border-t border-gray-200 align-top transition-colors hover:bg-gray-50"
+                        onClick={() => setSelectedPatient(patient)}
+                      >
+                        <td className="px-4 py-3 font-mono text-xs text-gray-700">{patient.Patient_Code || 'N/A'}</td>
+                        <td className="px-4 py-3 font-medium text-gray-800">{patient.fullName}</td>
+                        <td className="px-4 py-3 text-gray-700">{patient.age}</td>
+                        <td className="px-4 py-3 text-gray-700">{patient.gender}</td>
+                        <td className="max-w-xs break-words px-4 py-3 text-gray-700">{patient.Medical_Condition || 'N/A'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600">{formatDateTime(patient.Created_At)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedPatient(patient);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'add' && (
+        <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-6">
+          <div className="mb-5">
+            <h2 className="text-lg font-semibold text-gray-900">Create Patient Account and Record</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              This will create auth signup, users, user_details, and patients records in one submit.
+            </p>
+          </div>
+
+          <div className="mb-6">
+            <ol className="flex flex-wrap items-center gap-y-3">
+              {WIZARD_STEPS.map((step, index) => {
+                const StepIcon = step.icon;
+                const isActive = wizardStep === step.id;
+                const isComplete = wizardStep > step.id;
+                const isClickable = step.id < wizardStep;
+                const baseColor = isActive || isComplete ? theme.primaryColor : '#d1d5db';
+
+                return (
+                  <li key={step.id} className="flex flex-1 items-center" style={{ minWidth: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(step.id)}
+                      disabled={!isClickable}
+                      className="flex min-w-0 items-center gap-2"
+                    >
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white transition-colors"
+                        style={{ backgroundColor: baseColor }}
+                      >
+                        {isComplete ? <CheckCircle2 size={16} /> : <StepIcon size={14} />}
+                      </span>
+                      <span className="flex flex-col text-left">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                          Step {step.id}
+                        </span>
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: isActive || isComplete ? theme.primaryColor : '#6b7280' }}
+                        >
+                          {step.label}
+                        </span>
+                      </span>
+                    </button>
+                    {index < WIZARD_STEPS.length - 1 && (
+                      <div
+                        className="mx-2 hidden h-px flex-1 sm:block"
+                        style={{ backgroundColor: isComplete ? theme.primaryColor : '#e5e7eb' }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          {stepError && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              <AlertTriangle size={16} />
+              <span>{stepError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5" style={{ '--tw-ring-color': theme.primaryColor }}>
+            {wizardStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Account Setup</h3>
+                  <p className="text-xs text-gray-500">Email is used for the invite. Temporary password is generated automatically on save.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Patient Email (required)</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={form.email}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="patient@example.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Patient Code (PT + 6 digits)</label>
+                    <div className="flex gap-2">
+                      <input
+                        name="patientCode"
+                        value={form.patientCode}
+                        onChange={handleInputChange}
+                        maxLength={8}
+                        required
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 uppercase outline-none focus:ring-2"
+                        placeholder="PT123456"
+                      />
+                      <button
+                        type="button"
+                        onClick={generatePatientCode}
+                        className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        Auto
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Access Start (optional)</label>
+                    <input
+                      type="datetime-local"
+                      name="accessStart"
+                      value={form.accessStart}
+                      onChange={handleInputChange}
+                      min={nowLocalDateTimeValue}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Access End (optional)</label>
+                    <input
+                      type="datetime-local"
+                      name="accessEnd"
+                      value={form.accessEnd}
+                      onChange={handleInputChange}
+                      min={form.accessStart || nowLocalDateTimeValue}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500">Set both Access Start and Access End, or leave both empty.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Identity Details</h3>
+                  <p className="text-xs text-gray-500">Used for patient profile and computed age.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">First Name (required)</label>
+                    <input
+                      name="firstName"
+                      value={form.firstName}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="First name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Middle Name</label>
+                    <input
+                      name="middleName"
+                      value={form.middleName}
+                      onChange={handleInputChange}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="Middle name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Last Name (required)</label>
+                    <input
+                      name="lastName"
+                      value={form.lastName}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="Last name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Suffix</label>
+                    <input
+                      name="suffix"
+                      value={form.suffix}
+                      onChange={handleInputChange}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="Jr, Sr, III"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Birthdate (required)</label>
+                    <input
+                      type="date"
+                      name="birthdate"
+                      value={form.birthdate}
+                      onChange={handleInputChange}
+                      max={todayDateValue}
+                      required
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Gender (required)</label>
+                    <select
+                      name="gender"
+                      value={form.gender}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    >
+                      <option value="">Select gender</option>
+                      {GENDER_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                  Computed Age Preview: <span className="font-semibold text-gray-900">{computedAgeFromForm || 'N/A'}</span>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 3 && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Clinical Details</h3>
+                  <p className="text-xs text-gray-500">Optional fields. Add what is available.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Date of Diagnosis</label>
+                    <input
+                      name="dateOfDiagnosis"
+                      value={form.dateOfDiagnosis}
+                      onChange={handleInputChange}
+                      type="date"
+                      max={todayDateValue}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Full Name of Guardian</label>
+                    <input
+                      name="guardian"
+                      value={form.guardian}
+                      onChange={handleInputChange}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="Guardian full name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Contact Number</label>
+                    <input
+                      name="guardianContactNumber"
+                      value={form.guardianContactNumber}
+                      onChange={handleInputChange}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="+63 912 345 6789"
+                      maxLength={16}
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500">Format: +63 912 345 6789</p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Guardian Relationship</label>
+                    <input
+                      name="guardianRelationship"
+                      value={form.guardianRelationship}
+                      onChange={handleInputChange}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                      placeholder="e.g., Mother"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Medical Condition</label>
+                  <input
+                    name="medicalCondition"
+                    value={form.medicalCondition}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                    placeholder="Medical condition summary"
+                  />
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 4 && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Attachments</h3>
+                  <p className="text-xs text-gray-500">Optional patient picture and medical document. Skip if unavailable.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Patient Picture</label>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
+                      <UploadCloud size={15} className="text-gray-600" />
+                      <span className="text-sm text-gray-700">Choose image</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => setPatientPictureFile(event.target.files?.[0] || null)}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="mt-1 break-all text-xs text-gray-500">{patientPictureFile?.name || 'No file selected.'}</p>
+
+                    {patientPicturePreviewUrl && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <img
+                          src={patientPicturePreviewUrl}
+                          alt="Patient preview"
+                          className="h-36 w-full object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Medical Document</label>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 hover:bg-gray-100">
+                      <FileText size={15} className="text-gray-600" />
+                      <span className="text-sm text-gray-700">Choose file (PDF/image)</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={(event) => setMedicalDocumentFile(event.target.files?.[0] || null)}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="mt-1 break-all text-xs text-gray-500">{medicalDocumentFile?.name || 'No file selected.'}</p>
+
+                    {medicalDocumentPreviewUrl && isMedicalDocumentImage && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <img
+                          src={medicalDocumentPreviewUrl}
+                          alt="Medical document preview"
+                          className="h-36 w-full object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {medicalDocumentPreviewUrl && !isMedicalDocumentImage && isMedicalDocumentPdf && (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2">
+                        <iframe
+                          title="Medical document PDF preview"
+                          src={medicalDocumentPreviewUrl}
+                          className="h-40 w-full rounded border border-gray-100"
+                        />
+                        <a
+                          href={medicalDocumentPreviewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:underline"
+                        >
+                          Open PDF preview
+                        </a>
+                      </div>
+                    )}
+
+                    {medicalDocumentPreviewUrl && !isMedicalDocumentImage && !isMedicalDocumentPdf && (
+                      <p className="mt-2 text-xs text-gray-500">Preview is not available for this file type.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 5 && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Review and Submit</h3>
+                  <p className="text-xs text-gray-500">Verify the details below. Submitting will create the auth account and patient record.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <ReviewCard title="Account">
+                    <ReviewRow label="Email" value={form.email} />
+                    <ReviewRow label="Patient Code" value={form.patientCode} mono />
+                    <ReviewRow label="Access Start" value={form.accessStart || 'Not set'} />
+                    <ReviewRow label="Access End" value={form.accessEnd || 'Not set'} />
+                  </ReviewCard>
+
+                  <ReviewCard title="Identity">
+                    <ReviewRow
+                      label="Full Name"
+                      value={buildDisplayName({
+                        firstName: form.firstName,
+                        middleName: form.middleName,
+                        lastName: form.lastName,
+                        suffix: form.suffix,
+                      }) || 'Not set'}
+                    />
+                    <ReviewRow label="Birthdate" value={form.birthdate || 'Not set'} />
+                    <ReviewRow label="Age" value={computedAgeFromForm || 'N/A'} />
+                    <ReviewRow label="Gender" value={form.gender || 'Not set'} />
+                  </ReviewCard>
+
+                  <ReviewCard title="Clinical">
+                    <ReviewRow label="Date of Diagnosis" value={form.dateOfDiagnosis || 'Not set'} />
+                    <ReviewRow label="Guardian" value={form.guardian || 'Not set'} />
+                    <ReviewRow label="Guardian Contact" value={form.guardianContactNumber || 'Not set'} />
+                    <ReviewRow label="Guardian Relationship" value={form.guardianRelationship || 'Not set'} />
+                    <ReviewRow label="Medical Condition" value={form.medicalCondition || 'Not set'} />
+                  </ReviewCard>
+
+                  <ReviewCard title="Attachments">
+                    <ReviewRow label="Patient Picture" value={patientPictureFile?.name || 'No file'} />
+                    <ReviewRow label="Medical Document" value={medicalDocumentFile?.name || 'No file'} />
+                  </ReviewCard>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
                 onClick={resetForm}
                 disabled={isSaving}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
-                Clear
+                Clear All
               </button>
 
-              <button
-                type="submit"
-                disabled={isSaving || !hospitalId}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: theme.primaryColor }}
-              >
-                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                {isSaving ? 'Saving...' : 'Create Patient Account'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  disabled={wizardStep === 1 || isSaving}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <ChevronLeft size={16} /> Back
+                </button>
+
+                {wizardStep < WIZARD_STEPS.length ? (
+                  <button
+                    type="button"
+                    onClick={handleNextStep}
+                    className="inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                    style={{ backgroundColor: theme.primaryColor }}
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isSaving || !hospitalId}
+                    className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    style={{ backgroundColor: theme.primaryColor }}
+                  >
+                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                    {isSaving ? 'Saving...' : 'Create Patient Account'}
+                  </button>
+                )}
+              </div>
             </div>
           </form>
         </section>
-      </div>
+      )}
+
+      {selectedPatient && (
+        <div className="fixed inset-0 z-[9998] flex">
+          <button
+            type="button"
+            aria-label="Close patient details"
+            className="flex-1 bg-black/50"
+            onClick={() => setSelectedPatient(null)}
+          />
+          <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-white shadow-2xl">
+            <div
+              className="flex items-start justify-between gap-3 border-b border-gray-200 p-5"
+              style={{ backgroundColor: `${theme.primaryColor}10` }}
+            >
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Patient Profile</p>
+                <h3 className="mt-1 text-lg font-bold text-gray-900">{selectedPatient.fullName}</h3>
+                <p className="mt-0.5 font-mono text-xs text-gray-600">{selectedPatient.Patient_Code || 'No code'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPatient(null)}
+                className="rounded-md p-1 text-gray-500 hover:bg-white hover:text-gray-900"
+                aria-label="Close drawer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-5 p-5">
+              {selectedPatient.pictureUrl && (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <img
+                    src={selectedPatient.pictureUrl}
+                    alt={selectedPatient.fullName}
+                    className="h-48 w-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Demographics</h4>
+                <dl className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <DrawerRow label="Age" value={selectedPatient.age} />
+                  <DrawerRow label="Gender" value={selectedPatient.gender} />
+                </dl>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Clinical</h4>
+                <dl className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <DrawerRow label="Medical Condition" value={selectedPatient.Medical_Condition || 'N/A'} />
+                  <DrawerRow label="Date of Diagnosis" value={selectedPatient.Date_of_Diagnosis || 'N/A'} />
+                </dl>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Guardian</h4>
+                <dl className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <DrawerRow label="Name" value={selectedPatient.Guardian || 'N/A'} />
+                  <DrawerRow label="Relationship" value={selectedPatient.Guardian_Relationship || 'N/A'} />
+                  <DrawerRow label="Contact" value={selectedPatient.Guardian_Contact_Number || 'N/A'} />
+                </dl>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Documents</h4>
+                <div className="space-y-2">
+                  {selectedPatient.pictureUrl ? (
+                    <a
+                      href={selectedPatient.pictureUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <UploadCloud size={15} /> View Patient Picture
+                    </a>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">No patient picture uploaded.</p>
+                  )}
+
+                  {selectedPatient.documentUrl ? (
+                    <a
+                      href={selectedPatient.documentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <FileText size={15} /> View Medical Document
+                    </a>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">No medical document uploaded.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Record</h4>
+                <dl className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <DrawerRow label="Created" value={formatDateTime(selectedPatient.Created_At)} />
+                </dl>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {successPopup.open && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 px-4 backdrop-blur-[1px]">
@@ -1857,6 +2333,35 @@ export default function ManagePatientsPage({ userProfile }) {
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+function ReviewCard({ title, children }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">{title}</p>
+      <dl className="space-y-1.5 text-sm">{children}</dl>
+    </div>
+  );
+}
+
+function ReviewRow({ label, value, mono = false }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className={`text-right text-xs font-semibold text-gray-800 ${mono ? 'font-mono' : ''}`}>
+        {value || 'Not set'}
+      </dd>
+    </div>
+  );
+}
+
+function DrawerRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-right text-xs font-semibold text-gray-800">{value}</dd>
     </div>
   );
 }

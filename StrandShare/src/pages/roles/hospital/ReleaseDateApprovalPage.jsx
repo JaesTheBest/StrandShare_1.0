@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Info, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, Info, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { logAuditAction } from '../../../lib/auditLogger';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
@@ -123,7 +123,7 @@ function statusClass(statusValue) {
   const key = getCanonicalStatusKey(statusValue);
 
   if (key === 'accepted_allocated') return 'bg-emerald-100 text-emerald-700';
-  if (key === 'accepted_no_wig') return 'bg-rose-100 text-rose-700';
+  if (key === 'accepted_no_wig') return 'bg-lime-100 text-lime-700';
   if (key === 'in_production') return 'bg-sky-100 text-sky-700';
   if (key === 'to_be_release') return 'bg-indigo-100 text-indigo-700';
   if (key === 'releasing') return 'bg-teal-100 text-teal-700';
@@ -150,6 +150,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -287,7 +288,7 @@ function matchesSearch(row, query) {
   return blob.includes(query);
 }
 
-export default function FittingReleaseSchedulingPage({ userProfile }) {
+export default function ReleaseDateApprovalPage({ userProfile }) {
   const [activeTab, setActiveTab] = useState('approvals');
   const [hospitalId, setHospitalId] = useState(null);
   const [hospitalName, setHospitalName] = useState('');
@@ -298,6 +299,10 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
+  const [quickApproveTarget, setQuickApproveTarget] = useState(null);
+  const [quickRescheduleTarget, setQuickRescheduleTarget] = useState(null);
+  const [quickRescheduleReason, setQuickRescheduleReason] = useState('');
+  const [quickRescheduleAttempted, setQuickRescheduleAttempted] = useState(false);
 
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [isReleaseWorkflowAvailable, setIsReleaseWorkflowAvailable] = useState(true);
@@ -587,7 +592,11 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
   }, [selectedRow?.reqId]);
 
   const queueRows = useMemo(() => {
-    return rows.filter((row) => row.statusKey === 'to_be_release');
+    return rows.filter((row) => (
+      row.statusKey === 'accepted_allocated'
+      || row.statusKey === 'accepted_no_wig'
+      || row.statusKey === 'to_be_release'
+    ));
   }, [rows]);
 
   const releaseRows = useMemo(() => {
@@ -697,8 +706,14 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
     throw error;
   }, []);
 
-  const handleApproveRelease = async () => {
-    if (!selectedRow || !selectedCanApprove) {
+  const rowCanApprove = useCallback((row) => (
+    Boolean(row)
+    && row.releaseWorkflowKey === 'pending_hospital_approval'
+    && Boolean(row.releaseScheduleId)
+  ), []);
+
+  const performApproveRelease = useCallback(async (row) => {
+    if (!row || !rowCanApprove(row)) {
       return;
     }
 
@@ -718,13 +733,13 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
           Hospital_Decision_Reason: null,
           Updated_At: nowIso,
         })
-        .eq('Release_Schedule_ID', selectedRow.releaseScheduleId);
+        .eq('Release_Schedule_ID', row.releaseScheduleId);
 
       if (updateScheduleError) {
         throw updateScheduleError;
       }
 
-      await updateRequestWithStatusReasonFallback(selectedRow.reqId, {
+      await updateRequestWithStatusReasonFallback(row.reqId, {
         Status: REQUEST_STATUS.releasing,
         Updated_At: nowIso,
         Status_Reason: null,
@@ -732,18 +747,18 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
       await logAuditAction({
         action: 'hospital_release_schedule_decision',
-        description: `${selectedRow.requestId} approved release schedule`,
+        description: `${row.requestId} approved release schedule`,
         resource: 'Release_Schedules',
         status: 'success',
         userProfile,
       });
 
-      await loadReleaseRows(selectedRow.reqId);
-      setNotice({ kind: 'success', text: `${selectedRow.requestId} release schedule approved.` });
+      await loadReleaseRows(row.reqId);
+      setNotice({ kind: 'success', text: `${row.requestId} release schedule approved.` });
     } catch (error) {
       await logAuditAction({
         action: 'hospital_release_schedule_decision',
-        description: `${selectedRow.requestId} failed release approval`,
+        description: `${row.requestId} failed release approval`,
         resource: 'Release_Schedules',
         status: 'failed',
         userProfile,
@@ -753,14 +768,14 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
     } finally {
       setIsApplyingDecision(false);
     }
-  };
+  }, [rowCanApprove, userProfile, updateRequestWithStatusReasonFallback, loadReleaseRows]);
 
-  const handleRequestReschedule = async () => {
-    if (!selectedRow || !selectedCanApprove) {
+  const performRequestReschedule = useCallback(async (row, reasonInput) => {
+    if (!row || !rowCanApprove(row)) {
       return;
     }
 
-    const reason = String(rescheduleReason || '').trim();
+    const reason = String(reasonInput || '').trim();
     if (!reason) {
       setNotice({ kind: 'error', text: 'Reschedule reason is required.' });
       return;
@@ -782,13 +797,13 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
           Hospital_Decision_Reason: reason,
           Updated_At: nowIso,
         })
-        .eq('Release_Schedule_ID', selectedRow.releaseScheduleId);
+        .eq('Release_Schedule_ID', row.releaseScheduleId);
 
       if (updateScheduleError) {
         throw updateScheduleError;
       }
 
-      await updateRequestWithStatusReasonFallback(selectedRow.reqId, {
+      await updateRequestWithStatusReasonFallback(row.reqId, {
         Status: REQUEST_STATUS.toBeRelease,
         Updated_At: nowIso,
         Status_Reason: reason,
@@ -796,27 +811,41 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
 
       await logAuditAction({
         action: 'hospital_release_schedule_decision',
-        description: `${selectedRow.requestId} requested reschedule | reason: ${reason}`,
+        description: `${row.requestId} requested reschedule | reason: ${reason}`,
         resource: 'Release_Schedules',
         status: 'success',
         userProfile,
       });
 
-      await loadReleaseRows(selectedRow.reqId);
-      setRescheduleReason('');
-      setNotice({ kind: 'success', text: `${selectedRow.requestId} marked for reschedule and returned to staff queue.` });
+      await loadReleaseRows(row.reqId);
+      setNotice({ kind: 'success', text: `${row.requestId} marked for reschedule and returned to staff queue.` });
+      return { success: true };
     } catch (error) {
       await logAuditAction({
         action: 'hospital_release_schedule_decision',
-        description: `${selectedRow.requestId} failed reschedule request`,
+        description: `${row.requestId} failed reschedule request`,
         resource: 'Release_Schedules',
         status: 'failed',
         userProfile,
       });
 
       setNotice({ kind: 'error', text: mapActionError(error.message) });
+      return { success: false };
     } finally {
       setIsApplyingDecision(false);
+    }
+  }, [rowCanApprove, userProfile, updateRequestWithStatusReasonFallback, loadReleaseRows]);
+
+  const handleApproveRelease = async () => {
+    if (!selectedRow) return;
+    await performApproveRelease(selectedRow);
+  };
+
+  const handleRequestReschedule = async () => {
+    if (!selectedRow) return;
+    const result = await performRequestReschedule(selectedRow, rescheduleReason);
+    if (result?.success) {
+      setRescheduleReason('');
     }
   };
 
@@ -942,7 +971,7 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
         <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-4 py-3">
             <h2 className="text-lg font-semibold text-gray-900">Release Approval Queue</h2>
-            <p className="mt-1 text-xs text-gray-500">Approve pending release dates or request reschedule with reason.</p>
+            <p className="mt-1 text-xs text-gray-500">All approved requests &mdash; both &ldquo;Accepted - Wig Allocated&rdquo; and &ldquo;Accepted - No Wig Available&rdquo; &mdash; plus those ready for release approval.</p>
           </div>
 
           {isLoading ? (
@@ -962,47 +991,80 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Proposed Release Date</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Release Flow</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Info</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredQueueRows.map((row) => (
-                    <tr
-                      key={row.reqId}
-                      onClick={() => setSelectedRow(row)}
-                      className="cursor-pointer border-t border-gray-200 hover:bg-gray-50"
-                    >
-                      <td className="px-4 py-3 font-semibold text-gray-800">{row.requestId}</td>
-                      <td className="px-4 py-3 text-gray-700">
-                        <p className="font-semibold text-gray-800">{row.patientName}</p>
-                        <p className="text-xs text-gray-500">{row.patientCode || 'No patient code'}</p>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{row.medicalCondition}</td>
-                      <td className="px-4 py-3 text-gray-700">{formatDateTime(row.releaseDate)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(row.status)}`}>
-                          {row.statusLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${releaseWorkflowClass(row.releaseWorkflowStatus)}`}>
-                          {row.releaseWorkflowLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedRow(row);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          <Info size={13} /> Info
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredQueueRows.map((row) => {
+                    const canQuickAct = rowCanApprove(row);
+                    return (
+                      <tr
+                        key={row.reqId}
+                        onClick={() => setSelectedRow(row)}
+                        className="cursor-pointer border-t border-gray-200 hover:bg-gray-50"
+                      >
+                        <td className="px-4 py-3 font-semibold text-gray-800">{row.requestId}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          <p className="font-semibold text-gray-800">{row.patientName}</p>
+                          <p className="text-xs text-gray-500">{row.patientCode || 'No patient code'}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{row.medicalCondition}</td>
+                        <td className="px-4 py-3 text-gray-700">{formatDateTime(row.releaseDate)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(row.status)}`}>
+                            {row.statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${releaseWorkflowClass(row.releaseWorkflowStatus)}`}>
+                            {row.releaseWorkflowLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            {canQuickAct && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setQuickApproveTarget(row);
+                                  }}
+                                  disabled={isApplyingDecision}
+                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                  <Check size={13} /> Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setQuickRescheduleReason('');
+                                    setQuickRescheduleAttempted(false);
+                                    setQuickRescheduleTarget(row);
+                                  }}
+                                  disabled={isApplyingDecision}
+                                  className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                >
+                                  <CalendarDays size={13} /> Reschedule
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedRow(row);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                            >
+                              <Info size={13} /> Info
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1280,6 +1342,168 @@ export default function FittingReleaseSchedulingPage({ userProfile }) {
               )}
             </div>
           </aside>
+        </div>,
+        document.body,
+      )}
+
+      {quickApproveTarget && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 px-4">
+          <button
+            type="button"
+            aria-label="Close approve confirmation"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => {
+              if (isApplyingDecision) return;
+              setQuickApproveTarget(null);
+            }}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Approve release schedule"
+            className="relative w-full max-w-md rounded-2xl border border-emerald-100 bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+                <Check size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-gray-900">Approve Release Schedule</h3>
+                <p className="mt-1 text-sm text-gray-700">
+                  Approve the proposed release date for <span className="font-semibold">{quickApproveTarget.requestId}</span>
+                  {quickApproveTarget.patientName ? <> &mdash; <span className="font-semibold">{quickApproveTarget.patientName}</span></> : null}?
+                </p>
+                <p className="mt-2 text-xs text-gray-500">
+                  Proposed Release Date: <span className="font-semibold text-gray-800">{formatDateTime(quickApproveTarget.releaseDate)}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickApproveTarget(null)}
+                disabled={isApplyingDecision}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = quickApproveTarget;
+                  await performApproveRelease(target);
+                  setQuickApproveTarget(null);
+                }}
+                disabled={isApplyingDecision}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {isApplyingDecision ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                {isApplyingDecision ? 'Approving...' : 'Confirm Approve'}
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {quickRescheduleTarget && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 px-4">
+          <button
+            type="button"
+            aria-label="Close reschedule prompt"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => {
+              if (isApplyingDecision) return;
+              setQuickRescheduleTarget(null);
+              setQuickRescheduleReason('');
+              setQuickRescheduleAttempted(false);
+            }}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Request reschedule"
+            className="relative w-full max-w-md rounded-2xl border border-rose-100 bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-rose-100 p-2 text-rose-700">
+                <CalendarDays size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-gray-900">Request Reschedule</h3>
+                <p className="mt-1 text-sm text-gray-700">
+                  Send <span className="font-semibold">{quickRescheduleTarget.requestId}</span> back to staff with a reschedule reason.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-600">
+                Reschedule Reason <span className="text-rose-600">(required)</span>
+              </label>
+              <textarea
+                value={quickRescheduleReason}
+                onChange={(event) => {
+                  setQuickRescheduleReason(event.target.value);
+                  if (event.target.value.trim()) {
+                    setQuickRescheduleAttempted(false);
+                  }
+                }}
+                rows={4}
+                placeholder="Explain why this release date should be changed."
+                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 ${
+                  quickRescheduleAttempted && !quickRescheduleReason.trim()
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-gray-300 focus:ring-gray-200'
+                }`}
+              />
+
+              {!quickRescheduleReason.trim() && (
+                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <span>Please add a reschedule reason before submitting.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickRescheduleTarget(null);
+                  setQuickRescheduleReason('');
+                  setQuickRescheduleAttempted(false);
+                }}
+                disabled={isApplyingDecision}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!quickRescheduleReason.trim()) {
+                    setQuickRescheduleAttempted(true);
+                    return;
+                  }
+                  const target = quickRescheduleTarget;
+                  const reasonValue = quickRescheduleReason;
+                  const result = await performRequestReschedule(target, reasonValue);
+                  if (result?.success) {
+                    setQuickRescheduleTarget(null);
+                    setQuickRescheduleReason('');
+                    setQuickRescheduleAttempted(false);
+                  }
+                }}
+                disabled={isApplyingDecision || !quickRescheduleReason.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {isApplyingDecision ? <Loader2 size={16} className="animate-spin" /> : <CalendarDays size={16} />}
+                {isApplyingDecision ? 'Submitting...' : 'Submit Reschedule'}
+              </button>
+            </div>
+          </section>
         </div>,
         document.body,
       )}

@@ -21,6 +21,13 @@ const USER_DETAILS_TABLE = 'user_details';
 const PROFILE_PICTURES_BUCKET = 'profile_pictures';
 const ROLE_OPTIONS = ['Member', 'Officer', 'Leader'];
 const STATUS_OPTIONS = ['Active', 'Inactive'];
+const APPLICATION_PENDING_ROLE = 'Pending Approval';
+const APPLICATION_REJECTED_ROLE = 'Rejected';
+const MEMBER_TABS = [
+  { id: 'active', label: 'Active' },
+  { id: 'pending', label: 'Pending Approval' },
+  { id: 'rejected', label: 'Rejected' },
+];
 
 function withColorAlpha(colorValue, alpha, fallback = '#0275d8') {
   const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
@@ -47,7 +54,7 @@ function formatDate(value) {
   if (!value) return 'N/A';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
-  return parsed.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' });
+  return parsed.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit' });
 }
 
 function normalizeText(value) {
@@ -87,6 +94,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
   const [members, setMembers] = useState([]);
   const [photoUrlsByPath, setPhotoUrlsByPath] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('active');
   const [isLoading, setIsLoading] = useState(false);
   const [notice, setNotice] = useState({ kind: '', text: '' });
 
@@ -94,10 +102,16 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
   const [addRole, setAddRole] = useState('Member');
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [pendingMemberId, setPendingMemberId] = useState(null);
+  const [decisionModal, setDecisionModal] = useState({
+    open: false,
+    type: '',
+    member: null,
+    isSubmitting: false,
+  });
 
-  const isLeaderOrOfficer = useMemo(() => {
+  const isLeader = useMemo(() => {
     const roleKey = normalizeRoleKey(currentMembershipRole);
-    return roleKey === 'leader' || roleKey === 'officer';
+    return roleKey === 'leader';
   }, [currentMembershipRole]);
 
   const loadMembers = useCallback(async () => {
@@ -183,7 +197,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
           email: userRow.email || '',
           systemRole: userRow.role || '',
           membershipRole: row.Membership_Role || 'Member',
-          status: row.Status || 'Active',
+          status: normalizeText(row.Status) === 'inactive' ? 'Inactive' : 'Active',
           isPrimary: Boolean(row.Is_Primary),
           createdAt: row.Created_At,
           fullName: buildFullName(detailsRow.first_name, detailsRow.middle_name, detailsRow.last_name, detailsRow.suffix) || `User #${userId}`,
@@ -360,6 +374,104 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
     }
   };
 
+  const openDecisionModal = (type, member) => {
+    if (!isLeader || !member) {
+      return;
+    }
+    setDecisionModal({
+      open: true,
+      type,
+      member,
+      isSubmitting: false,
+    });
+  };
+
+  const closeDecisionModal = () => {
+    if (decisionModal.isSubmitting) {
+      return;
+    }
+    setDecisionModal({
+      open: false,
+      type: '',
+      member: null,
+      isSubmitting: false,
+    });
+  };
+
+  const handleConfirmDecision = async () => {
+    const targetMember = decisionModal.member;
+    if (!targetMember?.memberId) {
+      closeDecisionModal();
+      return;
+    }
+
+    let patch = null;
+    let successText = 'Member updated.';
+    const modalType = decisionModal.type;
+
+    if (modalType === 'approve') {
+      patch = { Membership_Role: 'Member', Status: 'Active' };
+      successText = `${targetMember.fullName} approved as Member.`;
+    } else if (modalType === 'reject') {
+      patch = { Membership_Role: APPLICATION_REJECTED_ROLE, Status: 'Inactive' };
+      successText = `${targetMember.fullName} moved to Rejected.`;
+    } else if (modalType === 'reaccept') {
+      patch = { Membership_Role: 'Member', Status: 'Active' };
+      successText = `${targetMember.fullName} re-accepted as Member.`;
+    }
+
+    if (!patch) {
+      closeDecisionModal();
+      return;
+    }
+
+    setDecisionModal((prev) => ({ ...prev, isSubmitting: true }));
+    setPendingMemberId(targetMember.memberId);
+    setNotice({ kind: '', text: '' });
+
+    try {
+      const updatePayload = { ...patch, Updated_At: new Date().toISOString() };
+      const { error } = await supabase
+        .from(ORGANIZATION_MEMBERS_TABLE)
+        .update(updatePayload)
+        .eq('Member_ID', targetMember.memberId);
+
+      if (error) throw error;
+
+      setMembers((prev) =>
+        prev.map((row) => (row.memberId === targetMember.memberId ? {
+          ...row,
+          membershipRole: patch.Membership_Role ?? row.membershipRole,
+          status: patch.Status ?? row.status,
+        } : row)),
+      );
+
+      setNotice({ kind: 'success', text: successText });
+
+      await logAuditAction({
+        action: 'organization_members.application_decision',
+        description: `${modalType} member ${targetMember.memberId}: ${JSON.stringify(patch)}`,
+        resource: ORGANIZATION_MEMBERS_TABLE,
+        status: 'success',
+        userProfile,
+      });
+
+      closeDecisionModal();
+    } catch (error) {
+      setNotice({ kind: 'error', text: error?.message || 'Unable to update member application.' });
+      await logAuditAction({
+        action: 'organization_members.application_decision',
+        description: `Failed ${modalType} for member ${targetMember.memberId}`,
+        resource: ORGANIZATION_MEMBERS_TABLE,
+        status: 'failed',
+        userProfile,
+      });
+      setDecisionModal((prev) => ({ ...prev, isSubmitting: false }));
+    } finally {
+      setPendingMemberId(null);
+    }
+  };
+
   const handleRemoveMember = async (member) => {
     if (member.isPrimary) {
       setNotice({ kind: 'warning', text: 'Primary leader cannot be removed.' });
@@ -404,15 +516,30 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
     }
   };
 
+  const membersByTab = useMemo(() => {
+    const pendingRoleKey = normalizeRoleKey(APPLICATION_PENDING_ROLE);
+    const rejectedRoleKey = normalizeRoleKey(APPLICATION_REJECTED_ROLE);
+
+    return {
+      active: members.filter((row) => {
+        const roleKey = normalizeRoleKey(row.membershipRole);
+        return roleKey !== pendingRoleKey && roleKey !== rejectedRoleKey;
+      }),
+      pending: members.filter((row) => normalizeRoleKey(row.membershipRole) === pendingRoleKey),
+      rejected: members.filter((row) => normalizeRoleKey(row.membershipRole) === rejectedRoleKey),
+    };
+  }, [members]);
+
   const filteredMembers = useMemo(() => {
+    const scopedMembers = membersByTab[activeTab] || [];
     const query = String(searchQuery || '').trim().toLowerCase();
-    if (!query) return members;
-    return members.filter((row) => {
-      return [row.fullName, row.email, row.membershipRole, row.status]
+    if (!query) return scopedMembers;
+    return scopedMembers.filter((row) => (
+      [row.fullName, row.email, row.membershipRole, row.status]
         .map((value) => String(value || '').toLowerCase())
-        .some((value) => value.includes(query));
-    });
-  }, [members, searchQuery]);
+        .some((value) => value.includes(query))
+    ));
+  }, [activeTab, membersByTab, searchQuery]);
 
   const stats = useMemo(() => {
     const activeCount = members.filter((row) => normalizeText(row.status) === 'active').length;
@@ -420,9 +547,11 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
     return [
       { id: 'total', label: 'Total Members', value: members.length },
       { id: 'active', label: 'Active', value: activeCount },
+      { id: 'pending', label: 'Pending Approval', value: membersByTab.pending.length },
+      { id: 'rejected', label: 'Rejected', value: membersByTab.rejected.length },
       { id: 'leaders', label: 'Leaders', value: leaderCount },
     ];
-  }, [members]);
+  }, [members, membersByTab.pending.length, membersByTab.rejected.length]);
 
   return (
     <div className="space-y-5" style={rootStyle}>
@@ -435,7 +564,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
             Manage Organization Members
           </h1>
           <p className="mt-1 text-sm" style={{ color: secondaryTextColor }}>
-            Active roster of {organizationName || 'your organization'}.
+            Review active members plus pending and rejected membership applications for {organizationName || 'your organization'}.
           </p>
         </div>
         <button
@@ -465,7 +594,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {stats.map((stat) => (
           <div key={stat.id} className="rounded-xl border bg-white p-4" style={{ borderColor: '#e2e8f0' }}>
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: tertiaryTextColor }}>{stat.label}</p>
@@ -491,14 +620,14 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
             placeholder="member@example.com"
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none"
             style={{ color: primaryTextColor, fontFamily: `${bodyFont}, sans-serif` }}
-            disabled={isAddingMember || !organizationId}
+            disabled={isAddingMember || !organizationId || !isLeader}
           />
           <select
             value={addRole}
             onChange={(event) => setAddRole(event.target.value)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none"
             style={{ color: primaryTextColor, fontFamily: `${bodyFont}, sans-serif` }}
-            disabled={isAddingMember || !organizationId}
+            disabled={isAddingMember || !organizationId || !isLeader}
           >
             {ROLE_OPTIONS.map((option) => (
               <option key={option} value={option}>{option}</option>
@@ -507,7 +636,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
           <button
             type="button"
             onClick={handleAddMember}
-            disabled={isAddingMember || !organizationId}
+            disabled={isAddingMember || !organizationId || !isLeader}
             className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             style={{ backgroundColor: primaryColor }}
           >
@@ -521,9 +650,9 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3" style={{ borderColor: '#e2e8f0' }}>
           <div className="flex items-center gap-2">
             <Users size={18} style={{ color: primaryColor }} />
-            <h2 className="text-lg font-semibold" style={headingStyle}>Members</h2>
+            <h2 className="text-lg font-semibold" style={headingStyle}>Member Applications</h2>
             <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: withColorAlpha(primaryColor, 0.12), color: primaryColor }}>
-              {members.length}
+              {filteredMembers.length}
             </span>
           </div>
           <div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-1.5" style={{ borderColor: '#e2e8f0' }}>
@@ -531,16 +660,51 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search members"
+              placeholder="Search applications"
               className="bg-transparent text-sm placeholder:text-slate-400 focus:outline-none"
               style={{ color: primaryTextColor }}
             />
           </div>
         </div>
 
-        {!members.length && !isLoading ? (
+        <div className="flex flex-wrap gap-2 border-b px-4 py-3" style={{ borderColor: '#e2e8f0' }}>
+          {MEMBER_TABS.map((tab) => {
+            const count = (membersByTab[tab.id] || []).length;
+            const isSelected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors"
+                style={
+                  isSelected
+                    ? {
+                        borderColor: withColorAlpha(primaryColor, 0.45),
+                        backgroundColor: withColorAlpha(primaryColor, 0.12),
+                        color: primaryColor,
+                      }
+                    : {
+                        borderColor: '#e2e8f0',
+                        backgroundColor: '#ffffff',
+                        color: secondaryTextColor,
+                      }
+                }
+              >
+                <span>{tab.label}</span>
+                <span>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {!filteredMembers.length && !isLoading ? (
           <div className="px-4 py-8 text-center text-sm" style={{ color: secondaryTextColor }}>
-            No members yet. Add your first member above.
+            {activeTab === 'pending'
+              ? 'No pending member applications.'
+              : activeTab === 'rejected'
+                ? 'No rejected member applications.'
+                : 'No members found for the current filter.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -549,7 +713,7 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Member</th>
                   <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Email</th>
-                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Role</th>
+                  <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Membership Role</th>
                   <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Status</th>
                   <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Joined</th>
                   <th className="px-4 py-3 text-right font-semibold" style={{ color: primaryTextColor }}>Actions</th>
@@ -590,46 +754,94 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
                       </td>
                       <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{member.email || '-'}</td>
                       <td className="px-4 py-3">
-                        <select
-                          value={member.membershipRole}
-                          onChange={(event) => handleUpdateMember(member.memberId, { Membership_Role: event.target.value })}
-                          disabled={member.isPrimary || isProcessing || !isLeaderOrOfficer}
-                          className="rounded-lg border px-2 py-1 text-sm focus:outline-none disabled:opacity-60"
-                          style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
-                        >
-                          {ROLE_OPTIONS.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                          {!ROLE_OPTIONS.includes(member.membershipRole) ? (
-                            <option value={member.membershipRole}>{member.membershipRole}</option>
-                          ) : null}
-                        </select>
+                        {activeTab === 'active' ? (
+                          <select
+                            value={member.membershipRole}
+                            onChange={(event) => handleUpdateMember(member.memberId, { Membership_Role: event.target.value })}
+                            disabled={member.isPrimary || isProcessing || !isLeader}
+                            className="rounded-lg border px-2 py-1 text-sm focus:outline-none disabled:opacity-60"
+                            style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
+                          >
+                            {ROLE_OPTIONS.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                            {!ROLE_OPTIONS.includes(member.membershipRole) ? (
+                              <option value={member.membershipRole}>{member.membershipRole}</option>
+                            ) : null}
+                          </select>
+                        ) : (
+                          <span className="inline-flex rounded-full border px-2 py-1 text-xs font-semibold" style={{ borderColor: '#cbd5e1', color: secondaryTextColor }}>
+                            {member.membershipRole || '-'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          value={STATUS_OPTIONS.includes(member.status) ? member.status : 'Active'}
-                          onChange={(event) => handleUpdateMember(member.memberId, { Status: event.target.value })}
-                          disabled={member.isPrimary || isProcessing || !isLeaderOrOfficer}
-                          className="rounded-lg border px-2 py-1 text-sm focus:outline-none disabled:opacity-60"
-                          style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
-                        >
-                          {STATUS_OPTIONS.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
+                        {activeTab === 'active' ? (
+                          <select
+                            value={STATUS_OPTIONS.includes(member.status) ? member.status : 'Active'}
+                            onChange={(event) => handleUpdateMember(member.memberId, { Status: event.target.value })}
+                            disabled={member.isPrimary || isProcessing || !isLeader}
+                            className="rounded-lg border px-2 py-1 text-sm focus:outline-none disabled:opacity-60"
+                            style={{ borderColor: '#cbd5e1', color: primaryTextColor }}
+                          >
+                            {STATUS_OPTIONS.map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="inline-flex rounded-full border px-2 py-1 text-xs font-semibold" style={{ borderColor: '#cbd5e1', color: secondaryTextColor }}>
+                            {member.status || '-'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3" style={{ color: tertiaryTextColor }}>{formatDate(member.createdAt)}</td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMember(member)}
-                          disabled={member.isPrimary || isProcessing || !isLeaderOrOfficer}
-                          className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
-                          style={{ borderColor: '#fecaca', color: '#b91c1c' }}
-                        >
-                          {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          Remove
-                        </button>
+                        {activeTab === 'pending' ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openDecisionModal('approve', member)}
+                              disabled={isProcessing || !isLeader}
+                              className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+                              style={{ borderColor: '#86efac', color: '#166534' }}
+                            >
+                              {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openDecisionModal('reject', member)}
+                              disabled={isProcessing || !isLeader}
+                              className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+                              style={{ borderColor: '#fecaca', color: '#b91c1c' }}
+                            >
+                              {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              Reject
+                            </button>
+                          </div>
+                        ) : activeTab === 'rejected' ? (
+                          <button
+                            type="button"
+                            onClick={() => openDecisionModal('reaccept', member)}
+                            disabled={isProcessing || !isLeader}
+                            className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+                            style={{ borderColor: '#93c5fd', color: '#1d4ed8' }}
+                          >
+                            {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                            Re-accept
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member)}
+                            disabled={member.isPrimary || isProcessing || !isLeader}
+                            className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+                            style={{ borderColor: '#fecaca', color: '#b91c1c' }}
+                          >
+                            {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            Remove
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -640,12 +852,63 @@ export default function ManageOrganizationMembersPage({ userProfile }) {
         )}
       </section>
 
-      {!isLeaderOrOfficer && organizationId ? (
+      {decisionModal.open && decisionModal.member ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: tertiaryTextColor }}>
+              Membership Decision
+            </p>
+            <h3 className="mt-1 text-lg font-semibold" style={headingStyle}>
+              {decisionModal.type === 'approve'
+                ? 'Approve Application'
+                : decisionModal.type === 'reject'
+                  ? 'Reject Application'
+                  : 'Re-accept Member'}
+            </h3>
+            <p className="mt-2 text-sm" style={{ color: secondaryTextColor }}>
+              {decisionModal.type === 'approve'
+                ? `Approve ${decisionModal.member.fullName} as Member and set status to Active?`
+                : decisionModal.type === 'reject'
+                  ? `Reject ${decisionModal.member.fullName} and move to Rejected tab?`
+                  : `Re-accept ${decisionModal.member.fullName} as Member and set status to Active?`}
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeDecisionModal}
+                disabled={decisionModal.isSubmitting}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDecision}
+                disabled={decisionModal.isSubmitting}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{
+                  backgroundColor: decisionModal.type === 'reject' ? '#b91c1c' : primaryColor,
+                }}
+              >
+                {decisionModal.isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                {decisionModal.type === 'approve'
+                  ? 'Confirm Approve'
+                  : decisionModal.type === 'reject'
+                    ? 'Confirm Reject'
+                    : 'Confirm Re-accept'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isLeader && organizationId ? (
         <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs" style={{ borderColor: '#e2e8f0', color: secondaryTextColor }}>
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="mt-0.5" style={{ color: '#b45309' }} />
             <p>
-              You are viewing membership in read-only mode. Only Leaders and Officers can edit role/status or remove members.
+              You are viewing membership in read-only mode. Only Leaders can approve/reject applications or edit members.
             </p>
           </div>
         </div>
