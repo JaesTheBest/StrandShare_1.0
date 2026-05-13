@@ -235,6 +235,7 @@ async function sendInviteUserEmail({
     : 'approved';
 
   const metadata = {
+    account_type: 'organization',
     decision: normalizedDecision,
     role_label: 'Organization Lead',
     account_label: 'Organization',

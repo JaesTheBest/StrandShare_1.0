@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,19 +14,22 @@ import { useTheme } from '../../../context/ThemeContext';
 import {
   isSupabaseConfigured,
   supabase,
-  supabaseAnonKey,
-  supabaseUrl,
 } from '../../../lib/supabaseClient';
 
 const PATIENTS_TABLE = 'Patients';
 const USERS_TABLE = 'users';
 const USER_DETAILS_TABLE = 'user_details';
 const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
+const HOSPITALS_TABLE = 'Hospitals';
 const PATIENT_ASSETS_BUCKET = 'patient_assets';
+const PH_MOBILE_REGEX = /^\+63 9\d{2} \d{3} \d{4}$/;
+let patientInviteAdminClient = null;
 
 const EMPTY_FORM = {
   email: '',
   patientCode: '',
+  accessStart: '',
+  accessEnd: '',
   firstName: '',
   middleName: '',
   lastName: '',
@@ -217,6 +220,88 @@ function generateTemporaryPassword() {
   return shuffleArray([...required, ...remaining]).join('');
 }
 
+function formatPhilippineMobileInput(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+
+  if (digits.startsWith('63')) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+
+  digits = digits.slice(0, 10);
+
+  if (!digits) {
+    return '';
+  }
+
+  const part1 = digits.slice(0, 3);
+  const part2 = digits.slice(3, 6);
+  const part3 = digits.slice(6, 10);
+
+  let formatted = '+63';
+  if (part1) formatted += ` ${part1}`;
+  if (part2) formatted += ` ${part2}`;
+  if (part3) formatted += ` ${part3}`;
+
+  return formatted;
+}
+
+function isValidPhilippineMobileNumber(value) {
+  return PH_MOBILE_REGEX.test(String(value || '').trim());
+}
+
+function formatDateForInput(value) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function toIsoOrNull(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function buildDisplayName({ firstName, middleName, lastName, suffix }) {
+  return [firstName, middleName, lastName, suffix]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function createPatientInviteAdminClient() {
+  if (patientInviteAdminClient) {
+    return patientInviteAdminClient;
+  }
+
+  const url = process.env.REACT_APP_SUPABASE_URL;
+  const serviceRoleKey = process.env.REACT_APP_SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    return null;
+  }
+
+  patientInviteAdminClient = createClient(url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'strandshare-hospital-patient-invite-auth-client',
+    },
+  });
+
+  return patientInviteAdminClient;
+}
+
 function getPatientFullName(userRow, patientRow = null) {
   const details = pickPreferredUserDetails(userRow?.user_details);
 
@@ -253,6 +338,10 @@ function mapStorageUploadError(rawMessage) {
 function mapAuthSignupError(rawMessage) {
   const message = String(rawMessage || 'Unable to create authentication account.');
   const lowerMessage = message.toLowerCase();
+
+  if (!message || lowerMessage.includes('missing-service-role')) {
+    return 'Invite email service is not configured. Add REACT_APP_SUPABASE_SERVICE_ROLE_KEY in .env.local and restart the app.';
+  }
 
   if (lowerMessage.includes('already registered') || lowerMessage.includes('already been registered')) {
     return 'Email is already registered. Use a different email address.';
@@ -299,8 +388,47 @@ function mapPatientInsertError(rawMessage) {
   return message;
 }
 
+function extractReadableErrorText(error, fallback = 'Unable to process this request.') {
+  if (!error) {
+    return fallback;
+  }
+
+  if (typeof error === 'string') {
+    const trimmed = error.trim();
+    return trimmed || fallback;
+  }
+
+  if (error instanceof Error) {
+    const trimmed = String(error.message || '').trim();
+    return trimmed || fallback;
+  }
+
+  const message = String(error?.message || '').trim();
+  const details = String(error?.details || '').trim();
+  const hint = String(error?.hint || '').trim();
+  const code = String(error?.code || '').trim();
+
+  const parts = [message, details, hint].filter(Boolean);
+  const composed = parts.join(' | ');
+  if (composed) {
+    return code ? `${composed} (code: ${code})` : composed;
+  }
+
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized && serialized !== '{}') {
+      return serialized;
+    }
+  } catch {
+    // Ignore stringify issues and fall through.
+  }
+
+  return fallback;
+}
+
 export default function ManagePatientsPage({ userProfile }) {
   const { theme } = useTheme();
+  const submitLockRef = useRef(false);
 
   const [hospitalId, setHospitalId] = useState(null);
   const [hospitalName, setHospitalName] = useState('');
@@ -326,21 +454,6 @@ export default function ManagePatientsPage({ userProfile }) {
   const [successPopup, setSuccessPopup] = useState({ open: false, text: '' });
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
 
-  const signupClient = useMemo(() => {
-    if (!isSupabaseConfigured || !supabaseUrl || !supabaseAnonKey) {
-      return null;
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-        storageKey: 'strandshare-hospital-patient-signup-client',
-      },
-    });
-  }, []);
-
   const patientUsersById = useMemo(() => {
     const map = new Map();
     patientUsers.forEach((user) => {
@@ -353,6 +466,8 @@ export default function ManagePatientsPage({ userProfile }) {
     const age = computeAgeFromBirthdate(form.birthdate);
     return age === '' ? '' : String(age);
   }, [form.birthdate]);
+  const nowLocalDateTimeValue = useMemo(() => formatDateForInput(new Date()), []);
+  const todayDateValue = useMemo(() => formatDateForInput(new Date()).slice(0, 10), []);
 
   const isMedicalDocumentImage = useMemo(
     () => String(medicalDocumentFile?.type || '').toLowerCase().startsWith('image/'),
@@ -593,6 +708,15 @@ export default function ManagePatientsPage({ userProfile }) {
       return;
     }
 
+    if (name === 'guardianContactNumber') {
+      const formattedContactNumber = formatPhilippineMobileInput(value);
+      setForm((previous) => ({
+        ...previous,
+        guardianContactNumber: formattedContactNumber,
+      }));
+      return;
+    }
+
     setForm((previous) => ({
       ...previous,
       [name]: value,
@@ -690,50 +814,76 @@ export default function ManagePatientsPage({ userProfile }) {
     throw new Error('Unable to generate unique patient code right now. Please try again.');
   }, []);
 
-  const signupPatientAuthAccount = useCallback(async ({
+  const sendPatientInviteEmail = useCallback(async ({
     email,
     temporaryPassword,
     patientCode,
-    firstName,
-    lastName,
+    displayName,
+    accessStart,
+    accessEnd,
   }) => {
-    if (!signupClient) {
-      throw new Error('Signup client is not configured.');
+    const adminInviteClient = createPatientInviteAdminClient();
+
+    if (!adminInviteClient) {
+      throw new Error('missing-service-role');
     }
 
-    const emailRedirectTo = typeof window !== 'undefined'
-      ? `${window.location.origin}/confirmation-complete`
-      : undefined;
+    const metadata = {
+      account_type: 'patient',
+      decision: 'approved',
+      role_label: 'Patient',
+      account_label: 'Patient Code',
+      account_value: patientCode || '-',
+      recipient_email: email || '-',
+      recipient_name: displayName || '',
+      review_notes: '',
+      has_access_window: Boolean(accessStart || accessEnd),
+      access_window: accessStart && accessEnd ? `${accessStart} to ${accessEnd}` : '',
+      temporary_password: temporaryPassword || '',
+      display_name: displayName || '',
+      full_name: displayName || '',
+      name: displayName || '',
+    };
 
-    const { data, error } = await signupClient.auth.signUp({
-      email,
-      password: temporaryPassword,
-      options: {
-        emailRedirectTo,
-        data: {
-          role: 'Patient',
-          patient_code: patientCode,
-          temporary_password: temporaryPassword,
-          first_name: firstName,
-          last_name: lastName,
-        },
-      },
-    });
+    const inviteOptions = {
+      data: metadata,
+    };
+
+    const { data, error } = await adminInviteClient.auth.admin.inviteUserByEmail(email, inviteOptions);
 
     if (error) {
       throw new Error(mapAuthSignupError(error.message));
     }
 
-    return data?.user?.id || null;
-  }, [signupClient]);
+    const authUserId = data?.user?.id || null;
+    if (!authUserId) {
+      throw new Error('Invite was sent but auth user id was not returned.');
+    }
 
-  const resolveOrCreatePublicUser = useCallback(async ({ email, authUserId }) => {
+    const { error: updateAuthError } = await adminInviteClient.auth.admin.updateUserById(authUserId, {
+      email_confirm: true,
+      password: temporaryPassword,
+    });
+
+    if (updateAuthError) {
+      throw new Error(mapAuthSignupError(updateAuthError.message));
+    }
+
+    return authUserId;
+  }, []);
+
+  const resolveOrCreatePublicUser = useCallback(async ({
+    email,
+    authUserId,
+    accessStartIso,
+    accessEndIso,
+  }) => {
     let publicUserRow = null;
 
     if (authUserId) {
       const { data, error } = await supabase
         .from(USERS_TABLE)
-        .select('user_id,email,role,auth_user_id')
+        .select('user_id,email,role,auth_user_id,is_active')
         .eq('auth_user_id', authUserId)
         .maybeSingle();
 
@@ -744,7 +894,7 @@ export default function ManagePatientsPage({ userProfile }) {
     if (!publicUserRow) {
       const { data, error } = await supabase
         .from(USERS_TABLE)
-        .select('user_id,email,role,auth_user_id')
+        .select('user_id,email,role,auth_user_id,is_active')
         .eq('email', email)
         .maybeSingle();
 
@@ -758,10 +908,12 @@ export default function ManagePatientsPage({ userProfile }) {
         .insert({
           auth_user_id: authUserId,
           email,
-          role: 'Patient',
+          role: 'tentative',
+          access_start: accessStartIso,
+          access_end: accessEndIso,
           is_active: true,
         })
-        .select('user_id,email,role,auth_user_id')
+        .select('user_id,email,role,auth_user_id,is_active')
         .maybeSingle();
 
       if (error) throw error;
@@ -777,8 +929,20 @@ export default function ManagePatientsPage({ userProfile }) {
       updatePayload.auth_user_id = authUserId;
     }
 
-    if (normalizeText(publicUserRow.role) !== 'patient') {
-      updatePayload.role = 'Patient';
+    if (normalizeText(publicUserRow.role) !== 'tentative') {
+      updatePayload.role = 'tentative';
+    }
+
+    if (publicUserRow.is_active !== true) {
+      updatePayload.is_active = true;
+    }
+
+    if (accessStartIso) {
+      updatePayload.access_start = accessStartIso;
+    }
+
+    if (accessEndIso) {
+      updatePayload.access_end = accessEndIso;
     }
 
     if (Object.keys(updatePayload).length === 0) {
@@ -789,7 +953,7 @@ export default function ManagePatientsPage({ userProfile }) {
       .from(USERS_TABLE)
       .update(updatePayload)
       .eq('user_id', publicUserRow.user_id)
-      .select('user_id,email,role,auth_user_id')
+      .select('user_id,email,role,auth_user_id,is_active')
       .maybeSingle();
 
     if (updateError) throw updateError;
@@ -809,6 +973,7 @@ export default function ManagePatientsPage({ userProfile }) {
     birthdate,
     gender,
   }) => {
+    const joinedDateValue = new Date().toISOString().slice(0, 10);
     const payload = {
       first_name: firstName,
       middle_name: middleName || null,
@@ -821,7 +986,7 @@ export default function ManagePatientsPage({ userProfile }) {
 
     const { data: existingDetailsRows, error: findError } = await supabase
       .from(USER_DETAILS_TABLE)
-      .select('user_details_id')
+      .select('user_details_id,joined_date')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false })
       .limit(1);
@@ -837,6 +1002,7 @@ export default function ManagePatientsPage({ userProfile }) {
         .from(USER_DETAILS_TABLE)
         .insert({
           user_id: userId,
+          joined_date: joinedDateValue,
           ...payload,
         });
 
@@ -844,9 +1010,14 @@ export default function ManagePatientsPage({ userProfile }) {
       return;
     }
 
+    const updatePayload = {
+      ...payload,
+      ...(existingDetails.joined_date ? {} : { joined_date: joinedDateValue }),
+    };
+
     const { error: updateError } = await supabase
       .from(USER_DETAILS_TABLE)
-      .update(payload)
+      .update(updatePayload)
       .eq('user_details_id', existingDetails.user_details_id);
 
     if (updateError) throw updateError;
@@ -865,12 +1036,17 @@ export default function ManagePatientsPage({ userProfile }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitLockRef.current || isSaving) {
+      return;
+    }
+    submitLockRef.current = true;
 
     if (!isSupabaseConfigured || !supabase) {
       setNotice({
         kind: 'error',
         text: 'Supabase is not configured. Set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.',
       });
+      submitLockRef.current = false;
       return;
     }
 
@@ -879,6 +1055,7 @@ export default function ManagePatientsPage({ userProfile }) {
         kind: 'error',
         text: 'You are not assigned to any hospital. Ask Super Admin to assign your account first.',
       });
+      submitLockRef.current = false;
       return;
     }
 
@@ -889,29 +1066,89 @@ export default function ManagePatientsPage({ userProfile }) {
     const normalizedSuffix = String(form.suffix || '').trim();
     const normalizedBirthdate = String(form.birthdate || '').trim();
     const normalizedGender = normalizePatientGender(form.gender);
+    const normalizedDisplayName = buildDisplayName({
+      firstName: normalizedFirstName,
+      middleName: normalizedMiddleName,
+      lastName: normalizedLastName,
+      suffix: normalizedSuffix,
+    });
+    const normalizedGuardianContactNumber = String(form.guardianContactNumber || '').trim();
+    const normalizedAccessStart = String(form.accessStart || '').trim();
+    const normalizedAccessEnd = String(form.accessEnd || '').trim();
+    const accessStartIso = toIsoOrNull(normalizedAccessStart);
+    const accessEndIso = toIsoOrNull(normalizedAccessEnd);
 
     if (!normalizedEmail) {
-      setNotice({ kind: 'error', text: 'Patient email is required for confirm-signup.' });
+      setNotice({ kind: 'error', text: 'Patient email is required for invite email delivery.' });
+      submitLockRef.current = false;
       return;
     }
 
     if (!normalizedFirstName || !normalizedLastName) {
       setNotice({ kind: 'error', text: 'First name and last name are required.' });
+      submitLockRef.current = false;
       return;
     }
 
     if (!normalizedBirthdate) {
       setNotice({ kind: 'error', text: 'Birthdate is required to compute age.' });
+      submitLockRef.current = false;
       return;
     }
 
     if (!normalizedGender) {
       setNotice({ kind: 'error', text: 'Gender is required.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if (normalizedGuardianContactNumber && !isValidPhilippineMobileNumber(normalizedGuardianContactNumber)) {
+      setNotice({ kind: 'error', text: 'Guardian contact number must use +63 912 345 6789 format.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if ((normalizedAccessStart && !normalizedAccessEnd) || (!normalizedAccessStart && normalizedAccessEnd)) {
+      setNotice({ kind: 'error', text: 'Access Start and Access End are both required when setting access time.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if ((normalizedAccessStart && !accessStartIso) || (normalizedAccessEnd && !accessEndIso)) {
+      setNotice({ kind: 'error', text: 'Invalid access date/time value.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if (accessStartIso && new Date(accessStartIso) < new Date()) {
+      setNotice({ kind: 'error', text: 'Access Start cannot be in the past.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if (accessStartIso && accessEndIso && new Date(accessEndIso) <= new Date(accessStartIso)) {
+      setNotice({ kind: 'error', text: 'Access End must be later than Access Start.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if (new Date(normalizedBirthdate) > new Date()) {
+      setNotice({ kind: 'error', text: 'Birthdate cannot be in the future.' });
+      submitLockRef.current = false;
+      return;
+    }
+
+    if (String(form.dateOfDiagnosis || '').trim() && new Date(form.dateOfDiagnosis) > new Date()) {
+      setNotice({ kind: 'error', text: 'Date of diagnosis cannot be in the future.' });
+      submitLockRef.current = false;
       return;
     }
 
     const uploadedPaths = [];
     let authAccountCreated = false;
+    let createdAuthUserId = null;
+    let createdPublicUserId = null;
+    let createdPatientId = null;
 
     try {
       setIsSaving(true);
@@ -919,26 +1156,50 @@ export default function ManagePatientsPage({ userProfile }) {
 
       const patientCode = await resolveUniquePatientCode(form.patientCode);
       const temporaryPassword = generateTemporaryPassword();
+      const {
+        data: { session: activeHospitalSession },
+      } = await supabase.auth.getSession();
 
-      const authUserId = await signupPatientAuthAccount({
-        email: normalizedEmail,
-        temporaryPassword,
-        patientCode,
-        firstName: normalizedFirstName,
-        lastName: normalizedLastName,
-      });
+      const { data: existingPublicUserByEmail, error: existingPublicUserError } = await supabase
+        .from(USERS_TABLE)
+        .select('user_id')
+        .eq('email', normalizedEmail)
+        .maybeSingle();
 
-      authAccountCreated = Boolean(authUserId);
+      if (existingPublicUserError && existingPublicUserError.code !== 'PGRST116') {
+        throw existingPublicUserError;
+      }
+
+      if (existingPublicUserByEmail?.user_id) {
+        throw new Error('Patient email already exists in users table. Use a different email.');
+      }
+
+      const { data: existingHospitalRow, error: existingHospitalError } = await supabase
+        .from(HOSPITALS_TABLE)
+        .select('Hospital_ID')
+        .eq('Hospital_ID', Number(hospitalId))
+        .maybeSingle();
+
+      if (existingHospitalError) {
+        throw new Error(existingHospitalError.message || 'Unable to verify hospital before patient insert.');
+      }
+
+      if (!existingHospitalRow?.Hospital_ID) {
+        throw new Error('Hospital_ID is not valid in Hospitals table. Patient row cannot be inserted.');
+      }
 
       const publicUserRow = await resolveOrCreatePublicUser({
         email: normalizedEmail,
-        authUserId,
+        authUserId: null,
+        accessStartIso,
+        accessEndIso,
       });
 
       const publicUserId = Number(publicUserRow?.user_id || 0);
       if (!publicUserId) {
         throw new Error('Unable to resolve newly created users record.');
       }
+      createdPublicUserId = publicUserId;
 
       const alreadyLinked = await isUserAlreadyLinkedAsPatient(publicUserId);
       if (alreadyLinked) {
@@ -977,33 +1238,102 @@ export default function ManagePatientsPage({ userProfile }) {
         Patient_Code: patientCode,
         Date_of_Diagnosis: String(form.dateOfDiagnosis || '').trim() || null,
         Guardian: String(form.guardian || '').trim() || null,
-        Guardian_Contact_Number: String(form.guardianContactNumber || '').trim() || null,
+        Guardian_Contact_Number: normalizedGuardianContactNumber || null,
         Guardian_Relationship: String(form.guardianRelationship || '').trim() || null,
         Medical_Condition: String(form.medicalCondition || '').trim() || null,
         Patient_Picture: patientPicturePath || null,
         Medical_Document: medicalDocumentPath || null,
       };
 
-      const { error: patientInsertError } = await supabase
+      const { data: insertedPatientRow, error: patientInsertError } = await supabase
         .from(PATIENTS_TABLE)
-        .insert(patientPayload);
+        .insert(patientPayload)
+        .select('Patient_ID')
+        .maybeSingle();
 
       if (patientInsertError) {
-        throw new Error(mapPatientInsertError(patientInsertError.message));
+        const mappedInsertError = mapPatientInsertError(
+          extractReadableErrorText(patientInsertError, 'Unable to save patient record.'),
+        );
+        throw new Error(`Patients insert failed: ${mappedInsertError}`);
+      }
+      createdPatientId = Number(insertedPatientRow?.Patient_ID || 0) || createdPatientId;
+
+      const authUserId = await sendPatientInviteEmail({
+        email: normalizedEmail,
+        temporaryPassword,
+        patientCode,
+        displayName: normalizedDisplayName,
+        accessStart: accessStartIso,
+        accessEnd: accessEndIso,
+      });
+      createdAuthUserId = authUserId;
+      authAccountCreated = Boolean(authUserId);
+
+      // Keep hospital user session stable after invite workflow.
+      if (activeHospitalSession?.access_token && activeHospitalSession?.refresh_token) {
+        const { error: restoreSessionError } = await supabase.auth.setSession({
+          access_token: activeHospitalSession.access_token,
+          refresh_token: activeHospitalSession.refresh_token,
+        });
+
+        if (restoreSessionError) {
+          throw new Error(restoreSessionError.message || 'Unable to restore hospital session after invite.');
+        }
+      }
+
+      const { error: linkAuthError } = await supabase
+        .from(USERS_TABLE)
+        .update({
+          auth_user_id: authUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', publicUserId);
+
+      if (linkAuthError) {
+        throw new Error(`Unable to link users.auth_user_id: ${extractReadableErrorText(linkAuthError, 'Unknown error')}`);
       }
 
       resetForm();
       setNotice({ kind: '', text: '' });
       setSuccessPopup({
         open: true,
-        text: 'Task done. Confirmation email was sent.',
+        text: 'Patient was added and login credentials submitted.',
       });
 
       await fetchPatients();
     } catch (error) {
       await cleanupUploadedAssets(uploadedPaths);
 
-      const message = String(error?.message || 'Unable to create patient account and record.');
+      if (createdPatientId) {
+        try {
+          await supabase.from(PATIENTS_TABLE).delete().eq('Patient_ID', createdPatientId);
+        } catch {
+          // Keep original error as primary response.
+        }
+      }
+
+      if (createdPublicUserId) {
+        try {
+          await supabase.from(USER_DETAILS_TABLE).delete().eq('user_id', createdPublicUserId);
+          await supabase.from(USERS_TABLE).delete().eq('user_id', createdPublicUserId);
+        } catch {
+          // Keep original error as primary response.
+        }
+      }
+
+      if (createdAuthUserId) {
+        try {
+          const adminInviteClient = createPatientInviteAdminClient();
+          if (adminInviteClient) {
+            await adminInviteClient.auth.admin.deleteUser(createdAuthUserId);
+          }
+        } catch {
+          // Keep original error as primary response.
+        }
+      }
+
+      const message = extractReadableErrorText(error, 'Unable to create patient account and record.');
       const fallback = mapPatientInsertError(message);
       const suffix = authAccountCreated
         ? ' Auth account may already exist for this email. Check users and auth records before retrying.'
@@ -1012,6 +1342,7 @@ export default function ManagePatientsPage({ userProfile }) {
       setNotice({ kind: 'error', text: `${fallback}${suffix}`.trim() });
     } finally {
       setIsSaving(false);
+      submitLockRef.current = false;
     }
   };
 
@@ -1026,7 +1357,7 @@ export default function ManagePatientsPage({ userProfile }) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Manage Patients</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Create patient account, user details, and patient record in one flow with confirm-signup email delivery.
+            Create patient account, user details, and patient record in one flow with invite email credential delivery.
           </p>
         </div>
 
@@ -1058,7 +1389,7 @@ export default function ManagePatientsPage({ userProfile }) {
               </span>
             ) : hospitalId ? (
               <span>
-                Hospital: <span className="font-semibold text-gray-800">{hospitalName || `Hospital #${hospitalId}`}</span> (ID: {hospitalId})
+                Hospital: <span className="font-semibold text-gray-800">{hospitalName || 'Assigned Hospital'}</span>
               </span>
             ) : (
               <span className="font-medium text-red-700">No hospital assignment found</span>
@@ -1167,7 +1498,7 @@ export default function ManagePatientsPage({ userProfile }) {
 
           <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
             <p className="text-xs font-semibold text-gray-800">Quick Guide</p>
-            <p className="mt-1 text-xs text-gray-600">1) Enter email and profile details. 2) Confirm PT code format (PT + 6 digits). 3) Submit to send confirm-signup email with PT code and temporary password.</p>
+            <p className="mt-1 text-xs text-gray-600">1) Enter email and profile details. 2) Set optional access window (start and end together). 3) Confirm PT code format (PT + 6 digits). 4) Submit to send invite email with PT code and temporary password.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4" style={{ '--tw-ring-color': theme.primaryColor }}>
@@ -1208,6 +1539,31 @@ export default function ManagePatientsPage({ userProfile }) {
                     </button>
                   </div>
                   <p className="mt-1 text-[11px] text-gray-500">Temporary password is generated automatically during save.</p>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Access Start (optional)</label>
+                  <input
+                    type="datetime-local"
+                    name="accessStart"
+                    value={form.accessStart}
+                    onChange={handleInputChange}
+                    min={nowLocalDateTimeValue}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Access End (optional)</label>
+                  <input
+                    type="datetime-local"
+                    name="accessEnd"
+                    value={form.accessEnd}
+                    onChange={handleInputChange}
+                    min={form.accessStart || nowLocalDateTimeValue}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500">Set both Access Start and Access End, or leave both empty.</p>
                 </div>
               </div>
             </div>
@@ -1268,6 +1624,7 @@ export default function ManagePatientsPage({ userProfile }) {
                     name="birthdate"
                     value={form.birthdate}
                     onChange={handleInputChange}
+                    max={todayDateValue}
                     required
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
                   />
@@ -1305,12 +1662,13 @@ export default function ManagePatientsPage({ userProfile }) {
                     value={form.dateOfDiagnosis}
                     onChange={handleInputChange}
                     type="date"
+                    max={todayDateValue}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Guardian</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Full Name of Guardian</label>
                   <input
                     name="guardian"
                     value={form.guardian}
@@ -1320,11 +1678,6 @@ export default function ManagePatientsPage({ userProfile }) {
                   />
                 </div>
 
-                <div className="flex items-end">
-                  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                    Hospital ID for save: <span className="font-semibold text-gray-800">{hospitalId || 'N/A'}</span>
-                  </div>
-                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1335,8 +1688,10 @@ export default function ManagePatientsPage({ userProfile }) {
                     value={form.guardianContactNumber}
                     onChange={handleInputChange}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
-                    placeholder="e.g., +63 912 345 6789"
+                    placeholder="+63 912 345 6789"
+                    maxLength={16}
                   />
+                  <p className="mt-1 text-[11px] text-gray-500">Numbers only. Format: +63 912 345 6789</p>
                 </div>
 
                 <div>
@@ -1353,11 +1708,10 @@ export default function ManagePatientsPage({ userProfile }) {
 
               <div className="mt-4">
                 <label className="mb-1 block text-sm font-medium text-gray-700">Medical Condition</label>
-                <textarea
+                <input
                   name="medicalCondition"
                   value={form.medicalCondition}
                   onChange={handleInputChange}
-                  rows={3}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:ring-2"
                   placeholder="Medical condition summary"
                 />
@@ -1466,7 +1820,7 @@ export default function ManagePatientsPage({ userProfile }) {
       </div>
 
       {successPopup.open && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 px-4 backdrop-blur-[1px]">
           <button
             type="button"
             aria-label="Close success popup"
