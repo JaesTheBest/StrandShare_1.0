@@ -95,8 +95,8 @@ export default function AuditTrailsPage() {
     });
   }, [logs, searchQuery]);
 
-  const todayPhtDateString = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
-  const eventsToday = filteredLogs.filter((row) => row.time.startsWith(todayPhtDateString)).length;
+  const todayPstDateString = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const eventsToday = filteredLogs.filter((row) => row.time.startsWith(todayPstDateString)).length;
   const failedActions = filteredLogs.filter((row) => String(row.status).toLowerCase() === 'failed').length;
   const uniqueUsers = new Set(filteredLogs.map((row) => row.userEmail)).size;
 

@@ -4,6 +4,8 @@ const HAIR_SUBMISSIONS_TABLE = 'Hair_Submissions';
 const HAIR_SUBMISSION_BUNDLES_TABLE = 'Hair_Submission_Bundles';
 const NOTIFICATIONS_TABLE = 'Notifications';
 const HAIR_BUNDLE_TRACKING_TABLE = 'Hair_Bundle_Tracking_History';
+const WIGS_TABLE = 'Wigs';
+const WIG_SPECIFICATIONS_TABLE = 'Wig_Specifications';
 
 export const HAIR_BUNDLE_STATUS = {
   DRAFT: 'Draft',
@@ -436,6 +438,8 @@ export async function completeWigBundle({
   hairColor = '',
   hairTexture = '',
   hairDensity = '',
+  hairStyle = '',
+  capSize = '',
   notes = '',
 }) {
   if (!isSupabaseConfigured || !supabase) {
@@ -468,16 +472,41 @@ export async function completeWigBundle({
   }
 
   const statusKey = String(bundle.Status || '').toLowerCase();
-  if (statusKey === HAIR_BUNDLE_STATUS.WIG_COMPLETED.toLowerCase() || bundle.Wig_Completed_At) {
-    return { data: { bundle, alreadyComplete: true }, error: null };
-  }
   if (statusKey === HAIR_BUNDLE_STATUS.DRAFT.toLowerCase()) {
     return { data: null, error: new Error('Bundle is still a Draft. Finalize it on the Bundling page first.') };
   }
 
+  const existingWigResult = await supabase
+    .from(WIGS_TABLE)
+    .select('Wig_ID, Bundle_ID, Wig_Name, Wig_Status, Completed_At')
+    .eq('Bundle_ID', bundleId)
+    .maybeSingle();
+
+  if (existingWigResult.error) {
+    return { data: null, error: existingWigResult.error };
+  }
+
+  const existingWig = existingWigResult.data || null;
+  if ((statusKey === HAIR_BUNDLE_STATUS.WIG_COMPLETED.toLowerCase() || bundle.Wig_Completed_At) && existingWig?.Wig_ID) {
+    const membersSnapshot = await supabase
+      .from(HAIR_SUBMISSIONS_TABLE)
+      .select('Submission_ID, User_ID, Submission_Code')
+      .eq('Bundle_ID', bundleId);
+
+    return {
+      data: {
+        bundle,
+        wig: existingWig,
+        members: membersSnapshot.error ? [] : (membersSnapshot.data || []),
+        alreadyComplete: true,
+      },
+      error: null,
+    };
+  }
+
   const membersResult = await supabase
     .from(HAIR_SUBMISSIONS_TABLE)
-    .select('Submission_ID, User_ID, Submission_Code')
+    .select('Submission_ID, User_ID, Submission_Code, Status')
     .eq('Bundle_ID', bundleId);
 
   if (membersResult.error) {
@@ -487,14 +516,60 @@ export async function completeWigBundle({
 
   const nowIso = new Date().toISOString();
 
+  const completedByNumeric = completedBy ? Number(completedBy) : null;
+
+  const wigUpsertResult = await supabase
+    .from(WIGS_TABLE)
+    .upsert({
+      Bundle_ID: bundleId,
+      Wig_Name: trimmedWigName,
+      Total_Donated_Hairs: members.length,
+      Total_Bundles_Used: 1,
+      Added_By: completedByNumeric,
+      Created_By: completedByNumeric,
+      Completed_At: nowIso,
+      Production_Notes: String(notes || '').trim() || null,
+      Wig_Status: 'Ready for Release',
+      Wig_Front_Image_Path: frontImagePath,
+      Wig_Side_Image_Path: sideImagePath,
+      Wig_Top_Image_Path: topImagePath,
+    }, {
+      onConflict: 'Bundle_ID',
+    })
+    .select('Wig_ID, Wig_Name, Bundle_ID, Total_Donated_Hairs, Completed_At, Wig_Status, Created_At')
+    .single();
+
+  if (wigUpsertResult.error) {
+    return { data: null, error: wigUpsertResult.error };
+  }
+
+  const wig = wigUpsertResult.data;
+
+  if (wig?.Wig_ID) {
+    const specUpsertResult = await supabase
+      .from(WIG_SPECIFICATIONS_TABLE)
+      .upsert({
+        Wig_ID: wig.Wig_ID,
+        Hair_Length: hairLength === '' || hairLength === null || hairLength === undefined ? null : Number(hairLength),
+        Hair_Color: String(hairColor || '').trim() || null,
+        Hair_Texture: String(hairTexture || '').trim() || null,
+        Hair_Density: String(hairDensity || '').trim() || null,
+        Style: String(hairStyle || '').trim() || null,
+        Cap_Size: String(capSize || '').trim() || null,
+      }, {
+        onConflict: 'Wig_ID',
+      });
+
+    if (specUpsertResult.error) {
+      return { data: null, error: specUpsertResult.error };
+    }
+  }
+
   const { error: bundleUpdateError } = await supabase
     .from(HAIR_SUBMISSION_BUNDLES_TABLE)
     .update({
       Status: HAIR_BUNDLE_STATUS.WIG_COMPLETED,
       Wig_Completed_At: nowIso,
-      Wig_Front_Image_Path: frontImagePath,
-      Wig_Side_Image_Path: sideImagePath,
-      Wig_Top_Image_Path: topImagePath,
     })
     .eq('Bundle_ID', bundleId);
 
@@ -502,52 +577,17 @@ export async function completeWigBundle({
     return { data: null, error: bundleUpdateError };
   }
 
-  const completedByNumeric = completedBy ? Number(completedBy) : null;
-
-  const wigInsertResult = await supabase
-    .from('Wigs')
-    .insert({
-      Bundle_ID: bundleId,
-      Wig_Name: trimmedWigName,
-      Hair_Length: hairLength === '' || hairLength === null || hairLength === undefined ? null : Number(hairLength),
-      Hair_Color: String(hairColor || '').trim() || null,
-      Hair_Texture: String(hairTexture || '').trim() || null,
-      Hair_Density: String(hairDensity || '').trim() || null,
-      Total_Donated_Hairs: members.length,
-      Total_Bundles_Used: 1,
-      Added_By: completedByNumeric,
-      Created_By: completedByNumeric,
-      Completed_At: nowIso,
-      Production_Notes: String(notes || '').trim() || null,
-      Wig_Status: 'Available',
-    })
-    .select('Wig_ID, Wig_Name, Bundle_ID, Total_Donated_Hairs, Completed_At, Wig_Status, Created_At')
-    .single();
-
-  if (wigInsertResult.error) {
-    return { data: null, error: wigInsertResult.error };
-  }
-
-  const wig = wigInsertResult.data;
-
-  if (wig?.Wig_ID) {
-    const wigCode = buildWigCode({ wigId: wig.Wig_ID, createdAt: wig.Created_At });
-    const { error: codeError } = await supabase
-      .from('Wigs')
-      .update({ Wig_Code: wigCode })
-      .eq('Wig_ID', wig.Wig_ID);
-    if (!codeError) {
-      wig.Wig_Code = wigCode;
-    }
-  }
-
   if (members.length) {
+    const membersToNotify = members.filter(
+      (row) => String(row.Status || '').toLowerCase() !== HAIR_SUBMISSION_STATUS.WIG_CREATED.toLowerCase(),
+    );
+
     await supabase
       .from(HAIR_SUBMISSIONS_TABLE)
       .update({ Status: HAIR_SUBMISSION_STATUS.WIG_CREATED, Updated_At: nowIso })
       .eq('Bundle_ID', bundleId);
 
-    await Promise.all(members.map(async (row) => {
+    await Promise.all(membersToNotify.map(async (row) => {
       const notification = buildStatusNotification({
         status: HAIR_SUBMISSION_STATUS.WIG_CREATED,
         submissionCode: row.Submission_Code,

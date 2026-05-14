@@ -7,8 +7,6 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
-  PackagePlus,
-  PenTool,
   RefreshCw,
   ScanLine,
   Trash2,
@@ -27,17 +25,19 @@ import {
 const HAIR_SUBMISSION_BUNDLES_TABLE = 'Hair_Submission_Bundles';
 const HAIR_SUBMISSIONS_TABLE = 'Hair_Submissions';
 const WIGS_TABLE = 'Wigs';
+const WIG_SPECIFICATIONS_TABLE = 'Wig_Specifications';
 const COMPLETED_WIGS_BUCKET = 'completed_wigs';
 const SCAN_DEBOUNCE_MS = 2500;
 
 const TABS = [
   { id: 'complete', label: 'Complete Wig from Bundle', icon: ScanLine },
-  { id: 'manual', label: 'Manual Stock Entry', icon: PenTool },
   { id: 'inventory', label: 'Inventory', icon: Boxes },
 ];
 
 const TEXTURE_OPTIONS = ['Straight', 'Wavy', 'Curly', 'Coily'];
 const COLOR_OPTIONS = ['Black', 'Dark Brown', 'Light Brown', 'Auburn', 'Blonde', 'Grey'];
+const CAP_SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL'];
+const WIG_STATUS_OPTIONS = ['In Production', 'Ready for Release', 'Releasing', 'Released'];
 
 function withColorAlpha(colorValue, alpha, fallback = '#0275d8') {
   const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
@@ -69,6 +69,36 @@ function formatDateTime(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
   return parsed.toLocaleString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function normalizeSpecValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeWigStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (!key) return 'In Production';
+  if (key === 'in production' || key === 'in_production') return 'In Production';
+  if (key === 'ready for release' || key === 'ready_for_release' || key === 'available') return 'Ready for Release';
+  if (key === 'releasing') return 'Releasing';
+  if (key === 'released') return 'Released';
+  return 'In Production';
+}
+
+function buildSpecSignature(row) {
+  const lengthValue = row?.Hair_Length === null || row?.Hair_Length === undefined ? '' : String(row.Hair_Length).trim();
+  return [
+    lengthValue,
+    normalizeSpecValue(row?.Hair_Color),
+    normalizeSpecValue(row?.Hair_Texture),
+    normalizeSpecValue(row?.Hair_Density),
+    normalizeSpecValue(row?.Style),
+    normalizeSpecValue(row?.Cap_Size),
+  ].join('|');
+}
+
+function isEmptySpecSignature(signature) {
+  return !String(signature || '').replace(/\|/g, '').trim();
 }
 
 const initialPhotoState = { file: null, previewUrl: '' };
@@ -112,6 +142,8 @@ export default function UploadWigStocksPage({ userProfile }) {
     hairColor: '',
     hairTexture: '',
     hairDensity: '',
+    hairStyle: '',
+    capSize: '',
     notes: '',
   });
   const [isCompletingWig, setIsCompletingWig] = useState(false);
@@ -119,8 +151,8 @@ export default function UploadWigStocksPage({ userProfile }) {
 
   // ----- Tab 3: Inventory -----
   const [inventory, setInventory] = useState([]);
-  const [photoUrlsByPath, setPhotoUrlsByPath] = useState({});
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+  const [updatingStatusByWigId, setUpdatingStatusByWigId] = useState({});
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -150,54 +182,90 @@ export default function UploadWigStocksPage({ userProfile }) {
     if (!isSupabaseConfigured || !supabase) return;
     setIsLoadingInventory(true);
     try {
-      const result = await supabase
+      const wigsResult = await supabase
         .from(WIGS_TABLE)
-        .select('Wig_ID, Wig_Code, Wig_Name, Bundle_ID, Hair_Length, Hair_Color, Hair_Texture, Hair_Density, Total_Donated_Hairs, Total_Bundles_Used, Wig_Status, Completed_At, Added_By, Production_Notes')
+        .select('Wig_ID, Wig_Name, Bundle_ID, Total_Donated_Hairs, Total_Bundles_Used, Wig_Status, Completed_At, Added_By, Production_Notes, Wig_Front_Image_Path, Wig_Side_Image_Path, Wig_Top_Image_Path')
         .order('Completed_At', { ascending: false, nullsFirst: false })
-        .limit(100);
-      if (result.error) throw result.error;
-      const rows = result.data || [];
-      setInventory(rows);
+        .limit(300);
+      if (wigsResult.error) throw wigsResult.error;
+      const wigRows = wigsResult.data || [];
 
-      const bundleIds = Array.from(new Set(rows.map((r) => r.Bundle_ID).filter(Boolean)));
-      if (bundleIds.length) {
-        const photosResult = await supabase
-          .from(HAIR_SUBMISSION_BUNDLES_TABLE)
-          .select('Bundle_ID, Wig_Front_Image_Path, Wig_Side_Image_Path, Wig_Top_Image_Path')
-          .in('Bundle_ID', bundleIds);
-        if (!photosResult.error) {
-          const newUrls = {};
-          await Promise.all((photosResult.data || []).flatMap((row) => {
-            const paths = [row.Wig_Front_Image_Path, row.Wig_Side_Image_Path, row.Wig_Top_Image_Path].filter(Boolean);
-            return paths.map(async (path) => {
-              if (photoUrlsByPath[path]) return;
-              try {
-                const { data } = supabase.storage.from(COMPLETED_WIGS_BUCKET).getPublicUrl(path);
-                if (data?.publicUrl) newUrls[path] = data.publicUrl;
-              } catch {
-                // ignore
-              }
-            });
-          }));
-          if (Object.keys(newUrls).length) {
-            setPhotoUrlsByPath((prev) => ({ ...prev, ...newUrls }));
-          }
-        }
+      const wigIds = Array.from(new Set(wigRows.map((row) => Number(row.Wig_ID || 0)).filter(Boolean)));
+      const specsByWigId = new Map();
+      if (wigIds.length) {
+        const specsResult = await supabase
+          .from(WIG_SPECIFICATIONS_TABLE)
+          .select('Wig_ID, Hair_Length, Hair_Color, Hair_Texture, Hair_Density, Style, Cap_Size')
+          .in('Wig_ID', wigIds);
+        if (specsResult.error) throw specsResult.error;
+        (specsResult.data || []).forEach((row) => {
+          specsByWigId.set(Number(row.Wig_ID), row);
+        });
       }
+
+      const stockCountBySignature = new Map();
+      const withSpecs = wigRows.map((row) => {
+        const normalizedStatus = normalizeWigStatus(row.Wig_Status);
+        const spec = specsByWigId.get(Number(row.Wig_ID)) || {};
+        const merged = {
+          ...row,
+          Wig_Status: normalizedStatus,
+          Hair_Length: spec.Hair_Length ?? null,
+          Hair_Color: spec.Hair_Color ?? null,
+          Hair_Texture: spec.Hair_Texture ?? null,
+          Hair_Density: spec.Hair_Density ?? null,
+          Style: spec.Style ?? null,
+          Cap_Size: spec.Cap_Size ?? null,
+        };
+        const signature = buildSpecSignature(merged);
+        if (!isEmptySpecSignature(signature) && normalizedStatus !== 'Released') {
+          stockCountBySignature.set(signature, (stockCountBySignature.get(signature) || 0) + 1);
+        }
+        return merged;
+      }).map((row) => {
+        const signature = buildSpecSignature(row);
+        const frontPhotoUrl = row.Wig_Front_Image_Path ? supabase.storage.from(COMPLETED_WIGS_BUCKET).getPublicUrl(row.Wig_Front_Image_Path).data?.publicUrl : '';
+        const sidePhotoUrl = row.Wig_Side_Image_Path ? supabase.storage.from(COMPLETED_WIGS_BUCKET).getPublicUrl(row.Wig_Side_Image_Path).data?.publicUrl : '';
+        const topPhotoUrl = row.Wig_Top_Image_Path ? supabase.storage.from(COMPLETED_WIGS_BUCKET).getPublicUrl(row.Wig_Top_Image_Path).data?.publicUrl : '';
+        return {
+          ...row,
+          Stock_Count: isEmptySpecSignature(signature) ? 0 : (stockCountBySignature.get(signature) || 0),
+          frontPhotoUrl,
+          sidePhotoUrl,
+          topPhotoUrl,
+        };
+      });
+
+      setInventory(withSpecs);
     } catch (error) {
       setNotice({ kind: 'error', text: error?.message || 'Unable to load wig inventory.' });
     } finally {
       setIsLoadingInventory(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     void loadPendingBundles();
     void loadInventory();
     return () => stopCamera();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadInventory, loadPendingBundles, stopCamera]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return undefined;
+    const channel = supabase
+      .channel('qa-wig-stocks-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: WIGS_TABLE }, () => {
+        void loadInventory();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: WIG_SPECIFICATIONS_TABLE }, () => {
+        void loadInventory();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadInventory]);
 
   // ----- Scanner -----
   const loadBundleMembers = useCallback(async (bundleId) => {
@@ -255,8 +323,16 @@ export default function UploadWigStocksPage({ userProfile }) {
 
       const statusKey = String(bundle.Status || '').toLowerCase();
       if (statusKey === HAIR_BUNDLE_STATUS.WIG_COMPLETED.toLowerCase()) {
-        setCameraStatus({ tone: 'info', message: `Bundle ${bundle.Submission_Code} is already Wig Completed. No action available.` });
-        return;
+        const existingWigResult = await supabase
+          .from(WIGS_TABLE)
+          .select('Wig_ID')
+          .eq('Bundle_ID', bundle.Bundle_ID)
+          .maybeSingle();
+        if (existingWigResult.error) throw existingWigResult.error;
+        if (existingWigResult.data?.Wig_ID) {
+          setCameraStatus({ tone: 'info', message: `Bundle ${bundle.Submission_Code} is already Wig Completed. No action available.` });
+          return;
+        }
       }
       if (statusKey === HAIR_BUNDLE_STATUS.DRAFT.toLowerCase()) {
         setCameraStatus({ tone: 'warning', message: `Bundle ${bundle.Submission_Code} is still a Draft. Finalize it on Bundling first.` });
@@ -375,7 +451,7 @@ export default function UploadWigStocksPage({ userProfile }) {
     handleRemovePhoto('front');
     handleRemovePhoto('side');
     handleRemovePhoto('top');
-    setWigForm({ wigName: '', hairLength: '', hairColor: '', hairTexture: '', hairDensity: '', notes: '' });
+    setWigForm({ wigName: '', hairLength: '', hairColor: '', hairTexture: '', hairDensity: '', hairStyle: '', capSize: '', notes: '' });
   };
 
   const allPhotosUploaded = Boolean(photoFront.file && photoSide.file && photoTop.file);
@@ -427,6 +503,8 @@ export default function UploadWigStocksPage({ userProfile }) {
         hairColor: wigForm.hairColor,
         hairTexture: wigForm.hairTexture,
         hairDensity: wigForm.hairDensity,
+        hairStyle: wigForm.hairStyle,
+        capSize: wigForm.capSize,
         notes: wigForm.notes,
       });
 
@@ -454,6 +532,45 @@ export default function UploadWigStocksPage({ userProfile }) {
       setNotice({ kind: 'error', text: error?.message || 'Unable to complete wig.' });
     } finally {
       setIsCompletingWig(false);
+    }
+  };
+
+  const handleUpdateWigStatus = async (wigId, nextStatus) => {
+    const numericWigId = Number(wigId || 0);
+    if (!numericWigId || !nextStatus) return;
+    setUpdatingStatusByWigId((prev) => ({ ...prev, [numericWigId]: true }));
+    try {
+      const { error } = await supabase
+        .from(WIGS_TABLE)
+        .update({ Wig_Status: normalizeWigStatus(nextStatus) })
+        .eq('Wig_ID', numericWigId);
+      if (error) throw error;
+
+      setInventory((prevRows) => {
+        const updatedRows = prevRows.map((row) => (
+          Number(row.Wig_ID) === numericWigId
+            ? { ...row, Wig_Status: normalizeWigStatus(nextStatus) }
+            : row
+        ));
+        const stockCountBySignature = new Map();
+        updatedRows.forEach((row) => {
+          const signature = buildSpecSignature(row);
+          if (!isEmptySpecSignature(signature) && normalizeWigStatus(row.Wig_Status) !== 'Released') {
+            stockCountBySignature.set(signature, (stockCountBySignature.get(signature) || 0) + 1);
+          }
+        });
+        return updatedRows.map((row) => {
+          const signature = buildSpecSignature(row);
+          return {
+            ...row,
+            Stock_Count: isEmptySpecSignature(signature) ? 0 : (stockCountBySignature.get(signature) || 0),
+          };
+        });
+      });
+    } catch (error) {
+      setNotice({ kind: 'error', text: error?.message || 'Unable to update wig status.' });
+    } finally {
+      setUpdatingStatusByWigId((prev) => ({ ...prev, [numericWigId]: false }));
     }
   };
 
@@ -510,7 +627,7 @@ export default function UploadWigStocksPage({ userProfile }) {
         <div>
           <h1 className="text-3xl font-bold mb-2" style={headingStyle}>Upload Wig Stocks</h1>
           <p style={{ color: secondaryTextColor }}>
-            Scan a wig bundle waybill to register the completed wig in inventory, or add a manual stock entry.
+            Scan a wig bundle waybill to register completed wigs and manage live stock availability by specification.
           </p>
         </div>
         <button
@@ -747,6 +864,28 @@ export default function UploadWigStocksPage({ userProfile }) {
                         style={inputStyle}
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={labelStyle}>Style</label>
+                      <input
+                        value={wigForm.hairStyle}
+                        onChange={(e) => setWigForm((p) => ({ ...p, hairStyle: e.target.value }))}
+                        placeholder="e.g. Layered Bob / Straight Cut"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={labelStyle}>Cap Size</label>
+                      <select
+                        value={wigForm.capSize}
+                        onChange={(e) => setWigForm((p) => ({ ...p, capSize: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none"
+                        style={inputStyle}
+                      >
+                        <option value="">Select cap size</option>
+                        {CAP_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
+                      </select>
+                    </div>
                   </div>
 
                   <div>
@@ -782,22 +921,6 @@ export default function UploadWigStocksPage({ userProfile }) {
         </div>
       ) : null}
 
-      {activeTab === 'manual' ? (
-        <section className="rounded-2xl border bg-white p-5" style={{ borderColor: '#e2e8f0' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <PenTool size={18} style={{ color: primaryColor }} />
-            <h2 className="text-lg font-semibold" style={headingStyle}>Manual Stock Entry</h2>
-          </div>
-          <p className="text-sm" style={{ color: secondaryTextColor }}>
-            Add finished wigs that did not come from a bundle workflow (e.g., donated finished wigs, partner-supplied wigs). Persistence for this form will be wired in a follow-up - for now it is a scaffold.
-          </p>
-          <div className="mt-4 rounded-lg border border-dashed p-6 text-center text-sm" style={{ borderColor: '#cbd5e1', color: tertiaryTextColor }}>
-            <PackagePlus className="mx-auto mb-2 opacity-60" size={32} />
-            Manual stock entry form (coming in a later iteration).
-          </div>
-        </section>
-      ) : null}
-
       {activeTab === 'inventory' ? (
         <section className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: '#e2e8f0' }}>
           <div className="border-b px-4 py-3 flex items-center justify-between" style={{ borderColor: '#e2e8f0' }}>
@@ -817,7 +940,7 @@ export default function UploadWigStocksPage({ userProfile }) {
 
           {!inventory.length && !isLoadingInventory ? (
             <div className="px-4 py-10 text-center text-sm" style={{ color: secondaryTextColor }}>
-              No completed wigs in inventory yet.
+              No wigs in inventory yet.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -825,11 +948,15 @@ export default function UploadWigStocksPage({ userProfile }) {
                 <thead style={{ backgroundColor: withColorAlpha(primaryColor, 0.08) }}>
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Wig</th>
-                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Code</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Photos</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Bundle</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Length</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Color</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Texture</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Density</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Style</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Cap Size</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Stock</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Donors</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Status</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Completed</th>
@@ -842,18 +969,50 @@ export default function UploadWigStocksPage({ userProfile }) {
                         <p className="font-semibold">{row.Wig_Name || `Wig #${row.Wig_ID}`}</p>
                         {row.Production_Notes ? <p className="text-xs mt-0.5" style={{ color: tertiaryTextColor }}>{row.Production_Notes}</p> : null}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs" style={{ color: secondaryTextColor }}>{row.Wig_Code || '-'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {[row.frontPhotoUrl, row.sidePhotoUrl, row.topPhotoUrl].map((url, index) => (
+                            <div
+                              key={`${row.Wig_ID}-photo-${index}`}
+                              className="h-9 w-9 overflow-hidden rounded-md border bg-slate-100 flex items-center justify-center"
+                              style={{ borderColor: '#e2e8f0' }}
+                            >
+                              {url ? (
+                                <img src={url} alt={`Wig ${row.Wig_ID} view ${index + 1}`} className="h-full w-full object-cover" />
+                              ) : (
+                                <ImageIcon size={12} style={{ color: tertiaryTextColor }} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs" style={{ color: secondaryTextColor }}>
                         {row.Bundle_ID ? `Bundle #${row.Bundle_ID}` : 'Manual'}
                       </td>
                       <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Hair_Length ? `${row.Hair_Length} in` : '-'}</td>
                       <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Hair_Color || '-'}</td>
                       <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Hair_Texture || '-'}</td>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Hair_Density || '-'}</td>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Style || '-'}</td>
+                      <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Cap_Size || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full border px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: withColorAlpha(primaryColor, 0.1), borderColor: withColorAlpha(primaryColor, 0.35), color: primaryColor }}>
+                          {row.Stock_Count || 0}
+                        </span>
+                      </td>
                       <td className="px-4 py-3" style={{ color: secondaryTextColor }}>{row.Total_Donated_Hairs || '-'}</td>
                       <td className="px-4 py-3">
-                        <span className="rounded-full border px-2.5 py-0.5 text-xs font-semibold" style={{ backgroundColor: withColorAlpha(tertiaryColor, 0.14), color: tertiaryColor, borderColor: withColorAlpha(tertiaryColor, 0.4) }}>
-                          {row.Wig_Status || 'Available'}
-                        </span>
+                        <select
+                          value={normalizeWigStatus(row.Wig_Status)}
+                          onChange={(event) => { void handleUpdateWigStatus(row.Wig_ID, event.target.value); }}
+                          disabled={Boolean(updatingStatusByWigId[row.Wig_ID])}
+                          className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold focus:outline-none"
+                          style={inputStyle}
+                        >
+                          {WIG_STATUS_OPTIONS.map((statusOption) => (
+                            <option key={statusOption} value={statusOption}>{statusOption}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-4 py-3" style={{ color: tertiaryTextColor }}>{formatDateTime(row.Completed_At)}</td>
                     </tr>

@@ -33,8 +33,8 @@ const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const HOSPITALS_TABLE = 'Hospitals';
 const PATIENT_ASSETS_BUCKET = 'patient_assets';
 const PH_MOBILE_REGEX = /^\+63 9\d{2} \d{3} \d{4}$/;
-const PHT_TIMEZONE = 'Asia/Manila';
-const PHT_OFFSET = '+08:00';
+const PST_TIMEZONE = 'Asia/Manila';
+const PST_OFFSET = '+08:00';
 let patientInviteAdminClient = null;
 
 const EMPTY_FORM = {
@@ -145,13 +145,13 @@ function formatDateTime(value) {
   if (Number.isNaN(parsed.getTime())) return 'N/A';
 
   return `${parsed.toLocaleString('en-PH', {
-    timeZone: PHT_TIMEZONE,
+    timeZone: PST_TIMEZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  })} PHT`;
+  })} PST`;
 }
 
 function computeAgeFromBirthdate(birthdateValue) {
@@ -280,7 +280,7 @@ function formatDateForInput(value) {
   if (Number.isNaN(parsed.getTime())) return '';
 
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PHT_TIMEZONE,
+    timeZone: PST_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -303,7 +303,7 @@ function phtDateTimeLocalToDate(value) {
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
   if (match) {
     const seconds = match[7] || '00';
-    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}${PHT_OFFSET}`);
+    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}${PST_OFFSET}`);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
   }
@@ -783,7 +783,7 @@ export default function ManagePatientsPage({ userProfile }) {
       const accessStartDate = phtDateTimeLocalToDate(accessStart);
       const accessEndDate = phtDateTimeLocalToDate(accessEnd);
       if (accessStartDate && accessStartDate.getTime() < Date.now()) {
-        return 'Access Start cannot be in the past (Philippine Time).';
+        return 'Access Start cannot be in the past (PST).';
       }
       if (accessStartDate && accessEndDate && accessEndDate.getTime() <= accessStartDate.getTime()) {
         return 'Access End must be later than Access Start.';
@@ -1265,7 +1265,7 @@ export default function ManagePatientsPage({ userProfile }) {
     }
 
     if (accessStartIso && new Date(accessStartIso) < new Date()) {
-      setNotice({ kind: 'error', text: 'Access Start cannot be in the past (Philippine Time).' });
+      setNotice({ kind: 'error', text: 'Access Start cannot be in the past (PST).' });
       submitLockRef.current = false;
       return;
     }
@@ -1578,7 +1578,7 @@ export default function ManagePatientsPage({ userProfile }) {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Patient Directory</h2>
-                <p className="mt-1 text-xs text-gray-500">Click a row to view the full patient profile. All times shown in Philippine Time (PHT).</p>
+                <p className="mt-1 text-xs text-gray-500">Click a row to view the full patient profile. All times shown in Philippine Standard Time (PST).</p>
               </div>
               <div className="flex items-center gap-2">
                 <p className="text-xs text-gray-500">Showing {filteredPatients.length} of {enrichedPatients.length}</p>
