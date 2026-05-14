@@ -36,6 +36,11 @@ export const HAIR_SUBMISSION_STATUS_ORDER = [
   HAIR_SUBMISSION_STATUS.WIG_CREATED,
 ];
 
+function isBundleCompletedStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+  return normalized === 'wig completed';
+}
+
 export function buildSubmissionCode({ submissionId, createdAt = new Date() }) {
   const id = Number(submissionId || 0);
   if (!id) return '';
@@ -487,7 +492,7 @@ export async function completeWigBundle({
   }
 
   const existingWig = existingWigResult.data || null;
-  if ((statusKey === HAIR_BUNDLE_STATUS.WIG_COMPLETED.toLowerCase() || bundle.Wig_Completed_At) && existingWig?.Wig_ID) {
+  if ((isBundleCompletedStatus(statusKey) || bundle.Wig_Completed_At) && existingWig?.Wig_ID) {
     const membersSnapshot = await supabase
       .from(HAIR_SUBMISSIONS_TABLE)
       .select('Submission_ID, User_ID, Submission_Code')

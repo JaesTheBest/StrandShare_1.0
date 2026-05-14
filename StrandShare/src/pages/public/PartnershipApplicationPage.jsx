@@ -289,7 +289,7 @@ function getPhilippineTimestamp(date = new Date()) {
     return acc;
   }, {});
 
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}+08:00`;
 }
 
 function toCoordinateOrNull(value = '') {

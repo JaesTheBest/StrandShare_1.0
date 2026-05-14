@@ -85,6 +85,11 @@ function normalizeWigStatus(value) {
   return 'In Production';
 }
 
+function isBundleCompletedStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+  return normalized === 'wig completed';
+}
+
 function buildSpecSignature(row) {
   const lengthValue = row?.Hair_Length === null || row?.Hair_Length === undefined ? '' : String(row.Hair_Length).trim();
   return [
@@ -322,17 +327,9 @@ export default function UploadWigStocksPage({ userProfile }) {
       }
 
       const statusKey = String(bundle.Status || '').toLowerCase();
-      if (statusKey === HAIR_BUNDLE_STATUS.WIG_COMPLETED.toLowerCase()) {
-        const existingWigResult = await supabase
-          .from(WIGS_TABLE)
-          .select('Wig_ID')
-          .eq('Bundle_ID', bundle.Bundle_ID)
-          .maybeSingle();
-        if (existingWigResult.error) throw existingWigResult.error;
-        if (existingWigResult.data?.Wig_ID) {
-          setCameraStatus({ tone: 'info', message: `Bundle ${bundle.Submission_Code} is already Wig Completed. No action available.` });
-          return;
-        }
+      if (isBundleCompletedStatus(statusKey)) {
+        setCameraStatus({ tone: 'info', message: `Bundle ${bundle.Submission_Code} is already Wig Completed. No action available.` });
+        return;
       }
       if (statusKey === HAIR_BUNDLE_STATUS.DRAFT.toLowerCase()) {
         setCameraStatus({ tone: 'warning', message: `Bundle ${bundle.Submission_Code} is still a Draft. Finalize it on Bundling first.` });

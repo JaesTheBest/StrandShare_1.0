@@ -61,7 +61,7 @@ function toIsoOrNull(value = '') {
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
   if (match) {
     const seconds = match[7] || '00';
-    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}`;
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`;
   }
 
   return null;
@@ -101,7 +101,7 @@ function getPhilippineTimestamp(date = new Date()) {
     return acc;
   }, {});
 
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}+08:00`;
 }
 
 function toDateTimeLocalValue(value = '') {
@@ -827,7 +827,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       const accessStartDate = parsePhilippineTimestamp(accessStartIso);
       const nowDate = parsePhilippineTimestamp(getPhilippineTimestamp());
       if (accessStartDate && nowDate && accessStartDate < nowDate) {
-        setNotice({ type: 'error', message: 'Access start cannot be in the past (Philippine time).' });
+        setNotice({ type: 'error', message: 'Access start cannot be in the past (PST).' });
         return;
       }
     }

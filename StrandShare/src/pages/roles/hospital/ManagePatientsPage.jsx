@@ -313,8 +313,53 @@ function phtDateTimeLocalToDate(value) {
 }
 
 function toIsoOrNull(value) {
-  const parsed = phtDateTimeLocalToDate(value);
-  return parsed ? parsed.toISOString() : null;
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`;
+  }
+
+  const parsed = phtDateTimeLocalToDate(raw);
+  if (!parsed) return null;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(parsed).map((part) => [part.type, part.value]),
+  );
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}+08:00`;
+}
+
+function getPstTimestamp(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}+08:00`;
 }
 
 function buildDisplayName({ firstName, middleName, lastName, suffix }) {
@@ -1113,7 +1158,7 @@ export default function ManagePatientsPage({ userProfile }) {
     birthdate,
     gender,
   }) => {
-    const joinedDateValue = new Date().toISOString().slice(0, 10);
+    const joinedDateValue = getPstTimestamp().slice(0, 10);
     const payload = {
       first_name: firstName,
       middle_name: middleName || null,
@@ -1121,7 +1166,7 @@ export default function ManagePatientsPage({ userProfile }) {
       suffix: suffix || null,
       birthdate,
       gender,
-      updated_at: new Date().toISOString(),
+      updated_at: getPstTimestamp(),
     };
 
     const { data: existingDetailsRows, error: findError } = await supabase
@@ -1264,7 +1309,7 @@ export default function ManagePatientsPage({ userProfile }) {
       return;
     }
 
-    if (accessStartIso && new Date(accessStartIso) < new Date()) {
+    if (accessStartIso && new Date(accessStartIso) < new Date(getPstTimestamp())) {
       setNotice({ kind: 'error', text: 'Access Start cannot be in the past (PST).' });
       submitLockRef.current = false;
       return;
@@ -1430,7 +1475,7 @@ export default function ManagePatientsPage({ userProfile }) {
         .from(USERS_TABLE)
         .update({
           auth_user_id: authUserId,
-          updated_at: new Date().toISOString(),
+          updated_at: getPstTimestamp(),
         })
         .eq('user_id', publicUserId);
 
