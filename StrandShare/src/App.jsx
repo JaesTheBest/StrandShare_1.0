@@ -8,7 +8,7 @@ import ConfirmationCompletePage from './pages/shared/auth/ConfirmationCompletePa
 import SuperAdminRole from './pages/roles/super-admin/SuperAdminRole';
 import HospitalRole from './pages/roles/hospital/HospitalRole';
 import OrganizationRole from './pages/roles/organization/OrganizationRole';
-import OrganizationApplicationPage from './pages/roles/organization/OrganizationApplicationPage';
+import PartnershipApplicationPage from './pages/public/PartnershipApplicationPage';
 import StaffRole from './pages/roles/staff/StaffRole';
 import QAStylistRole from './pages/roles/qa-stylist/QAStylistRole';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
@@ -303,13 +303,14 @@ export default function App() {
   const ActiveDashboard = resolveDashboardByRole(activeRole);
   const currentPath = window.location.pathname;
   const isLandingRoute = currentPath === '/';
-  const isOrganizationApplicationRoute = currentPath === '/apply-organization';
+  const isPartnershipApplicationRoute =
+    currentPath === '/apply-partnership' || currentPath === '/apply-organization';
   const isCompleteAccountRoute = currentPath === '/complete-account';
   const isResetPasswordRoute = currentPath === '/reset-password';
   const isConfirmationCompleteRoute = currentPath === '/confirmation-complete';
   const showLandingPage = !isLoadingAuth && !session && isLandingRoute;
-  const showOrganizationApplicationPage = !isLoadingAuth && !session && isOrganizationApplicationRoute;
-  const showLoginPage = !isLoadingAuth && !session && !isLandingRoute && !isOrganizationApplicationRoute;
+  const showPartnershipApplicationPage = !isLoadingAuth && !session && isPartnershipApplicationRoute;
+  const showLoginPage = !isLoadingAuth && !session && !isLandingRoute && !isPartnershipApplicationRoute;
   const showDashboard = !isLoadingAuth && Boolean(session) && Boolean(activeRole);
   const showHydratingScreen =
     !isLoadingAuth && Boolean(session) && !showDashboard && isHydratingProfile;
@@ -325,8 +326,8 @@ export default function App() {
           <LandingPage />
         )}
 
-        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showOrganizationApplicationPage && (
-          <OrganizationApplicationPage />
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showPartnershipApplicationPage && (
+          <PartnershipApplicationPage />
         )}
 
         {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showLoginPage && (

@@ -3,8 +3,9 @@ import { useTheme } from '../context/ThemeContext';
 import { Search, Bell, MessageSquare, LogOut, ChevronDown, Settings } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
-const DEFAULT_PROFILE_AVATAR =
-  'https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=400&q=80';
+const DEFAULT_PROFILE_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='64' fill='#f1f5f9'/><circle cx='64' cy='46' r='20' fill='#374151'/><path d='M18 116c4-22 21-35 46-35s42 13 46 35' fill='#374151'/></svg>",
+)}`;
 
 function isAbsoluteUrl(value) {
   return /^https?:\/\//i.test(String(value || ''));

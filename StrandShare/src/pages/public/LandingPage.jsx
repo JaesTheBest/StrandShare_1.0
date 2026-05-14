@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Mail, MapPin, Phone } from 'lucide-react';
-import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
+import { ArrowRight, Building2, HeartPulse, Mail, MapPin, Phone } from 'lucide-react';
+import { motion, useAnimation, useScroll, useSpring, useTransform } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
-import TransitionDoors from '../../components/transitions/TransitionDoors';
 import { TransitionFlipExit } from '../../components/transitions/TransitionFlip';
 import './landing-scroll.css';
 
@@ -10,17 +9,17 @@ import './landing-scroll.css';
 const aboutHighlights = [
   {
     title: 'Who We Are',
-    body: 'A care-focused platform connecting hospitals, support organizations, and volunteers around dignified wig support for people experiencing hair loss.',
+    body: 'A care-focused platform that brings hospitals, support organizations, and volunteers together around dignified wig support for people experiencing hair loss.',
     icon: '✦',
   },
   {
     title: 'What We Do',
-    body: 'We streamline requests, referrals, approvals, and program coordination so teams spend less time on paperwork and more time helping people.',
+    body: 'We streamline requests, referrals, approvals, and program coordination so partner organizations and hospitals spend less time on paperwork and more time helping people.',
     icon: '⊕',
   },
   {
     title: 'Why It Matters',
-    body: 'Each successful handoff restores confidence. StrandShare creates accountable workflows that help communities sustain long-term care and impact.',
+    body: 'Each successful handoff restores confidence. StrandShare creates accountable workflows that help communities sustain long-term care and real impact.',
     icon: '◈',
   },
 ];
@@ -28,7 +27,7 @@ const aboutHighlights = [
 const impactAreas = [
   {
     title: 'Healthcare Coordination',
-    body: 'Hospitals and care teams can coordinate patient referrals and track release workflows with clarity and accountability.',
+    body: 'Partnered hospitals and care teams can coordinate patient referrals and track release workflows with clarity and accountability.',
   },
   {
     title: 'Organization Enablement',
@@ -40,27 +39,63 @@ const impactAreas = [
   },
 ];
 
-const journeySteps = [
-  { num: 'I',   title: 'Apply As Organization', detail: 'Submit organization details and your representative account.' },
-  { num: 'II',  title: 'Confirm Email',          detail: 'Secure ownership by completing email confirmation.' },
-  { num: 'III', title: 'Admin Verification',     detail: 'Super Admin reviews the profile and supporting details.' },
-  { num: 'IV',  title: 'Activation',             detail: 'Approved organizations gain full access and receive a notification email.' },
+const partnerTracks = [
+  {
+    id: 'organization',
+    eyebrow: 'Track 01',
+    title: 'Partner Organization',
+    icon: 'building',
+    body: 'For NGOs, foundations, support groups, and community partners that run donation drives and outreach for people experiencing hair loss.',
+    points: [
+      'Run and document donation events',
+      'Manage your organization members and roles',
+      'Issue certificates and track contribution history',
+    ],
+  },
+  {
+    id: 'hospital',
+    eyebrow: 'Track 02',
+    title: 'Partnered Hospital',
+    icon: 'hospital',
+    body: 'For hospitals and care centers that refer patients, request wigs on their behalf, and coordinate releases with the StrandShare network.',
+    points: [
+      'Refer and manage patient records',
+      'Request wigs and track release approvals',
+      'Generate hospital reports for your team',
+    ],
+  },
 ];
 
-const orgRequirements = [
-  'Organization Name and Type',
-  'Primary Contact Number',
-  'Complete Address (Street, Barangay, City, Province, Region)',
-  'Representative First and Last Name',
-  'Representative Email for Account Confirmation',
-  'Optional Logo URL',
+const journeySteps = [
+  { num: 'I',   title: 'Choose Your Track',     detail: 'Apply as a Partner Organization or as a Partnered Hospital — one form, two tracks.' },
+  { num: 'II',  title: 'Confirm Email',         detail: 'Verify the representative email with a one-time code to secure ownership.' },
+  { num: 'III', title: 'Admin Verification',    detail: 'Super Admin reviews your profile, address, and supporting details.' },
+  { num: 'IV',  title: 'Activation',            detail: 'Approved partners gain full access and receive a confirmation email to log in.' },
+];
+
+const applicationChecklist = [
+  { group: 'For Both Tracks', items: [
+    'Primary Contact Number',
+    'Complete Address (Street, Barangay, City, Province, Region)',
+    'Representative First and Last Name',
+    'Representative Email for Account Confirmation',
+  ]},
+  { group: 'Organization Track', items: [
+    'Organization Name and Organization Type',
+    'Optional Organization Logo',
+  ]},
+  { group: 'Hospital Track', items: [
+    'Hospital Name and Facility Details',
+    'Optional Hospital Logo',
+  ]},
 ];
 
 const faqs = [
-  { q: 'Do organizations need admin approval?',         a: 'Yes. Organizations must confirm email first, then wait for Super Admin approval before account access is activated.' },
-  { q: 'Can I log in immediately after email confirmation?', a: 'No. Login is blocked until your organization application is approved by Super Admin.' },
-  { q: 'Who becomes the organization representative?',  a: 'The applicant account is set as the organization leader / representative once approved.' },
-  { q: 'Will I get notified when approved?',            a: 'Yes. The system sends an email notification after Super Admin approval.' },
+  { q: 'Who can apply for partnership?',           a: 'StrandShare currently accepts two partner types: support Organizations (NGOs, foundations, community groups) and Partnered Hospitals. You will pick your track inside the application form.' },
+  { q: 'Do partners need admin approval?',         a: 'Yes. Every applicant must confirm email first, then wait for Super Admin approval before account access is activated.' },
+  { q: 'Can I log in immediately after email confirmation?', a: 'No. Login is blocked until your partnership application is approved by Super Admin.' },
+  { q: 'Who becomes the account representative?',  a: 'The applicant account is set as the organization or hospital representative once the partnership is approved.' },
+  { q: 'Will I get notified when approved?',       a: 'Yes. The system sends an email notification after Super Admin approval, so you know exactly when to log in.' },
 ];
 
 const marqueeItems = [
@@ -245,19 +280,49 @@ export default function LandingPage() {
   /* transitions */
   const [exitTransition, setExitTransition] = useState(null); // 'login' | 'apply' | null
   const pendingPathRef = useRef(null);
+  const fadeControls = useAnimation();
+
+  /* re-entry from login (back-to-landing) starts faded/zoomed */
+  const incomingTransition = useMemo(() => {
+    try {
+      return typeof window !== 'undefined'
+        ? sessionStorage.getItem('strandshare:incoming-transition') || ''
+        : '';
+    } catch { return ''; }
+  }, []);
+  const isReturningFromLogin = incomingTransition === 'back-from-login';
+
+  useEffect(() => {
+    if (isReturningFromLogin) {
+      try { sessionStorage.removeItem('strandshare:incoming-transition'); } catch { /* ignore */ }
+      fadeControls.start({
+        opacity: 1,
+        scale: 1,
+        transition: { duration: 0.5, ease: [0.22, 0.61, 0.36, 1] },
+      });
+    }
+  }, [isReturningFromLogin, fadeControls]);
 
   const handleNavigate = useCallback((path) => {
     if (exitTransition) return;
     if (path === '/login') {
       pendingPathRef.current = path;
       setExitTransition('login');
-    } else if (path === '/apply-organization') {
+      fadeControls.start({
+        opacity: 0,
+        scale: 1.04,
+        transition: { duration: 0.45, ease: [0.22, 0.61, 0.36, 1] },
+      }).then(() => {
+        sessionStorage.setItem('strandshare:incoming-transition', 'login');
+        goToHard(path);
+      });
+    } else if (path === '/apply-partnership') {
       pendingPathRef.current = path;
       setExitTransition('apply');
     } else {
       goToHard(path);
     }
-  }, [exitTransition]);
+  }, [exitTransition, fadeControls]);
 
   const handleTransitionDone = useCallback(() => {
     const path = pendingPathRef.current;
@@ -365,11 +430,11 @@ export default function LandingPage() {
         }}
         aria-hidden="true"
       />
-      <TransitionDoors
-        direction={exitTransition === 'login' ? 'closing' : null}
-        color={primaryColor}
-        onComplete={handleTransitionDone}
-      />
+    <motion.div
+      initial={isReturningFromLogin ? { opacity: 0, scale: 1.04 } : { opacity: 1, scale: 1 }}
+      animate={fadeControls}
+      style={{ transformOrigin: 'center center', willChange: 'transform, opacity' }}
+    >
     <div className="landing-scroll-root" style={cssVars} ref={rootRef}>
 
       {/* ── NAV ─────────────────────────────────────── */}
@@ -384,6 +449,7 @@ export default function LandingPage() {
         <div className={`nav-links${heroVis ? ' vis' : ''}`}>
           <a href="#about">About</a>
           <a href="#impact">Impact</a>
+          <a href="#tracks">Tracks</a>
           <a href="#journey">How It Works</a>
           <a href="#faq">FAQ</a>
           <a href="#contact">Contact</a>
@@ -391,7 +457,7 @@ export default function LandingPage() {
 
         <div className={`nav-actions${heroVis ? ' vis' : ''}`}>
           <button type="button" className="nav-login" onClick={() => handleNavigate('/login')}>Login</button>
-          <button type="button" className="nav-cta"   onClick={() => handleNavigate('/apply-organization')}>Apply Organization</button>
+          <button type="button" className="nav-cta"   onClick={() => handleNavigate('/apply-partnership')}>Apply for Partnership</button>
         </div>
       </nav>
 
@@ -423,16 +489,16 @@ export default function LandingPage() {
           </h1>
 
           <p className={`hero-sub${heroVis ? ' vis' : ''}`}>
-            {brandName} connects hospitals, organizations, and communities around one shared
-            goal — dignified wig support for people experiencing hair loss.
+            {brandName} connects partnered hospitals, support organizations, and communities
+            around one shared goal — dignified wig support for people experiencing hair loss.
           </p>
 
           <div className={`hero-ctas${heroVis ? ' vis' : ''}`}>
-            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
-              Apply As Organization <ArrowRight size={15} />
+            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply for Partnership <ArrowRight size={15} />
             </button>
-            <button type="button" className="btn-outline" onClick={() => smoothTo('about')}>
-              Learn More
+            <button type="button" className="btn-outline" onClick={() => smoothTo('tracks')}>
+              See Partnership Tracks
             </button>
           </div>
         </motion.div>
@@ -512,10 +578,72 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── PARTNERSHIP TRACKS ──────────────────────── */}
+      <section id="tracks">
+        <div className="container">
+          <p className="eyebrow">Partnership Tracks</p>
+          <h2 className="section-title">Two Tracks.<br /><em>One Mission.</em></h2>
+          <p className="section-lead">
+            Choose the track that matches your team. Both go through the same approval flow and
+            unlock features tailored to how you serve the community.
+          </p>
+          <div className="impact-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            {partnerTracks.map((track) => (
+              <article className="impact-card" key={track.id}>
+                <div
+                  className="impact-num"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  {track.icon === 'building'
+                    ? <Building2 size={14} />
+                    : <HeartPulse size={14} />}
+                  {track.eyebrow} — {track.title}
+                </div>
+                <h3 className="impact-title">{track.title}</h3>
+                <p className="impact-body">{track.body}</p>
+                <ul style={{ marginTop: '1.25rem', display: 'grid', gap: '0.5rem', listStyle: 'none', padding: 0 }}>
+                  {track.points.map((point) => (
+                    <li
+                      key={point}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.6rem',
+                        fontSize: '0.92rem',
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          flex: '0 0 auto',
+                          marginTop: '0.55rem',
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '999px',
+                          background: 'var(--color-primary)',
+                        }}
+                      />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+          <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
+            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply for Partnership <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* ── JOURNEY ─────────────────────────────────── */}
       <section id="journey">
         <div className="container">
-          <p className="eyebrow">Organization Journey</p>
+          <p className="eyebrow">Partnership Journey</p>
           <h2 className="section-title">
             Four Steps to<br /><em>Change a Life</em>
           </h2>
@@ -534,20 +662,43 @@ export default function LandingPage() {
       {/* ── REQUIREMENTS ────────────────────────────── */}
       <section id="apply">
         <div className="container">
-          <p className="eyebrow">Requirements</p>
-          <h2 className="section-title">Organization Application<br /><em>Requirements</em></h2>
-          <p className="section-lead">Prepare the following details so your review can move quickly.</p>
-          <div className="req-grid">
-            {orgRequirements.map(req => (
-              <div className="req-item" key={req}>
-                <div className="req-check" aria-hidden="true">
-                  <svg viewBox="0 0 12 12" strokeWidth="2.5"><polyline points="2,6 5,9 10,3" /></svg>
-                </div>
-                <span>{req}</span>
+          <p className="eyebrow">What You'll Need</p>
+          <h2 className="section-title">Partnership Application<br /><em>Checklist</em></h2>
+          <p className="section-lead">
+            Prepare the following details so your Super Admin review can move quickly.
+            Some items apply to both tracks, others depend on whether you apply as an
+            organization or a hospital.
+          </p>
+          {applicationChecklist.map((group, idx) => (
+            <div
+              key={group.group}
+              style={{
+                marginBottom: '2rem',
+                paddingTop: idx === 0 ? 0 : '2rem',
+                borderTop: idx === 0
+                  ? 'none'
+                  : '1px solid rgba(var(--color-primary-rgb, 184, 149, 90), 0.18)',
+              }}
+            >
+              <p
+                className="eyebrow"
+                style={{ marginTop: 0, marginBottom: '1rem', opacity: 0.85 }}
+              >
+                {group.group}
+              </p>
+              <div className="req-grid">
+                {group.items.map(req => (
+                  <div className="req-item" key={req}>
+                    <div className="req-check" aria-hidden="true">
+                      <svg viewBox="0 0 12 12" strokeWidth="2.5"><polyline points="2,6 5,9 10,3" /></svg>
+                    </div>
+                    <span>{req}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
+            </div>
+          ))}
+          <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
             Open Application Form <ArrowRight size={15} />
           </button>
         </div>
@@ -584,8 +735,8 @@ export default function LandingPage() {
             building a better support system for those who need it most.
           </p>
           <div className="cta-btns">
-            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-organization')}>
-              Apply As Organization <ArrowRight size={15} />
+            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply for Partnership <ArrowRight size={15} />
             </button>
             <button type="button" className="btn-outline" onClick={() => handleNavigate('/login')}>
               Login to Dashboard
@@ -606,6 +757,7 @@ export default function LandingPage() {
           <div className="footer-links">
             <a href="#about">About</a>
             <a href="#impact">Impact</a>
+            <a href="#tracks">Tracks</a>
             <a href="#journey">How It Works</a>
             <a href="#apply">Apply</a>
             <a href="#faq">FAQ</a>
@@ -618,6 +770,7 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
+    </motion.div>
     </TransitionFlipExit>
   );
 }

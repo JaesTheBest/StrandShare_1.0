@@ -18,8 +18,9 @@ const BRANDING_EDITOR_TABS = [
   { id: 'branding', label: 'Branding' },
 ];
 
-const DEFAULT_AVATAR =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuAfLvIqVf_2t5cQGBgl2JtMqAfNL4VFIxY--QIC_GbWZaM-6I35ji6GFNyuaVczmP-4JWeN9_Cu174m5U6OCEk8UDHJDD6W-r9j5qv-xxfQvZM46On__Scm_j3z-RdVOyTNguzeQ-_xs0yt9AbfB_fN3G3c2GEbfaTBfaV4JMD2WULL90Qr8fBAk4ORtWQkq6QwL2ZH0qjS8id-dyirChie2_KkZDIH4dg4eKXCE91esg_QAmzhyBOFPP8S2koA5Wmr1oSHati1OKo';
+const DEFAULT_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='64' fill='#f1f5f9'/><circle cx='64' cy='46' r='20' fill='#374151'/><path d='M18 116c4-22 21-35 46-35s42 13 46 35' fill='#374151'/></svg>",
+)}`;
 
 const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';

@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Building2, CheckCircle2, Loader2, MailCheck, Search, ShieldCheck, UploadCloud } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import maplibregl from 'maplibre-gl';
-import { useTheme } from '../../../context/ThemeContext';
-import { supabase } from '../../../lib/supabaseClient';
-import organizationAddressOptions from '../../../data/organizationAddressOptions.json';
-import { TransitionFlipEntrance } from '../../../components/transitions/TransitionFlip';
+import { useTheme } from '../../context/ThemeContext';
+import { supabase } from '../../lib/supabaseClient';
+import organizationAddressOptions from '../../data/organizationAddressOptions.json';
+import { TransitionFlipEntrance } from '../../components/transitions/TransitionFlip';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const USERS_TABLE = 'users';
@@ -184,12 +184,21 @@ const initialForm = {
 };
 
 const LEAD_GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
+const PHILIPPINE_TIME_ZONE = 'Asia/Manila';
 
 function toTitle(value = '') {
   return String(value)
     .trim()
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildDisplayName(firstName = '', lastName = '') {
+  return [toTitle(firstName), toTitle(lastName)]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeRole(value = '') {
@@ -256,7 +265,31 @@ function formatPhilippineMobileWithCountry(value = '') {
 
 function toStoredPhoneNumber(value = '') {
   const digits = normalizePhilippineMobile(value);
-  return digits.length === 10 ? `+63${digits}` : '';
+  return digits.length === 10
+    ? `+63 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)}`
+    : '';
+}
+
+function getPhilippineTimestamp(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PHILIPPINE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
 }
 
 function toCoordinateOrNull(value = '') {
@@ -665,7 +698,7 @@ async function uploadApplicationLogo(file, entityName, bucketId = ORGANIZATION_L
   };
 }
 
-export default function OrganizationApplicationPage() {
+export default function PartnershipApplicationPage() {
   const { theme } = useTheme();
   const primaryColor = theme.primaryColor || '#0f766e';
   const secondaryColor = theme.secondaryColor || '#64748b';
@@ -673,6 +706,7 @@ export default function OrganizationApplicationPage() {
   const primaryTextColor = theme.primaryTextColor || '#0f172a';
   const secondaryTextColor = theme.secondaryTextColor || '#334155';
   const [form, setForm] = useState(initialForm);
+  const [useCustomOrgType, setUseCustomOrgType] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmissionComplete, setIsSubmissionComplete] = useState(false);
@@ -682,6 +716,7 @@ export default function OrganizationApplicationPage() {
   const [submittedApplicationType, setSubmittedApplicationType] = useState('');
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState('');
+  const [isDraggingLogo, setIsDraggingLogo] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpNotice, setOtpNotice] = useState({ type: '', message: '' });
   const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -910,6 +945,7 @@ export default function OrganizationApplicationPage() {
     setOtpVerifiedEmail('');
     setOtpVerifiedAuthUserId('');
     setOtpCooldownSeconds(0);
+    setUseCustomOrgType(false);
     if (logoPreviewUrl) {
       URL.revokeObjectURL(logoPreviewUrl);
     }
@@ -1036,9 +1072,7 @@ export default function OrganizationApplicationPage() {
     }));
   };
 
-  const onLogoFileChange = (event) => {
-    const file = event.target.files?.[0] || null;
-
+  const applyLogoFile = (file) => {
     if (!file) {
       if (logoPreviewUrl) {
         URL.revokeObjectURL(logoPreviewUrl);
@@ -1049,7 +1083,7 @@ export default function OrganizationApplicationPage() {
     }
 
     if (!String(file.type || '').startsWith('image/')) {
-      setErrorMessage('Only image files are allowed for organization logo upload.');
+      setErrorMessage('Only image files are allowed for logo upload.');
       if (logoInputRef.current) {
         logoInputRef.current.value = '';
       }
@@ -1072,6 +1106,30 @@ export default function OrganizationApplicationPage() {
     setErrorMessage('');
     setLogoPreviewUrl(nextPreviewUrl);
     setLogoFile(file);
+  };
+
+  const onLogoFileChange = (event) => {
+    applyLogoFile(event.target.files?.[0] || null);
+  };
+
+  const onLogoDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isDraggingLogo) setIsDraggingLogo(true);
+  };
+
+  const onLogoDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingLogo(false);
+  };
+
+  const onLogoDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingLogo(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file) applyLogoFile(file);
   };
 
   const sendEmailOtpCode = async () => {
@@ -1168,6 +1226,17 @@ export default function OrganizationApplicationPage() {
         message: 'Email verified successfully. You can now submit your organization application.',
       });
 
+      const otpDisplayName = buildDisplayName(form.firstName, form.lastName);
+      if (otpDisplayName) {
+        await otpClient.auth.updateUser({
+          data: {
+            display_name: otpDisplayName,
+            full_name: otpDisplayName,
+            name: otpDisplayName,
+          },
+        }).catch(() => undefined);
+      }
+
       await otpClient.auth.signOut().catch(() => undefined);
     } catch (error) {
       setOtpVerifiedEmail('');
@@ -1259,7 +1328,7 @@ export default function OrganizationApplicationPage() {
     const suffix = toTitle(form.suffix);
     const gender = toTitle(form.gender);
     const lastName = toTitle(form.lastName);
-    const nowIso = new Date().toISOString();
+    const nowIso = getPhilippineTimestamp();
     const joinedDate = nowIso.slice(0, 10);
     const organizationName = form.organizationName.trim();
     const hospitalName = form.hospitalName.trim();
@@ -1333,6 +1402,7 @@ export default function OrganizationApplicationPage() {
             access_start: null,
             access_end: null,
             is_active: false,
+            created_at: nowIso,
             updated_at: nowIso,
           })
           .select('user_id')
@@ -1424,6 +1494,7 @@ export default function OrganizationApplicationPage() {
           .insert({
             ...userDetailsPayload,
             joined_date: joinedDate,
+            created_at: nowIso,
           });
 
         if (insertDetailsResult.error) {
@@ -1460,6 +1531,7 @@ export default function OrganizationApplicationPage() {
             Approval_Status: 'Pending',
             Created_By: userId,
             Updated_By: userId,
+            Created_At: nowIso,
             Updated_At: nowIso,
           })
           .select('Organization_ID')
@@ -1482,6 +1554,7 @@ export default function OrganizationApplicationPage() {
           Is_Primary: true,
           Status: 'Inactive',
           Created_By: userId,
+          Created_At: nowIso,
           Updated_At: nowIso,
         };
 
@@ -1536,6 +1609,9 @@ export default function OrganizationApplicationPage() {
             Approved_By: null,
             Approved_At: null,
             Review_Notes: null,
+            Created_By: userId,
+            Updated_By: userId,
+            Created_At: nowIso,
             Updated_At: nowIso,
           })
           .select('Hospital_ID')
@@ -1547,6 +1623,7 @@ export default function OrganizationApplicationPage() {
       }
 
       setForm(initialForm);
+      setUseCustomOrgType(false);
       setLogoFile(null);
       if (logoPreviewUrl) {
         URL.revokeObjectURL(logoPreviewUrl);
@@ -1602,7 +1679,7 @@ export default function OrganizationApplicationPage() {
     ? 'Submit Partner Hospital Application'
     : isOrganizationApplication
       ? 'Submit Organization Application'
-      : 'Submit Application';
+      : 'Apply for Partnership';
   const stepLabel = activePage === 1
     ? 'Application Type'
     : activePage === 2
@@ -1791,11 +1868,20 @@ export default function OrganizationApplicationPage() {
                       <label className="space-y-1 text-sm">
                         <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Type *</span>
                         <select
-                          value={form.organizationType}
-                          onChange={updateField('organizationType')}
+                          value={useCustomOrgType ? 'Other' : form.organizationType}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            if (nextValue === 'Other') {
+                              setUseCustomOrgType(true);
+                              setForm((prev) => ({ ...prev, organizationType: '' }));
+                            } else {
+                              setUseCustomOrgType(false);
+                              setForm((prev) => ({ ...prev, organizationType: nextValue }));
+                            }
+                          }}
                           className={fieldClassName}
                           style={fieldStyle}
-                          required
+                          required={!useCustomOrgType}
                         >
                           <option value="">Select organization type</option>
                           {ORGANIZATION_TYPE_OPTIONS.map((option) => (
@@ -1804,6 +1890,18 @@ export default function OrganizationApplicationPage() {
                             </option>
                           ))}
                         </select>
+                        {useCustomOrgType ? (
+                          <input
+                            type="text"
+                            value={form.organizationType}
+                            onChange={updateField('organizationType')}
+                            placeholder="Type your organization type"
+                            className={`${fieldClassName} mt-2`}
+                            style={fieldStyle}
+                            maxLength={120}
+                            required
+                          />
+                        ) : null}
                       </label>
                     </>
                   )}
@@ -1827,7 +1925,17 @@ export default function OrganizationApplicationPage() {
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>
                       {isHospitalApplication ? 'Hospital Logo (Upload Image)' : 'Organization Logo (Upload Image)'}
                     </span>
-                    <div className="rounded-xl border border-dashed bg-slate-50 p-4" style={{ borderColor: `${secondaryColor}55` }}>
+                    <div
+                      className="rounded-xl border border-dashed p-4 transition"
+                      style={{
+                        borderColor: isDraggingLogo ? primaryColor : `${secondaryColor}55`,
+                        backgroundColor: isDraggingLogo ? `${primaryColor}12` : '#f8fafc',
+                      }}
+                      onDragOver={onLogoDragOver}
+                      onDragEnter={onLogoDragOver}
+                      onDragLeave={onLogoDragLeave}
+                      onDrop={onLogoDrop}
+                    >
                       <div className="flex flex-wrap items-center gap-3">
                         <label
                           htmlFor="organizationLogo"
@@ -1845,7 +1953,9 @@ export default function OrganizationApplicationPage() {
                           className="hidden"
                         />
                         <p className="text-xs" style={{ color: secondaryTextColor }}>
-                          PNG, JPG, or WEBP up to 5MB.
+                          {isDraggingLogo
+                            ? 'Drop your image here…'
+                            : 'Drag and drop an image here, or click Choose Logo. PNG, JPG, or WEBP up to 5MB.'}
                         </p>
                       </div>
 
@@ -1856,11 +1966,14 @@ export default function OrganizationApplicationPage() {
                       ) : null}
 
                       {logoPreviewUrl ? (
-                        <div className="mt-3 overflow-hidden rounded-lg border" style={{ borderColor: `${secondaryColor}44` }}>
+                        <div
+                          className="mt-3 flex items-center justify-center overflow-hidden rounded-lg border bg-slate-50 p-3"
+                          style={{ borderColor: `${secondaryColor}44` }}
+                        >
                           <img
                             src={logoPreviewUrl}
-                            alt="Organization logo preview"
-                            className="h-28 w-full object-contain bg-slate-50"
+                            alt="Logo preview"
+                            className="max-h-56 max-w-[16rem] w-auto h-auto object-contain"
                           />
                         </div>
                       ) : null}
@@ -2357,7 +2470,9 @@ export default function OrganizationApplicationPage() {
                   Next: Lead Account
                 </button>
               </div>
-            ) : (
+            ) : null}
+
+            {activePage === 3 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs" style={{ color: secondaryTextColor }}>
                   By submitting, you confirm your details are accurate. Your {isHospitalApplication ? 'partner hospital' : 'organization'} profile will remain pending until Super Admin review.
@@ -2387,7 +2502,7 @@ export default function OrganizationApplicationPage() {
                   </button>
                 </div>
               </div>
-            )}
+            ) : null}
           </form>
         </section>
       </div>

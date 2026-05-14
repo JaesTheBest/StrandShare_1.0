@@ -22,10 +22,12 @@ const USERS_TABLE = 'users';
 const UI_SETTINGS_TABLE = 'UI_Settings';
 const ORGANIZATIONS_TABLE = 'Organizations';
 const HOSPITALS_TABLE = 'Hospitals';
+const HOSPITAL_REPRESENTATIVE_TABLE = 'Hospital_Representative';
 const ORGANIZATION_MEMBERS_TABLE = 'Organization_Members';
 const USER_DETAILS_TABLE = 'user_details';
 const ORGANIZATION_LOGOS_BUCKET = 'organization_logos';
 const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
+const PHILIPPINE_TIME_ZONE = 'Asia/Manila';
 let adminAuthClient = null;
 
 const TABS = [
@@ -55,24 +57,79 @@ function normalizeRole(value = '') {
 function toIsoOrNull(value = '') {
   const raw = String(value || '').trim();
   if (!raw) return null;
+
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
   if (match) {
     const seconds = match[7] || '00';
-    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString();
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}`;
   }
+
+  return null;
+}
+
+function parsePhilippineTimestamp(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(:(\d{2}))?$/);
+  if (match) {
+    const seconds = match[7] || '00';
+    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
   const fallback = new Date(raw);
-  if (Number.isNaN(fallback.getTime())) return null;
-  return fallback.toISOString();
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function getPhilippineTimestamp(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PHILIPPINE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function toDateTimeLocalValue(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  if (match) {
+    return `${match[1]}T${match[2]}`;
+  }
+  return '';
+}
+
+function buildDisplayName(firstName = '', lastName = '') {
+  return [String(firstName || '').trim(), String(lastName || '').trim()]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function formatDate(value) {
   if (!value) return '-';
 
   try {
-    return new Date(value).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
+    const parsed = parsePhilippineTimestamp(value);
+    if (!parsed) return '-';
+    return parsed.toLocaleString('en-PH', {
+      timeZone: PHILIPPINE_TIME_ZONE,
       year: 'numeric',
       month: 'short',
       day: '2-digit',
@@ -92,8 +149,10 @@ function formatAccessWindowLabel(accessStart, accessEnd) {
   const format = (value) => {
     if (!value) return '-';
     try {
-      return new Date(value).toLocaleString('en-PH', {
-        timeZone: 'Asia/Manila',
+      const parsed = parsePhilippineTimestamp(value);
+      if (!parsed) return '-';
+      return parsed.toLocaleString('en-PH', {
+        timeZone: PHILIPPINE_TIME_ZONE,
         year: 'numeric',
         month: 'short',
         day: '2-digit',
@@ -159,12 +218,17 @@ function mapOrganizationSchemaError(rawMessage) {
     message.includes("Could not find the table 'public.Organizations'")
     || message.includes("Could not find the table 'public.Organization_Members'")
     || message.includes("Could not find the table 'public.Hospitals'")
+    || message.includes("Could not find the table 'public.Hospital_Representative'")
   ) {
     return 'Application tables are missing. Run organization and hospital migrations, then refresh the app.';
   }
 
   if (message.toLowerCase().includes('invite')) {
     return `${message} Configure REACT_APP_SUPABASE_SERVICE_ROLE_KEY to enable invite_user emails from this admin page.`;
+  }
+
+  if (message.toLowerCase().includes('row-level security') && message.includes('Hospital_Representative')) {
+    return 'Hospital representative assignment was blocked by RLS. Run migration 056_repair_hospital_representative_rls.sql, then retry approval.';
   }
 
   return message;
@@ -241,7 +305,11 @@ function mapInviteSendError(rawReason = '') {
 
 async function sendInviteUserEmail({
   email,
-  organizationName,
+  accountType,
+  accountName,
+  roleLabel,
+  firstName,
+  lastName,
   reviewNotes,
   accessStart,
   accessEnd,
@@ -261,14 +329,23 @@ async function sendInviteUserEmail({
   const normalizedDecision = String(decision || '').trim().toLowerCase() === 'rejected'
     ? 'rejected'
     : 'approved';
+  const normalizedAccountType = String(accountType || '').trim().toLowerCase() === 'partner_hospital'
+    ? 'partner_hospital'
+    : 'organization';
+  const normalizedRoleLabel = String(roleLabel || '').trim() || (normalizedAccountType === 'partner_hospital' ? 'H-Representative' : 'Organization Lead');
+  const displayName = buildDisplayName(firstName, lastName);
 
   const metadata = {
-    account_type: 'organization',
+    account_type: normalizedAccountType,
     decision: normalizedDecision,
-    role_label: 'Organization Lead',
-    account_label: 'Organization',
-    account_value: organizationName || '-',
+    role_label: normalizedRoleLabel,
+    account_label: normalizedAccountType === 'partner_hospital' ? 'Partner Hospital' : 'Organization',
+    account_value: accountName || '-',
     recipient_email: email || '-',
+    recipient_name: displayName || '',
+    display_name: displayName || '',
+    full_name: displayName || '',
+    name: displayName || '',
     review_notes: reviewNotes || '',
     has_access_window: Boolean(accessStart || accessEnd),
     access_window: formatAccessWindowLabel(accessStart, accessEnd),
@@ -310,6 +387,11 @@ async function sendInviteUserEmail({
     const updatePayload = {
       email_confirm: true,
       password: temporaryPassword,
+      user_metadata: {
+        display_name: displayName || '',
+        full_name: displayName || '',
+        name: displayName || '',
+      },
     };
 
     const { error: passwordError } = await adminClient.auth.admin.updateUserById(data.user.id, updatePayload);
@@ -324,6 +406,11 @@ async function sendInviteUserEmail({
   } else if (data?.user?.id) {
     const { error: confirmError } = await adminClient.auth.admin.updateUserById(data.user.id, {
       email_confirm: true,
+      user_metadata: {
+        display_name: displayName || '',
+        full_name: displayName || '',
+        name: displayName || '',
+      },
     });
 
     if (confirmError) {
@@ -389,6 +476,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     color: primaryTextColor,
     fontFamily: `${bodyFont}, sans-serif`,
   };
+  const nowDateTimeLocal = toDateTimeLocalValue(getPhilippineTimestamp());
 
   const fetchUiSettings = useCallback(async () => {
     const { data, error } = await supabase
@@ -454,9 +542,15 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
           return leadMembership?.User_ID || org.Created_By;
         })
         .filter(Boolean);
+      const hospitalLeadUserIds = hospitals.map((hospital) => hospital.Created_By).filter(Boolean);
 
       const allMemberUserIds = members.map((member) => member.User_ID).filter(Boolean);
-      const userIds = Array.from(new Set([...leadUserIds, ...allMemberUserIds, ...organizations.map((org) => org.Created_By)]).values()).filter(Boolean);
+      const userIds = Array.from(new Set([
+        ...leadUserIds,
+        ...hospitalLeadUserIds,
+        ...allMemberUserIds,
+        ...organizations.map((org) => org.Created_By),
+      ]).values()).filter(Boolean);
 
       const usersResult = userIds.length
         ? await supabase
@@ -546,6 +640,10 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       });
 
       const hospitalRows = hospitals.map((hospital) => {
+        const leadUserId = hospital.Created_By || null;
+        const leadUser = leadUserId ? usersById.get(leadUserId) : null;
+        const leadDetails = leadUserId ? pickPreferredUserDetails(detailsByUserId.get(leadUserId)) : null;
+
         return {
           Record_Key: `hospital:${hospital.Hospital_ID}`,
           Application_Type: 'hospital',
@@ -569,29 +667,31 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
           Is_Approved: Boolean(hospital.Is_Approved),
           Approved_By: hospital.Approved_By,
           Approved_At: hospital.Approved_At,
-          Created_By: null,
+          Created_By: hospital.Created_By || null,
           Created_At: hospital.Created_At,
           Updated_At: hospital.Updated_At,
           Review_Notes: hospital.Review_Notes,
-          Lead_User_ID: null,
-          Lead_Email: '',
-          Lead_Role: '',
-          Lead_Is_Active: false,
-          Lead_Access_Start: null,
-          Lead_Access_End: null,
-          Lead_Auth_User_ID: null,
-          Lead_First_Name: '',
-          Lead_Last_Name: '',
-          Lead_Contact: '',
-          Lead_Address: '',
+          Lead_User_ID: leadUserId,
+          Lead_Email: leadUser?.email || '',
+          Lead_Role: leadUser?.role || '',
+          Lead_Is_Active: Boolean(leadUser?.is_active),
+          Lead_Access_Start: leadUser?.access_start || null,
+          Lead_Access_End: leadUser?.access_end || null,
+          Lead_Auth_User_ID: leadUser?.auth_user_id || null,
+          Lead_First_Name: leadDetails?.first_name || '',
+          Lead_Last_Name: leadDetails?.last_name || '',
+          Lead_Contact: leadDetails?.contact_number || '',
+          Lead_Address: [leadDetails?.street, leadDetails?.barangay, leadDetails?.city, leadDetails?.province, leadDetails?.region, leadDetails?.country]
+            .filter(Boolean)
+            .join(', '),
           Members: [],
           Member_Stats: { total: 0, active: 0, inactive: 0, leaders: 0 },
         };
       });
 
       const allRows = [...organizationRows, ...hospitalRows].sort((left, right) => {
-        const leftMs = new Date(left.Created_At || left.Updated_At || 0).getTime() || 0;
-        const rightMs = new Date(right.Created_At || right.Updated_At || 0).getTime() || 0;
+        const leftMs = parsePhilippineTimestamp(left.Created_At || left.Updated_At)?.getTime() || 0;
+        const rightMs = parsePhilippineTimestamp(right.Created_At || right.Updated_At)?.getTime() || 0;
         return rightMs - leftMs;
       });
 
@@ -668,6 +768,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
   const processDecision = async () => {
     const organization = approvalModal.organization;
     const isHospitalApplication = organization?.Application_Type === 'hospital';
+    const recordId = isHospitalApplication ? organization?.Hospital_ID : organization?.Organization_ID;
     if (!organization?.Record_Key) {
       setNotice({ type: 'error', message: 'Invalid application record.' });
       return;
@@ -682,12 +783,12 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     const accessStartIso = toIsoOrNull(approvalModal.accessStart);
     const accessEndIso = toIsoOrNull(approvalModal.accessEnd);
 
-    if (!isHospitalApplication && (!organization?.Organization_ID || !organization?.Lead_User_ID)) {
-      setNotice({ type: 'error', message: 'Invalid organization record.' });
+    if (!recordId || !organization?.Lead_User_ID) {
+      setNotice({ type: 'error', message: isHospitalApplication ? 'Invalid hospital application record.' : 'Invalid organization record.' });
       return;
     }
 
-    if (!isHospitalApplication && !organization?.Lead_Email) {
+    if (!organization?.Lead_Email) {
       const message = 'Lead email is required to send the invite email and complete this decision.';
       setNotice({ type: 'error', message });
       setCompletionModal({
@@ -699,7 +800,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       return;
     }
 
-    if (!isHospitalApplication && !inviteEmailConfigured) {
+    if (!inviteEmailConfigured) {
       const message = mapInviteSendError('missing-service-role');
       setNotice({
         type: 'error',
@@ -714,16 +815,54 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       return;
     }
 
-    if (!isHospitalApplication && accessStartIso && accessEndIso && new Date(accessStartIso) > new Date(accessEndIso)) {
-      setNotice({ type: 'error', message: 'Access end must be later than access start.' });
-      return;
+    if (isApprove && accessStartIso && accessEndIso) {
+      const accessStartDate = parsePhilippineTimestamp(accessStartIso);
+      const accessEndDate = parsePhilippineTimestamp(accessEndIso);
+      if (accessStartDate && accessEndDate && accessStartDate > accessEndDate) {
+        setNotice({ type: 'error', message: 'Access end must be later than access start.' });
+        return;
+      }
+    }
+    if (isApprove && accessStartIso) {
+      const accessStartDate = parsePhilippineTimestamp(accessStartIso);
+      const nowDate = parsePhilippineTimestamp(getPhilippineTimestamp());
+      if (accessStartDate && nowDate && accessStartDate < nowDate) {
+        setNotice({ type: 'error', message: 'Access start cannot be in the past (Philippine time).' });
+        return;
+      }
     }
 
     setProcessingId(organization.Record_Key);
     setNotice({ type: '', message: '' });
 
     try {
-      const nowIso = new Date().toISOString();
+      const nowIso = getPhilippineTimestamp();
+      const leadShouldBeActive = isApprove;
+      let updatedAuthUserId = organization.Lead_Auth_User_ID;
+      const temporaryPassword = generateTemporaryPassword();
+      const inviteOutcome = await sendInviteUserEmail({
+        email: organization.Lead_Email,
+        accountType: isHospitalApplication ? 'partner_hospital' : 'organization',
+        accountName: organization.Organization_Name,
+        roleLabel: isHospitalApplication ? 'H-Representative' : 'Organization Lead',
+        firstName: organization.Lead_First_Name,
+        lastName: organization.Lead_Last_Name,
+        reviewNotes: approvalModal.notes,
+        accessStart: isApprove ? accessStartIso : null,
+        accessEnd: isApprove ? accessEndIso : null,
+        temporaryPassword,
+        decision: isApprove ? 'approved' : 'rejected',
+        existingAuthUserId: updatedAuthUserId,
+      });
+
+      if (!inviteOutcome.sent) {
+        throw new Error(mapInviteSendError(inviteOutcome.reason));
+      }
+
+      if (inviteOutcome.invitedAuthUserId) {
+        updatedAuthUserId = inviteOutcome.invitedAuthUserId;
+      }
+
       if (isHospitalApplication) {
         const updateHospitalResult = await supabase
           .from(HOSPITALS_TABLE)
@@ -733,6 +872,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             Approved_By: adminUserId,
             Approved_At: nowIso,
             Review_Notes: (approvalModal.notes || '').trim() || null,
+            Updated_By: adminUserId,
             Updated_At: nowIso,
           })
           .eq('Hospital_ID', organization.Hospital_ID);
@@ -741,9 +881,60 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
           throw new Error(updateHospitalResult.error.message);
         }
 
+        const updateUserResult = await supabase
+          .from(USERS_TABLE)
+          .update({
+            auth_user_id: updatedAuthUserId || null,
+            role: isApprove ? 'H-Representative' : 'user',
+            is_active: leadShouldBeActive,
+            access_start: isApprove ? accessStartIso : null,
+            access_end: isApprove ? accessEndIso : null,
+            updated_at: nowIso,
+          })
+          .eq('user_id', organization.Lead_User_ID);
+
+        if (updateUserResult.error) {
+          throw new Error(updateUserResult.error.message);
+        }
+
+        if (isApprove) {
+          const upsertAssignmentResult = await supabase
+            .from(HOSPITAL_REPRESENTATIVE_TABLE)
+            .upsert(
+              {
+                Hospital_ID: organization.Hospital_ID,
+                User_ID: organization.Lead_User_ID,
+                Assigned_Date: nowIso,
+              },
+              {
+                onConflict: 'User_ID',
+              }
+            );
+
+          if (upsertAssignmentResult.error) {
+            throw new Error(upsertAssignmentResult.error.message);
+          }
+        } else {
+          const deleteAssignmentResult = await supabase
+            .from(HOSPITAL_REPRESENTATIVE_TABLE)
+            .delete()
+            .eq('User_ID', organization.Lead_User_ID)
+            .eq('Hospital_ID', organization.Hospital_ID);
+
+          if (deleteAssignmentResult.error) {
+            throw new Error(deleteAssignmentResult.error.message);
+          }
+        }
+
+        const accessWindowSnippet = accessStartIso || accessEndIso
+          ? ` Access window: ${formatAccessWindowLabel(accessStartIso, accessEndIso)}.`
+          : '';
+
         setNotice({
           type: 'success',
-          message: isApprove ? 'Hospital application approved.' : 'Hospital application rejected.',
+          message: isApprove
+            ? `Hospital approved. Invite email with credentials sent to ${organization.Lead_Email || 'lead account'}.${accessWindowSnippet}`
+            : `Hospital rejected. Decision email sent to ${organization.Lead_Email || 'lead account'}.`,
         });
 
         setCompletionModal({
@@ -751,33 +942,10 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
           tone: 'success',
           title: isApprove ? 'Hospital Approved' : 'Hospital Rejected',
           message: isApprove
-            ? 'Hospital application was approved successfully.'
-            : 'Hospital application was rejected successfully.',
+            ? `Completed. H-Representative credentials were emailed to ${organization.Lead_Email || 'the lead account'}.`
+            : `Completed. Rejection email was sent to ${organization.Lead_Email || 'the lead account'}.`,
         });
       } else {
-        const leadShouldBeActive = isApprove;
-        let updatedAuthUserId = organization.Lead_Auth_User_ID;
-        const temporaryPassword = generateTemporaryPassword();
-
-        const inviteOutcome = await sendInviteUserEmail({
-          email: organization.Lead_Email,
-          organizationName: organization.Organization_Name,
-          reviewNotes: approvalModal.notes,
-          accessStart: accessStartIso,
-          accessEnd: accessEndIso,
-          temporaryPassword,
-          decision: isApprove ? 'approved' : 'rejected',
-          existingAuthUserId: updatedAuthUserId,
-        });
-
-        if (!inviteOutcome.sent) {
-          throw new Error(mapInviteSendError(inviteOutcome.reason));
-        }
-
-        if (inviteOutcome.invitedAuthUserId) {
-          updatedAuthUserId = inviteOutcome.invitedAuthUserId;
-        }
-
         const updateOrganizationResult = await supabase
           .from(ORGANIZATIONS_TABLE)
           .update({
@@ -1005,7 +1173,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                         <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{[item.City, item.Province, item.Region].filter(Boolean).join(', ') || '-'}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {isOrganizationApplication ? (
+                        {item.Lead_Email || item.Lead_First_Name || item.Lead_Last_Name ? (
                           <>
                             <p className="font-semibold" style={{ color: primaryTextColor }}>{[item.Lead_First_Name, item.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
                             <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{item.Lead_Email || '-'}</p>
@@ -1014,7 +1182,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                         ) : (
                           <>
                             <p className="font-semibold" style={{ color: primaryTextColor }}>No linked lead account</p>
-                            <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Hospital approvals currently update application status only.</p>
+                            <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Approval requires a lead user and lead email.</p>
                           </>
                         )}
                       </td>
@@ -1048,7 +1216,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                           </>
                         ) : (
                           <>
-                            <p>Reviewed: {formatDate(item.Approved_At || item.Updated_At)}</p>
+                            <p>{formatAccessWindowLabel(item.Lead_Access_Start, item.Lead_Access_End)}</p>
+                            <p className="mt-1">Lead active: {item.Lead_Is_Active ? 'Yes' : 'No'}</p>
+                            <p className="mt-1">Reviewed: {formatDate(item.Approved_At || item.Updated_At)}</p>
                             <p className="mt-1">Notes: {item.Review_Notes || '-'}</p>
                           </>
                         )}
@@ -1210,42 +1380,42 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
               </div>
             </section>
 
+            <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Lead Account</p>
+              <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${secondaryColor}24` }}>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Name</p>
+                  <p className="font-medium" style={{ color: primaryTextColor }}>{[selectedOrganization.Lead_First_Name, selectedOrganization.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Email</p>
+                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Email || '-'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Contact</p>
+                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Contact || '-'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Address</p>
+                  <p className="leading-relaxed" style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Address || '-'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role</p>
+                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Role || '-'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
+                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Is_Active ? 'Yes' : 'No'}</p>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access</p>
+                  <p style={{ color: primaryTextColor }}>{formatAccessWindowLabel(selectedOrganization.Lead_Access_Start, selectedOrganization.Lead_Access_End)}</p>
+                </div>
+              </div>
+            </section>
+
             {selectedOrganization.Application_Type === 'organization' ? (
               <>
-                <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Lead Account</p>
-                  <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${secondaryColor}24` }}>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Name</p>
-                      <p className="font-medium" style={{ color: primaryTextColor }}>{[selectedOrganization.Lead_First_Name, selectedOrganization.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Email</p>
-                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Email || '-'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Contact</p>
-                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Contact || '-'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Address</p>
-                      <p className="leading-relaxed" style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Address || '-'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role</p>
-                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Role || '-'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
-                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Is_Active ? 'Yes' : 'No'}</p>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access</p>
-                      <p style={{ color: primaryTextColor }}>{formatAccessWindowLabel(selectedOrganization.Lead_Access_Start, selectedOrganization.Lead_Access_End)}</p>
-                    </div>
-                  </div>
-                </section>
-
                 <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Member Summary</p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
@@ -1406,17 +1576,17 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                 </div>
               ) : (
                 <div className="rounded-lg border bg-slate-50 px-3 py-2" style={{ borderColor: `${secondaryColor}30`, color: secondaryTextColor }}>
-                  Hospital decisions update only application approval fields.
+                  Supabase invite email is sent for both approve and reject decisions.
                 </div>
               )}
 
-              {approvalModal.organization?.Application_Type === 'organization' && !inviteEmailConfigured ? (
+              {!inviteEmailConfigured ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Invite email service is not configured in this frontend build. Configure the service-role key first, then retry this decision.
                 </div>
               ) : null}
 
-              {approvalModal.organization?.Application_Type === 'organization' && approvalModal.mode === 'approve' ? (
+              {approvalModal.mode === 'approve' ? (
                 <>
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="space-y-1">
@@ -1424,6 +1594,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                       <input
                         type="datetime-local"
                         value={approvalModal.accessStart}
+                        min={nowDateTimeLocal}
                         onChange={(event) => setApprovalModal((prev) => ({ ...prev, accessStart: event.target.value }))}
                         className="w-full rounded-lg border px-3 py-2 outline-none"
                         style={{ borderColor: `${secondaryColor}44` }}
@@ -1434,6 +1605,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                       <input
                         type="datetime-local"
                         value={approvalModal.accessEnd}
+                        min={approvalModal.accessStart || nowDateTimeLocal}
                         onChange={(event) => setApprovalModal((prev) => ({ ...prev, accessEnd: event.target.value }))}
                         className="w-full rounded-lg border px-3 py-2 outline-none"
                         style={{ borderColor: `${secondaryColor}44` }}
@@ -1470,7 +1642,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                 onClick={processDecision}
                 disabled={
                   processingId === approvalModal.organization?.Record_Key
-                  || (approvalModal.organization?.Application_Type === 'organization' && !inviteEmailConfigured)
+                  || !inviteEmailConfigured
                 }
                 className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: approvalModal.mode === 'approve' ? primaryColor : '#dc2626' }}
@@ -1484,7 +1656,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                       ? (approvalModal.mode === 'approve'
                         ? (inviteEmailConfigured ? 'Approve And Send Email' : 'Invite Not Configured')
                         : (inviteEmailConfigured ? 'Reject And Send Email' : 'Invite Not Configured'))
-                      : (approvalModal.mode === 'approve' ? 'Approve Application' : 'Reject Application')}
+                      : (approvalModal.mode === 'approve'
+                        ? (inviteEmailConfigured ? 'Approve And Send Email' : 'Invite Not Configured')
+                        : (inviteEmailConfigured ? 'Reject And Send Email' : 'Invite Not Configured'))}
                   </>
                 )}
               </button>

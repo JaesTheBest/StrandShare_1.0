@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { motion, useAnimation } from 'framer-motion';
 import { useTheme } from '../../../context/ThemeContext';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Heart, Coins, ShieldCheck, QrCode } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Coins, Eye, EyeOff, Heart, Lock, Mail, QrCode, ShieldCheck } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 import { logAuditAction } from '../../../lib/auditLogger';
-import TransitionDoors from '../../../components/transitions/TransitionDoors';
 
 const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
@@ -666,29 +666,47 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     setIsSubmitting(false);
   };
 
-  const incomingTransition = (() => {
+  const incomingTransition = useMemo(() => {
     try {
-      return typeof window !== 'undefined' ? sessionStorage.getItem('strandshare:incoming-transition') : '';
+      return typeof window !== 'undefined' ? sessionStorage.getItem('strandshare:incoming-transition') || '' : '';
     } catch {
       return '';
     }
-  })();
+  }, []);
 
-  const [doorsDirection, setDoorsDirection] = useState(incomingTransition === 'login' ? 'opening' : null);
+  const fadeControls = useAnimation();
+  const [isReturningToLanding, setIsReturningToLanding] = useState(false);
 
   useEffect(() => {
     if (incomingTransition === 'login') {
       try { sessionStorage.removeItem('strandshare:incoming-transition'); } catch { /* ignore */ }
+      fadeControls.start({
+        opacity: 1,
+        scale: 1,
+        transition: { duration: 0.5, ease: [0.22, 0.61, 0.36, 1] },
+      });
     }
-  }, [incomingTransition]);
+  }, [incomingTransition, fadeControls]);
+
+  const handleBackToLanding = () => {
+    if (isReturningToLanding) return;
+    setIsReturningToLanding(true);
+    fadeControls.start({
+      opacity: 0,
+      scale: 0.97,
+      transition: { duration: 0.45, ease: [0.22, 0.61, 0.36, 1] },
+    }).then(() => {
+      try { sessionStorage.setItem('strandshare:incoming-transition', 'back-from-login'); } catch { /* ignore */ }
+      window.location.assign('/');
+    });
+  };
 
   return (
-    <>
-    <TransitionDoors
-      direction={doorsDirection}
-      color={theme?.primaryColor || '#b8955a'}
-      onComplete={() => setDoorsDirection(null)}
-    />
+    <motion.div
+      initial={incomingTransition === 'login' ? { opacity: 0, scale: 0.97 } : { opacity: 1, scale: 1 }}
+      animate={fadeControls}
+      style={{ transformOrigin: 'center center', willChange: 'transform, opacity', minHeight: '100vh' }}
+    >
     <div className="flex min-h-screen bg-white">
       {/* Left Pane - Branding */}
       <div
@@ -737,7 +755,17 @@ export default function LoginPage({ authNotice, onClearNotice }) {
       </div>
 
       {/* Right Pane - Login Form */}
-      <div className="w-full lg:w-1/2 bg-white flex flex-col items-center justify-center px-6 py-12 lg:py-0">
+      <div className="w-full lg:w-1/2 bg-white flex flex-col items-center justify-center px-6 py-12 lg:py-0 relative">
+        <button
+          type="button"
+          onClick={handleBackToLanding}
+          disabled={isReturningToLanding}
+          className="absolute top-6 left-6 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 backdrop-blur px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 disabled:opacity-60"
+          aria-label="Back to landing page"
+        >
+          <ArrowLeft size={14} />
+          Back to landing
+        </button>
         <div className="w-full max-w-sm">
           {/* Logo */}
           <div className="flex items-center gap-2 mb-12">
@@ -1087,6 +1115,6 @@ export default function LoginPage({ authNotice, onClearNotice }) {
         </div>
       </div>
     </div>
-    </>
+    </motion.div>
   );
 }

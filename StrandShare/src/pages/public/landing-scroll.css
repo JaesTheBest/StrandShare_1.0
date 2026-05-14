@@ -148,7 +148,7 @@
   transition:background .2s,transform .2s, box-shadow .2s;
   box-shadow: 0 4px 15px rgba(var(--color-primary-rgb,184,149,90),0.3);
 }
-.btn-primary:hover{background:var(--color-primary-dark,#8a6c3a);transform:translateY(-2px); box-shadow: 0 6px 20px rgba(var(--color-primary-rgb,184,149,90),0.4);}
+.btn-primary:hover{background:var(--color-primary,#b8955a);filter:brightness(0.88);transform:translateY(-2px); box-shadow: 0 6px 20px rgba(var(--color-primary-rgb,184,149,90),0.4);}
 .btn-outline{
   background:transparent;color:var(--color-text-secondary,#7a6f61);
   border:1px solid rgba(var(--color-text-primary-rgb,15,13,10),.2);
@@ -301,6 +301,14 @@
 
 /* ── IMPACT ──────────────────────────────────────── */
 #impact{background:var(--color-bg,#f5f0e8);padding:8rem 2rem;color:var(--color-text-primary,#0f172a)}
+
+/* ── PARTNERSHIP TRACKS ──────────────────────────── */
+#tracks{
+  background:rgba(var(--color-primary-rgb,184,149,90),0.04);
+  padding:8rem 2rem;color:var(--color-text-primary,#0f172a);
+  border-top:1px solid rgba(var(--color-primary-rgb,184,149,90),0.08);
+  border-bottom:1px solid rgba(var(--color-primary-rgb,184,149,90),0.08);
+}
 .impact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2.5rem}
 .impact-card{
   background:var(--color-bg,#fff);
@@ -429,10 +437,13 @@
 /* ── CTA ─────────────────────────────────────────── */
 #cta{
   position:relative;
-  background:rgba(var(--color-text-primary-rgb,15,13,10),0.03);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(var(--color-primary-rgb,184,149,90),0.18) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(var(--color-primary-rgb,184,149,90),0.08) 0%, rgba(var(--color-primary-rgb,184,149,90),0.14) 100%);
   padding:9rem 2rem;text-align:center;overflow:hidden;
-  border-top:1px solid rgba(var(--color-text-primary-rgb,15,13,10),.05);
+  border-top:1px solid rgba(var(--color-primary-rgb,184,149,90),0.18);
 }
+#cta .landing-stars{opacity:0.45}
 .cta-inner{position:relative;z-index:2}
 .cta-title{
   font-family:var(--font-serif,'Cormorant Garamond',serif);

@@ -8,6 +8,7 @@ import {
   ClipboardList,
   HardDrive,
   Settings,
+  MapPin,
 } from 'lucide-react';
 import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
@@ -21,6 +22,7 @@ import SettingsPage from './SettingsPage';
 import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
 import ApproveDonationDrivesPage from './ApproveDonationDrivesPage';
 import LegalDocumentsPage from '../../shared/features/LegalDocumentsPage';
+import LogisticsDestinationSettingsPage from '../../shared/features/LogisticsDestinationSettingsPage';
 
 const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,6 +30,7 @@ const superAdminNavItems = [
   { id: 'manage-hospital-accounts', label: 'Manage H-Representative Accounts', icon: Building2 },
   { id: 'manage-organization-applications', label: 'Manage Applications', icon: ShieldCheck },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: ClipboardList },
+  { id: 'logistics-destination-settings', label: 'Logistics Destination Settings', icon: MapPin },
   { id: 'approve-donation-drives', label: 'Approve Donation Drives', icon: ShieldCheck },
   { id: 'legal-documents', label: 'Legal Documents', icon: FileText },
   { id: 'generate-reports', label: 'Generate Reports', icon: FileText },
@@ -42,6 +45,7 @@ const superAdminPageComponents = {
   'manage-hospital-accounts': ManageHospitalAccountsPage,
   'manage-organization-applications': ManageOrganizationApplicationsPage,
   'manage-donation-requirements': ManageDonationRequirementsPage,
+  'logistics-destination-settings': LogisticsDestinationSettingsPage,
   'approve-donation-drives': ApproveDonationDrivesPage,
   'legal-documents': LegalDocumentsPage,
   'generate-reports': GenerateReportsPage,

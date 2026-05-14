@@ -7,6 +7,7 @@ import {
   Package,
   Calendar,
   Settings,
+  MapPin,
 } from 'lucide-react';
 import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
@@ -18,6 +19,7 @@ import ScheduleAppointmentsPage from './ScheduleAppointmentsPage';
 import SettingsPage from './SettingsPage';
 import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
 import LegalDocumentsPage from '../../shared/features/LegalDocumentsPage';
+import LogisticsDestinationSettingsPage from '../../shared/features/LogisticsDestinationSettingsPage';
 
 const staffNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -27,6 +29,7 @@ const staffNavItems = [
   { id: 'update-wig-request-status', label: 'Update Wig Request Status', icon: Package },
   { id: 'schedule-appointments', label: 'Schedule Appointments', icon: Calendar },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: CheckCircle },
+  { id: 'logistics-destination-settings', label: 'Logistics Destination Settings', icon: MapPin },
   { id: 'legal-documents', label: 'Legal Documents', icon: FileText },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -39,6 +42,7 @@ const staffPageComponents = {
   'update-wig-request-status': UpdateWigRequestStatusPage,
   'schedule-appointments': ScheduleAppointmentsPage,
   'manage-donation-requirements': ManageDonationRequirementsPage,
+  'logistics-destination-settings': LogisticsDestinationSettingsPage,
   'legal-documents': LegalDocumentsPage,
   settings: SettingsPage,
 };

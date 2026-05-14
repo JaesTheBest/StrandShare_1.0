@@ -24,6 +24,7 @@ const HOSPITAL_STAFF_TABLE = 'Hospital_Representative';
 const USERS_TABLE = 'users';
 const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';
+const PHILIPPINE_TIME_ZONE = 'Asia/Manila';
 
 const PAGE_TABS = [
   { id: 'manage', label: 'Manage H-Representatives' },
@@ -68,6 +69,49 @@ function toSlug(value) {
     .slice(0, 60);
 }
 
+function normalizePhilippineMobile(value = '') {
+  let digits = String(value || '').replace(/\D/g, '');
+
+  if (digits.startsWith('63')) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+
+  return digits.slice(0, 10);
+}
+
+function toStoredPhoneNumber(value = '') {
+  const digits = normalizePhilippineMobile(value);
+  return digits.length === 10
+    ? `+63 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)}`
+    : '';
+}
+
+function getPhilippineTimestamp(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PHILIPPINE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 function mapStorageUploadError(rawMessage) {
   const message = String(rawMessage || 'Upload failed.');
   if (message.toLowerCase().includes('row-level security')) {
@@ -108,7 +152,7 @@ function formatDateTime(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'N/A';
   return parsed.toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: PHILIPPINE_TIME_ZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -958,7 +1002,7 @@ export default function ManageHospitalAccountsPage() {
         City: form.city,
         Barangay: form.barangay,
         Street: form.street.trim(),
-        Contact_Number: form.contactNumber.trim() || null,
+        Contact_Number: toStoredPhoneNumber(form.contactNumber) || null,
       };
 
       if (editingHospitalId) {
@@ -966,7 +1010,7 @@ export default function ManageHospitalAccountsPage() {
           .from(HOSPITALS_TABLE)
           .update({
             ...payload,
-            Updated_At: new Date().toISOString(),
+            Updated_At: getPhilippineTimestamp(),
           })
           .eq('Hospital_ID', editingHospitalId);
 
@@ -982,9 +1026,14 @@ export default function ManageHospitalAccountsPage() {
 
         setSuccessMessage('H-Representative updated successfully.');
       } else {
+        const nowIso = getPhilippineTimestamp();
         const { error } = await supabase
           .from(HOSPITALS_TABLE)
-          .insert(payload);
+          .insert({
+            ...payload,
+            Created_At: nowIso,
+            Updated_At: nowIso,
+          });
 
         if (error) throw error;
 
