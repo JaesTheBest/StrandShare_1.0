@@ -1,18 +1,59 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Building2, CheckCircle2, Loader2, MailCheck, ShieldCheck, UploadCloud } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Building2, CheckCircle2, Loader2, MailCheck, Search, ShieldCheck, UploadCloud } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+import maplibregl from 'maplibre-gl';
 import { useTheme } from '../../../context/ThemeContext';
 import { supabase } from '../../../lib/supabaseClient';
 import organizationAddressOptions from '../../../data/organizationAddressOptions.json';
 import { TransitionFlipEntrance } from '../../../components/transitions/TransitionFlip';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 const USERS_TABLE = 'users';
 const USER_DETAILS_TABLE = 'user_details';
 const ORGANIZATIONS_TABLE = 'Organizations';
+const HOSPITALS_TABLE = 'Hospitals';
 const ORGANIZATION_MEMBERS_TABLE = 'Organization_Members';
 const ORGANIZATION_LOGOS_BUCKET = 'organization_logos';
+const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 const MAX_LOGO_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 let isolatedAuthClient = null;
+const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
+const MAP_SATELLITE_STYLE = {
+  version: 8,
+  sources: {
+    esriSatellite: {
+      type: 'raster',
+      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      attribution: 'Tiles © Esri',
+    },
+  },
+  layers: [
+    {
+      id: 'esriSatelliteLayer',
+      type: 'raster',
+      source: 'esriSatellite',
+    },
+  ],
+};
+const MAP_STREET_STYLE = {
+  version: 8,
+  sources: {
+    openStreetMap: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'openStreetMapLayer',
+      type: 'raster',
+      source: 'openStreetMap',
+    },
+  ],
+};
 
 const ORGANIZATION_TYPE_OPTIONS = [
   'Non-Government Organization (NGO)',
@@ -24,6 +65,10 @@ const ORGANIZATION_TYPE_OPTIONS = [
   'Corporate Social Responsibility Partner',
   'Government Agency',
   'Other',
+];
+const APPLICATION_TYPE_OPTIONS = [
+  { id: 'organization', label: 'Apply as Organization' },
+  { id: 'partner_hospital', label: 'Apply as Partner Hospital' },
 ];
 
 const DEFAULT_COUNTRY = 'Philippines';
@@ -109,7 +154,9 @@ function toUnifiedRegionOptions(addressData) {
 }
 
 const initialForm = {
+  applicationType: '',
   organizationName: '',
+  hospitalName: '',
   organizationType: '',
   contactNumber: '',
   street: '',
@@ -118,6 +165,8 @@ const initialForm = {
   province: '',
   region: '',
   country: DEFAULT_COUNTRY,
+  latitude: '',
+  longitude: '',
   firstName: '',
   middleName: '',
   suffix: '',
@@ -148,6 +197,17 @@ function normalizeRole(value = '') {
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, '');
+}
+
+function normalizeApplicationType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'partner_hospital' || normalized === 'partnerhospital' || normalized === 'hospital') {
+    return 'partner_hospital';
+  }
+  if (normalized === 'organization' || normalized === 'org') {
+    return 'organization';
+  }
+  return '';
 }
 
 function toSafeFileName(fileName = 'organization-logo.png') {
@@ -189,21 +249,39 @@ function formatPhilippineMobile(value = '') {
   return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)}`;
 }
 
+function formatPhilippineMobileWithCountry(value = '') {
+  const localNumber = formatPhilippineMobile(value);
+  return localNumber ? `+63 ${localNumber}` : '+63 ';
+}
+
 function toStoredPhoneNumber(value = '') {
   const digits = normalizePhilippineMobile(value);
   return digits.length === 10 ? `+63${digits}` : '';
 }
 
-function mapStorageUploadError(rawMessage) {
+function toCoordinateOrNull(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapStorageUploadError(rawMessage, bucketId = ORGANIZATION_LOGOS_BUCKET) {
   const message = String(rawMessage || '').trim();
   const lower = message.toLowerCase();
 
   if (lower.includes('bucket') && lower.includes('not found')) {
+    if (bucketId === HOSPITAL_LOGOS_BUCKET) {
+      return 'Hospital logo bucket is missing. Run migration 010_hospital_logos_storage_policies.sql and retry.';
+    }
     return 'Organization logo bucket is missing. Run migration 025_organization_logos_storage_policies.sql and retry.';
   }
 
   if (lower.includes('row-level security')) {
-    return 'Logo upload blocked by Storage RLS policy. Run migration 025_organization_logos_storage_policies.sql and retry.';
+    if (bucketId === HOSPITAL_LOGOS_BUCKET) {
+      return 'Hospital logo upload blocked by Storage RLS policy. Run migration 054_force_open_application_logos_policies.sql in Supabase SQL Editor and retry. If still blocked, a leftover restrictive policy may exist — check pg_policies output.';
+    }
+    return 'Organization logo upload blocked by Storage RLS policy. Run migration 054_force_open_application_logos_policies.sql in Supabase SQL Editor and retry. If still blocked, a leftover restrictive policy may exist — check pg_policies output.';
   }
 
   return message;
@@ -231,6 +309,246 @@ function createIsolatedAuthClient() {
   });
 
   return isolatedAuthClient;
+}
+
+function LocationPinPicker({ latitude, longitude, onChange }) {
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  const initialLatitudeRef = useRef(latitude);
+  const initialLongitudeRef = useRef(longitude);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedPlaceLabel, setSelectedPlaceLabel] = useState('');
+  const [mapView, setMapView] = useState('satellite');
+
+  const updateMarkerAndLocation = useCallback((nextLat, nextLng, options = {}) => {
+    const map = mapRef.current;
+    if (!map || !Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      return;
+    }
+
+    const target = [Number(nextLng), Number(nextLat)];
+    if (!markerRef.current) {
+      markerRef.current = new maplibregl.Marker({ color: '#b91c1c' })
+        .setLngLat(target)
+        .addTo(map);
+    } else {
+      markerRef.current.setLngLat(target);
+    }
+
+    map.flyTo({
+      center: target,
+      zoom: Number.isFinite(options.zoom) ? options.zoom : Math.max(map.getZoom(), 13),
+      essential: true,
+    });
+
+    if (options.notify !== false) {
+      onChangeRef.current(Number(nextLat), Number(nextLng));
+    }
+  }, []);
+
+  const onSelectSearchResult = useCallback((result) => {
+    const nextLat = Number(result?.lat);
+    const nextLng = Number(result?.lon);
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      return;
+    }
+    updateMarkerAndLocation(nextLat, nextLng, { notify: true, zoom: 15 });
+    setSelectedPlaceLabel(String(result?.display_name || '').trim());
+    setSearchError('');
+  }, [updateMarkerAndLocation]);
+
+  const runLocationSearch = async () => {
+    const query = String(searchQuery || '').trim();
+    if (!query) {
+      setSearchError('Enter a location to search.');
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+
+    try {
+      const endpoint = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=ph&q=${encodeURIComponent(query)}`;
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Search request failed.');
+      }
+
+      const resultRows = await response.json();
+      const normalizedResults = Array.isArray(resultRows)
+        ? resultRows.filter((row) => Number.isFinite(Number(row?.lat)) && Number.isFinite(Number(row?.lon)))
+        : [];
+
+      setSearchResults(normalizedResults);
+
+      if (normalizedResults.length === 0) {
+        setSearchError('No matching location found. Try a more specific place name.');
+        return;
+      }
+
+      onSelectSearchResult(normalizedResults[0]);
+    } catch (error) {
+      setSearchError(String(error?.message || 'Unable to search location right now. Please try again.'));
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) {
+      return undefined;
+    }
+
+    const initialLat = Number.isFinite(initialLatitudeRef.current) ? initialLatitudeRef.current : DEFAULT_MAP_CENTER.lat;
+    const initialLng = Number.isFinite(initialLongitudeRef.current) ? initialLongitudeRef.current : DEFAULT_MAP_CENTER.lng;
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: MAP_SATELLITE_STYLE,
+      center: [initialLng, initialLat],
+      zoom: Number.isFinite(initialLatitudeRef.current) && Number.isFinite(initialLongitudeRef.current) ? 13 : 5,
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+
+    if (Number.isFinite(initialLatitudeRef.current) && Number.isFinite(initialLongitudeRef.current)) {
+      markerRef.current = new maplibregl.Marker({ color: '#b91c1c' })
+        .setLngLat([initialLongitudeRef.current, initialLatitudeRef.current])
+        .addTo(map);
+    }
+
+    map.on('click', (event) => {
+      const nextLng = Number(event.lngLat.lng.toFixed(7));
+      const nextLat = Number(event.lngLat.lat.toFixed(7));
+
+      if (!markerRef.current) {
+        markerRef.current = new maplibregl.Marker({ color: '#b91c1c' });
+      }
+      updateMarkerAndLocation(nextLat, nextLng, { notify: true, zoom: 15 });
+      setSelectedPlaceLabel('');
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [updateMarkerAndLocation]);
+
+  useEffect(() => {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return;
+    }
+    updateMarkerAndLocation(latitude, longitude, { notify: false });
+  }, [latitude, longitude, updateMarkerAndLocation]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const nextStyle = mapView === 'street' ? MAP_STREET_STYLE : MAP_SATELLITE_STYLE;
+    map.setStyle(nextStyle);
+  }, [mapView]);
+
+  return (
+    <div className="space-y-3 overflow-hidden rounded-xl border border-slate-300 bg-white p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-slate-700">Map View</p>
+        <div className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => setMapView('satellite')}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold ${mapView === 'satellite' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+          >
+            Satellite
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapView('street')}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold ${mapView === 'street' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+          >
+            Street
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-slate-700">Search location and pin automatically</label>
+        <div className="flex gap-2">
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                runLocationSearch();
+              }
+            }}
+            placeholder="Search address, barangay, city, or hospital"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+          />
+          <button
+            type="button"
+            onClick={runLocationSearch}
+            disabled={isSearching}
+            className="inline-flex min-w-24 items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {isSearching ? 'Finding' : 'Search'}
+          </button>
+        </div>
+      </div>
+
+      {searchError ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{searchError}</p>
+      ) : null}
+
+      {selectedPlaceLabel ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          Selected: {selectedPlaceLabel}
+        </p>
+      ) : null}
+
+      {searchResults.length > 1 ? (
+        <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50">
+          {searchResults.slice(0, 6).map((result) => (
+            <button
+              key={`${result.place_id}-${result.lat}-${result.lon}`}
+              type="button"
+              onClick={() => onSelectSearchResult(result)}
+              className="w-full border-b border-slate-200 px-3 py-2 text-left text-xs text-slate-700 last:border-b-0 hover:bg-slate-100"
+            >
+              {result.display_name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div ref={mapContainerRef} className="h-72 w-full" />
+    </div>
+  );
 }
 
 function isValidEmail(value = '') {
@@ -273,16 +591,35 @@ function mapOrganizationSchemaError(rawMessage) {
   if (
     message.includes("Could not find the table 'public.Organizations'")
     || message.includes("Could not find the table 'public.Organization_Members'")
+    || message.includes("Could not find the table 'public.Hospitals'")
   ) {
-    return 'Organization tables are not ready yet. Run migration 024_simplify_organization_tables_to_two_tables.sql, then refresh the app.';
+    return 'Application tables are not ready yet. Run the latest organization/hospital migrations, then refresh the app.';
+  }
+
+  if (
+    (lower.includes('column') && lower.includes('hospitals') && lower.includes('does not exist'))
+    || lower.includes('is_approved')
+    || lower.includes('approval_status')
+    || lower.includes('approved_by')
+    || lower.includes('approved_at')
+    || lower.includes('review_notes')
+    || lower.includes('province')
+    || lower.includes('latitude')
+    || lower.includes('longitude')
+  ) {
+    return 'Hospitals schema is missing required application columns. Run migrations 048_alter_hospitals_application_columns.sql and 049_add_hospitals_province_column.sql, then refresh.';
   }
 
   if (lower.includes('bucket') && lower.includes('organization_logos')) {
-    return 'Organization logo bucket is missing. Run migration 025_organization_logos_storage_policies.sql, then refresh the app.';
+    return 'Organization logo bucket is missing or blocked. Run migration 054_force_open_application_logos_policies.sql, then refresh the app.';
+  }
+  if (lower.includes('bucket') && lower.includes('hospital_logos')) {
+    return 'Hospital logo bucket is missing or blocked. Run migration 054_force_open_application_logos_policies.sql, then refresh the app.';
   }
 
   if (lower.includes('storage') || lower.includes('row-level security')) {
-    return mapStorageUploadError(message);
+    const inferredBucket = lower.includes('hospital_logos') ? HOSPITAL_LOGOS_BUCKET : ORGANIZATION_LOGOS_BUCKET;
+    return mapStorageUploadError(message, inferredBucket);
   }
 
   if (lower.includes('no unique or exclusion constraint matching the on conflict specification')) {
@@ -292,28 +629,28 @@ function mapOrganizationSchemaError(rawMessage) {
   return message;
 }
 
-async function uploadOrganizationLogo(file, organizationName) {
+async function uploadApplicationLogo(file, entityName, bucketId = ORGANIZATION_LOGOS_BUCKET) {
   if (!supabase) {
     throw new Error('Supabase is not configured for file upload.');
   }
 
   const safeName = toSafeFileName(file?.name || 'organization-logo.png');
-  const slug = toSlug(organizationName) || 'organization';
+  const slug = toSlug(entityName) || 'application';
   const filePath = `applications/${slug}-${Date.now()}-${safeName}`;
 
   const { error: uploadError } = await supabase.storage
-    .from(ORGANIZATION_LOGOS_BUCKET)
+    .from(bucketId)
     .upload(filePath, file, {
       upsert: false,
       contentType: file?.type || 'image/png',
     });
 
   if (uploadError) {
-    throw new Error(mapStorageUploadError(uploadError.message));
+    throw new Error(mapStorageUploadError(uploadError.message, bucketId));
   }
 
   const { data: publicUrlData } = supabase.storage
-    .from(ORGANIZATION_LOGOS_BUCKET)
+    .from(bucketId)
     .getPublicUrl(filePath);
 
   const publicUrl = publicUrlData?.publicUrl;
@@ -342,6 +679,7 @@ export default function OrganizationApplicationPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [submittedOrganizationName, setSubmittedOrganizationName] = useState('');
+  const [submittedApplicationType, setSubmittedApplicationType] = useState('');
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -449,6 +787,13 @@ export default function OrganizationApplicationPage() {
     };
   }, [otpCooldownSeconds]);
 
+  const applicationType = useMemo(() => normalizeApplicationType(form.applicationType), [form.applicationType]);
+  const isOrganizationApplication = applicationType === 'organization';
+  const isHospitalApplication = applicationType === 'partner_hospital';
+
+  const selectedLatitude = useMemo(() => toCoordinateOrNull(form.latitude), [form.latitude]);
+  const selectedLongitude = useMemo(() => toCoordinateOrNull(form.longitude), [form.longitude]);
+
   const hasOrganizationRequiredFields = useMemo(() => {
     return (
       form.organizationName.trim()
@@ -459,8 +804,45 @@ export default function OrganizationApplicationPage() {
       && form.province.trim()
       && form.region.trim()
       && form.country.trim()
+      && selectedLatitude !== null
+      && selectedLongitude !== null
     );
-  }, [form.organizationName, form.organizationType, form.contactNumber, form.street, form.city, form.province, form.region, form.country]);
+  }, [
+    form.organizationName,
+    form.organizationType,
+    form.contactNumber,
+    form.street,
+    form.city,
+    form.province,
+    form.region,
+    form.country,
+    selectedLatitude,
+    selectedLongitude,
+  ]);
+
+  const hasHospitalRequiredFields = useMemo(() => {
+    return (
+      form.hospitalName.trim()
+      && normalizePhilippineMobile(form.contactNumber).length === 10
+      && form.street.trim()
+      && form.city.trim()
+      && form.province.trim()
+      && form.region.trim()
+      && form.country.trim()
+      && selectedLatitude !== null
+      && selectedLongitude !== null
+    );
+  }, [
+    form.hospitalName,
+    form.contactNumber,
+    form.street,
+    form.city,
+    form.province,
+    form.region,
+    form.country,
+    selectedLatitude,
+    selectedLongitude,
+  ]);
 
   const hasLeadRequiredFields = useMemo(() => {
     return (
@@ -476,7 +858,17 @@ export default function OrganizationApplicationPage() {
     );
   }, [form.firstName, form.lastName, form.leadContactNumber, form.leadStreet, form.leadCity, form.leadProvince, form.leadRegion, form.leadCountry, form.email]);
 
-  const hasRequiredFields = hasOrganizationRequiredFields && hasLeadRequiredFields;
+  const hasEntityRequiredFields = useMemo(() => {
+    if (isHospitalApplication) {
+      return hasHospitalRequiredFields;
+    }
+    if (isOrganizationApplication) {
+      return hasOrganizationRequiredFields;
+    }
+    return false;
+  }, [hasHospitalRequiredFields, hasOrganizationRequiredFields, isHospitalApplication, isOrganizationApplication]);
+
+  const hasRequiredFields = hasEntityRequiredFields && hasLeadRequiredFields;
 
   const canSubmit = hasRequiredFields && isEmailOtpVerified;
 
@@ -506,6 +898,49 @@ export default function OrganizationApplicationPage() {
     setForm((prev) => ({
       ...prev,
       [field]: nextValue,
+    }));
+  };
+
+  const onApplicationTypeChange = (event) => {
+    const nextType = normalizeApplicationType(event.target.value);
+    setErrorMessage('');
+    setSuccessMessage('');
+    setOtpCode('');
+    setOtpNotice({ type: '', message: '' });
+    setOtpVerifiedEmail('');
+    setOtpVerifiedAuthUserId('');
+    setOtpCooldownSeconds(0);
+    if (logoPreviewUrl) {
+      URL.revokeObjectURL(logoPreviewUrl);
+    }
+    setLogoPreviewUrl('');
+    setLogoFile(null);
+    if (logoInputRef.current) {
+      logoInputRef.current.value = '';
+    }
+    setForm((prev) => ({
+      ...prev,
+      applicationType: nextType,
+      organizationName: '',
+      hospitalName: '',
+      organizationType: '',
+      contactNumber: '',
+      street: '',
+      barangay: '',
+      city: '',
+      province: '',
+      region: '',
+      country: DEFAULT_COUNTRY,
+      latitude: '',
+      longitude: '',
+    }));
+  };
+
+  const onLocationPinChange = (nextLat, nextLng) => {
+    setForm((prev) => ({
+      ...prev,
+      latitude: Number(nextLat).toFixed(7),
+      longitude: Number(nextLng).toFixed(7),
     }));
   };
 
@@ -751,22 +1186,42 @@ export default function OrganizationApplicationPage() {
     window.location.assign('/');
   };
 
+  const goToDetailsPage = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (!applicationType) {
+      setErrorMessage('Please choose an application type before continuing.');
+      return;
+    }
+    setActivePage(2);
+  };
+
   const goToLeadPage = () => {
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!hasOrganizationRequiredFields) {
-      setErrorMessage('Please complete all organization information, including a valid contact number, before continuing.');
+    if (!hasEntityRequiredFields) {
+      setErrorMessage(
+        isHospitalApplication
+          ? 'Please complete all partner hospital information, including map pin and valid contact number, before continuing.'
+          : 'Please complete all organization information, including map pin and valid contact number, before continuing.'
+      );
       return;
     }
 
-    setActivePage(2);
+    setActivePage(3);
   };
 
-  const goToOrganizationPage = () => {
+  const goToSelectionPage = () => {
     setErrorMessage('');
     setSuccessMessage('');
     setActivePage(1);
+  };
+
+  const goToDetailsFromLeadPage = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setActivePage(2);
   };
 
   const onSubmit = async (event) => {
@@ -775,7 +1230,17 @@ export default function OrganizationApplicationPage() {
     setSuccessMessage('');
 
     if (activePage === 1) {
+      goToDetailsPage();
+      return;
+    }
+
+    if (activePage === 2) {
       goToLeadPage();
+      return;
+    }
+
+    if (!applicationType) {
+      setErrorMessage('Please choose if you are applying as Organization or Partner Hospital.');
       return;
     }
 
@@ -797,8 +1262,12 @@ export default function OrganizationApplicationPage() {
     const nowIso = new Date().toISOString();
     const joinedDate = nowIso.slice(0, 10);
     const organizationName = form.organizationName.trim();
-    const organizationContactNumber = toStoredPhoneNumber(form.contactNumber);
+    const hospitalName = form.hospitalName.trim();
+    const entityName = isHospitalApplication ? hospitalName : organizationName;
+    const entityContactNumber = toStoredPhoneNumber(form.contactNumber);
     const leadContactNumber = toStoredPhoneNumber(form.leadContactNumber);
+    const selectedLat = toCoordinateOrNull(form.latitude);
+    const selectedLng = toCoordinateOrNull(form.longitude);
 
     setIsSubmitting(true);
 
@@ -815,10 +1284,11 @@ export default function OrganizationApplicationPage() {
 
       const existingUser = existingUserResponse.data || null;
       const existingRole = normalizeRole(existingUser?.role);
-      const allowedExistingRole = !existingRole || existingRole === 'user' || existingRole === 'organization' || existingRole === 'partner';
+      const allowedExistingRole = !existingRole
+        || ['user', 'organization', 'partner', 'hospital', 'partnerhospital'].includes(existingRole);
 
       if (existingUser && !allowedExistingRole) {
-        throw new Error('This email is linked to a restricted account role. Use a different email for the organization lead.');
+        throw new Error('This email is linked to a restricted account role. Use a different email for this application lead.');
       }
 
       if (existingUser?.auth_user_id && otpVerifiedAuthUserId && existingUser.auth_user_id !== otpVerifiedAuthUserId) {
@@ -876,36 +1346,38 @@ export default function OrganizationApplicationPage() {
       }
 
       if (!userId) {
-        throw new Error('Unable to resolve local user profile for the organization applicant.');
+        throw new Error('Unable to resolve local user profile for the applicant.');
       }
 
-      const existingMembersResult = await supabase
-        .from(ORGANIZATION_MEMBERS_TABLE)
-        .select('Organization_ID')
-        .eq('User_ID', userId);
+      if (isOrganizationApplication) {
+        const existingMembersResult = await supabase
+          .from(ORGANIZATION_MEMBERS_TABLE)
+          .select('Organization_ID')
+          .eq('User_ID', userId);
 
-      if (existingMembersResult.error) {
-        throw new Error(existingMembersResult.error.message);
-      }
-
-      const linkedOrganizationIds = (existingMembersResult.data || [])
-        .map((row) => row.Organization_ID)
-        .filter(Boolean);
-
-      if (linkedOrganizationIds.length > 0) {
-        const activeOrganizationsResult = await supabase
-          .from(ORGANIZATIONS_TABLE)
-          .select('Organization_ID, Approval_Status')
-          .in('Organization_ID', linkedOrganizationIds)
-          .in('Approval_Status', ['Pending', 'Approved'])
-          .limit(1);
-
-        if (activeOrganizationsResult.error) {
-          throw new Error(activeOrganizationsResult.error.message);
+        if (existingMembersResult.error) {
+          throw new Error(existingMembersResult.error.message);
         }
 
-        if ((activeOrganizationsResult.data || []).length > 0) {
-          throw new Error('An active organization request already exists for this lead account.');
+        const linkedOrganizationIds = (existingMembersResult.data || [])
+          .map((row) => row.Organization_ID)
+          .filter(Boolean);
+
+        if (linkedOrganizationIds.length > 0) {
+          const activeOrganizationsResult = await supabase
+            .from(ORGANIZATIONS_TABLE)
+            .select('Organization_ID, Approval_Status')
+            .in('Organization_ID', linkedOrganizationIds)
+            .in('Approval_Status', ['Pending', 'Approved'])
+            .limit(1);
+
+          if (activeOrganizationsResult.error) {
+            throw new Error(activeOrganizationsResult.error.message);
+          }
+
+          if ((activeOrganizationsResult.data || []).length > 0) {
+            throw new Error('An active organization request already exists for this lead account.');
+          }
         }
       }
 
@@ -962,82 +1434,115 @@ export default function OrganizationApplicationPage() {
       let organizationLogoUrl = '';
 
       if (logoFile) {
-        const uploadResult = await uploadOrganizationLogo(logoFile, form.organizationName.trim());
+        const logoBucketId = isHospitalApplication ? HOSPITAL_LOGOS_BUCKET : ORGANIZATION_LOGOS_BUCKET;
+        const uploadResult = await uploadApplicationLogo(logoFile, entityName, logoBucketId);
         organizationLogoUrl = uploadResult.publicUrl;
       }
 
-      const createOrganizationResult = await supabase
-        .from(ORGANIZATIONS_TABLE)
-        .insert({
-          Organization_Name: organizationName,
-          Organization_Type: form.organizationType.trim(),
-          Contact_Number: organizationContactNumber,
-          Organization_Logo_URL: organizationLogoUrl || null,
-          Street: form.street.trim(),
-          Barangay: form.barangay.trim() || null,
-          City: form.city.trim(),
-          Province: form.province.trim(),
-          Region: form.region.trim(),
-          Country: form.country.trim(),
+      if (isOrganizationApplication) {
+        const createOrganizationResult = await supabase
+          .from(ORGANIZATIONS_TABLE)
+          .insert({
+            Organization_Name: organizationName,
+            Organization_Type: form.organizationType.trim(),
+            Contact_Number: entityContactNumber,
+            Organization_Logo_URL: organizationLogoUrl || null,
+            Street: form.street.trim(),
+            Barangay: form.barangay.trim() || null,
+            City: form.city.trim(),
+            Province: form.province.trim(),
+            Region: form.region.trim(),
+            Country: form.country.trim(),
+            Latitude: selectedLat,
+            Longitude: selectedLng,
+            Status: 'Inactive',
+            Is_Approved: false,
+            Approval_Status: 'Pending',
+            Created_By: userId,
+            Updated_By: userId,
+            Updated_At: nowIso,
+          })
+          .select('Organization_ID')
+          .maybeSingle();
+
+        if (createOrganizationResult.error) {
+          throw new Error(createOrganizationResult.error.message);
+        }
+
+        const organizationId = createOrganizationResult.data?.Organization_ID;
+
+        if (!organizationId) {
+          throw new Error('Organization record was not created. Please try again.');
+        }
+
+        const membershipPayload = {
+          Organization_ID: organizationId,
+          User_ID: userId,
+          Membership_Role: 'Leader',
+          Is_Primary: true,
           Status: 'Inactive',
-          Is_Approved: false,
-          Approval_Status: 'Pending',
           Created_By: userId,
-          Updated_By: userId,
           Updated_At: nowIso,
-        })
-        .select('Organization_ID')
-        .maybeSingle();
+        };
 
-      if (createOrganizationResult.error) {
-        throw new Error(createOrganizationResult.error.message);
-      }
-
-      const organizationId = createOrganizationResult.data?.Organization_ID;
-
-      if (!organizationId) {
-        throw new Error('Organization record was not created. Please try again.');
-      }
-
-      const membershipPayload = {
-        Organization_ID: organizationId,
-        User_ID: userId,
-        Membership_Role: 'Leader',
-        Is_Primary: true,
-        Status: 'Inactive',
-        Created_By: userId,
-        Updated_At: nowIso,
-      };
-
-      const existingMembershipResult = await supabase
-        .from(ORGANIZATION_MEMBERS_TABLE)
-        .select('Member_ID')
-        .eq('Organization_ID', organizationId)
-        .eq('User_ID', userId)
-        .limit(1);
-
-      if (existingMembershipResult.error) {
-        throw new Error(existingMembershipResult.error.message);
-      }
-
-      const existingMemberId = existingMembershipResult.data?.[0]?.Member_ID || null;
-
-      if (existingMemberId) {
-        const updateMembershipResult = await supabase
+        const existingMembershipResult = await supabase
           .from(ORGANIZATION_MEMBERS_TABLE)
-          .update(membershipPayload)
-          .eq('Member_ID', existingMemberId);
+          .select('Member_ID')
+          .eq('Organization_ID', organizationId)
+          .eq('User_ID', userId)
+          .limit(1);
 
-        if (updateMembershipResult.error) {
-          throw new Error(updateMembershipResult.error.message);
+        if (existingMembershipResult.error) {
+          throw new Error(existingMembershipResult.error.message);
+        }
+
+        const existingMemberId = existingMembershipResult.data?.[0]?.Member_ID || null;
+
+        if (existingMemberId) {
+          const updateMembershipResult = await supabase
+            .from(ORGANIZATION_MEMBERS_TABLE)
+            .update(membershipPayload)
+            .eq('Member_ID', existingMemberId);
+
+          if (updateMembershipResult.error) {
+            throw new Error(updateMembershipResult.error.message);
+          }
+        } else {
+          const insertMembershipResult = await supabase
+            .from(ORGANIZATION_MEMBERS_TABLE)
+            .insert(membershipPayload);
+
+          if (insertMembershipResult.error) {
+            throw new Error(insertMembershipResult.error.message);
+          }
         }
       } else {
-        const insertMembershipResult = await supabase
-          .from(ORGANIZATION_MEMBERS_TABLE)
-          .insert(membershipPayload);
+        const createHospitalResult = await supabase
+          .from(HOSPITALS_TABLE)
+          .insert({
+            Hospital_Name: hospitalName,
+            Hospital_Logo: organizationLogoUrl || null,
+            Contact_Number: entityContactNumber,
+            Street: form.street.trim(),
+            Barangay: form.barangay.trim() || null,
+            City: form.city.trim(),
+            Province: form.province.trim(),
+            Region: form.region.trim(),
+            Country: form.country.trim(),
+            Latitude: selectedLat,
+            Longitude: selectedLng,
+            Is_Approved: false,
+            Approval_Status: 'Pending',
+            Approved_By: null,
+            Approved_At: null,
+            Review_Notes: null,
+            Updated_At: nowIso,
+          })
+          .select('Hospital_ID')
+          .maybeSingle();
 
-        if (insertMembershipResult.error) {
-          throw new Error(insertMembershipResult.error.message);
+        if (createHospitalResult.error) {
+          throw new Error(createHospitalResult.error.message);
         }
       }
 
@@ -1060,14 +1565,17 @@ export default function OrganizationApplicationPage() {
         await otpClientRef.current.auth.signOut().catch(() => undefined);
       }
       setSuccessMessage(
-        'Application submitted successfully. Your organization is now pending Super Admin review.'
+        isHospitalApplication
+          ? 'Application submitted successfully. Your partner hospital application is now pending Super Admin review.'
+          : 'Application submitted successfully. Your organization is now pending Super Admin review.'
       );
-      setSubmittedOrganizationName(organizationName);
+      setSubmittedOrganizationName(entityName);
+      setSubmittedApplicationType(applicationType);
       setIsSubmissionComplete(true);
     } catch (error) {
       setErrorMessage(
         mapOrganizationSchemaError(error?.message)
-        || 'Unable to submit organization application.'
+        || 'Unable to submit application.'
       );
     } finally {
       setIsSubmitting(false);
@@ -1089,6 +1597,17 @@ export default function OrganizationApplicationPage() {
   }, [incomingTransition]);
 
   const Wrapper = incomingTransition === 'apply' ? TransitionFlipEntrance : React.Fragment;
+  const entityDisplayName = isHospitalApplication ? 'Partner Hospital' : 'Organization';
+  const formTitle = isHospitalApplication
+    ? 'Submit Partner Hospital Application'
+    : isOrganizationApplication
+      ? 'Submit Organization Application'
+      : 'Submit Application';
+  const stepLabel = activePage === 1
+    ? 'Application Type'
+    : activePage === 2
+      ? `${entityDisplayName} Information`
+      : 'Lead Account and Verification';
 
   if (isSubmissionComplete) {
     return (
@@ -1106,7 +1625,7 @@ export default function OrganizationApplicationPage() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: secondaryTextColor }}>Application Status</p>
                   <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl" style={{ color: primaryTextColor }}>
-                    Organization Application Submitted
+                    {submittedApplicationType === 'partner_hospital' ? 'Partner Hospital Application Submitted' : 'Organization Application Submitted'}
                   </h1>
                   {submittedOrganizationName ? (
                     <p className="mt-2 text-sm md:text-base" style={{ color: secondaryTextColor }}>
@@ -1126,11 +1645,13 @@ export default function OrganizationApplicationPage() {
             <div className="space-y-4 px-5 py-6 md:px-7 md:py-7">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                 <p className="inline-flex items-center gap-2 font-semibold"><CheckCircle2 size={16} /> Success</p>
-                <p className="mt-1">{successMessage || 'Application submitted successfully. Your organization is now pending Super Admin review.'}</p>
+                <p className="mt-1">{successMessage || (submittedApplicationType === 'partner_hospital'
+                  ? 'Application submitted successfully. Your partner hospital application is now pending Super Admin review.'
+                  : 'Application submitted successfully. Your organization is now pending Super Admin review.')}</p>
               </div>
 
               <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm" style={{ borderColor: `${secondaryColor}33`, color: secondaryTextColor }}>
-                Please wait for the email update to know if your organization application is accepted or rejected.
+                Please wait for the email update to know if your application is accepted or rejected.
               </div>
 
               <div className="pt-1">
@@ -1173,12 +1694,12 @@ export default function OrganizationApplicationPage() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: secondaryTextColor }}>Organization Onboarding</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: secondaryTextColor }}>Application Onboarding</p>
                 <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl" style={{ color: primaryTextColor }}>
-                  Submit Organization Application
+                  {formTitle}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm md:text-base" style={{ color: secondaryTextColor }}>
-                  Fill in the organization profile first, then the lead details. Verify the lead email with a 6-digit OTP before submitting.
+                  Step 1: choose application type. Step 2: complete details with map pin. Step 3: verify lead email with a 6-digit OTP before submitting.
                 </p>
               </div>
               <div
@@ -1192,68 +1713,120 @@ export default function OrganizationApplicationPage() {
 
           <form onSubmit={onSubmit} className="space-y-6 px-5 py-6 md:px-7 md:py-7">
             <div className="flex items-center justify-between rounded-xl border bg-slate-50 px-4 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}33`, color: secondaryTextColor }}>
-              <span>Page {activePage} of 2</span>
-              <span>{activePage === 1 ? 'Organization Information' : 'Lead Account and Verification'}</span>
+              <span>Page {activePage} of 3</span>
+              <span>{stepLabel}</span>
             </div>
 
             {activePage === 1 ? (
               <fieldset className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
-                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Organization Information</legend>
+                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Application Type</legend>
                 <div className="rounded-xl border bg-slate-50 px-3 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}22`, color: secondaryTextColor }}>
-                  Provide the organization name, type, contact, logo, and full address.
+                  Choose what you are applying for first. Fields in the next step will change based on this selection.
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-1 text-sm">
-                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Name *</span>
-                    <input
-                      value={form.organizationName}
-                      onChange={updateField('organizationName')}
-                      className={fieldClassName}
-                      style={fieldStyle}
-                      placeholder="Example: Hope Wig Foundation"
-                      required
-                    />
-                  </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {APPLICATION_TYPE_OPTIONS.map((option) => {
+                    const isSelected = applicationType === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => onApplicationTypeChange({ target: { value: option.id } })}
+                        className="rounded-xl border bg-white px-4 py-4 text-left transition"
+                        style={{
+                          borderColor: isSelected ? primaryColor : `${secondaryColor}44`,
+                          backgroundColor: isSelected ? `${primaryColor}12` : '#ffffff',
+                        }}
+                      >
+                        <p className="text-sm font-bold" style={{ color: isSelected ? primaryColor : primaryTextColor }}>
+                          {option.label}
+                        </p>
+                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>
+                          {option.id === 'organization'
+                            ? 'Use this if you are applying as an organization.'
+                            : 'Use this if you are applying as a partner hospital.'}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
 
-                  <label className="space-y-1 text-sm">
-                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Type *</span>
-                    <select
-                      value={form.organizationType}
-                      onChange={updateField('organizationType')}
-                      className={fieldClassName}
-                      style={fieldStyle}
-                      required
-                    >
-                      <option value="">Select organization type</option>
-                      {ORGANIZATION_TYPE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+            {activePage === 2 ? (
+              <fieldset className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
+                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>{entityDisplayName} Information</legend>
+                <div className="rounded-xl border bg-slate-50 px-3 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}22`, color: secondaryTextColor }}>
+                  {isHospitalApplication
+                    ? 'Provide partner hospital details, contact info, full address, and exact map pin.'
+                    : 'Provide organization details, contact info, full address, and exact map pin.'}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {isHospitalApplication ? (
+                    <label className="space-y-1 text-sm md:col-span-2">
+                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Hospital Name *</span>
+                      <input
+                        value={form.hospitalName}
+                        onChange={updateField('hospitalName')}
+                        className={fieldClassName}
+                        style={fieldStyle}
+                        placeholder="Example: StrandShare Medical Center"
+                        required
+                      />
+                    </label>
+                  ) : (
+                    <>
+                      <label className="space-y-1 text-sm">
+                        <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Name *</span>
+                        <input
+                          value={form.organizationName}
+                          onChange={updateField('organizationName')}
+                          className={fieldClassName}
+                          style={fieldStyle}
+                          placeholder="Example: Hope Wig Foundation"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-1 text-sm">
+                        <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Type *</span>
+                        <select
+                          value={form.organizationType}
+                          onChange={updateField('organizationType')}
+                          className={fieldClassName}
+                          style={fieldStyle}
+                          required
+                        >
+                          <option value="">Select organization type</option>
+                          {ORGANIZATION_TYPE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  )}
 
                   <label className="space-y-1 text-sm">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>Contact Number *</span>
-                    <div className="flex overflow-hidden rounded-xl border" style={{ borderColor: `${secondaryColor}55` }}>
-                      <span className="grid place-items-center border-r bg-slate-100 px-3 text-sm font-semibold text-slate-600" style={{ borderColor: `${secondaryColor}44` }}>
-                        +63
-                      </span>
-                      <input
-                        type="tel"
-                        value={formatPhilippineMobile(form.contactNumber)}
-                        onChange={onContactNumberChange('contactNumber')}
-                        className="w-full bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none"
-                        placeholder="912 123 1234"
-                        required
-                      />
-                    </div>
-                    <p className="text-[11px]" style={{ color: secondaryTextColor }}>Format: +63 912 123 1234</p>
+                    <input
+                      type="tel"
+                      value={formatPhilippineMobileWithCountry(form.contactNumber)}
+                      onChange={onContactNumberChange('contactNumber')}
+                      className={fieldClassName}
+                      style={fieldStyle}
+                      inputMode="numeric"
+                      placeholder="+63 912 345 6789"
+                      required
+                    />
+                    <p className="text-[11px]" style={{ color: secondaryTextColor }}>Format only: +63 912 345 6789</p>
                   </label>
 
                   <label className="space-y-2 text-sm md:col-span-2">
-                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Logo (Upload Image)</span>
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>
+                      {isHospitalApplication ? 'Hospital Logo (Upload Image)' : 'Organization Logo (Upload Image)'}
+                    </span>
                     <div className="rounded-xl border border-dashed bg-slate-50 p-4" style={{ borderColor: `${secondaryColor}55` }}>
                       <div className="flex flex-wrap items-center gap-3">
                         <label
@@ -1406,8 +1979,45 @@ export default function OrganizationApplicationPage() {
                     )}
                   </label>
                 </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold" style={{ color: secondaryTextColor }}>Exact Location Pin *</p>
+                  <LocationPinPicker
+                    latitude={selectedLatitude}
+                    longitude={selectedLongitude}
+                    onChange={onLocationPinChange}
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Latitude *</span>
+                      <input
+                        value={form.latitude}
+                        onChange={updateField('latitude')}
+                        className={fieldClassName}
+                        style={fieldStyle}
+                        placeholder="Auto-filled from map pin"
+                        readOnly
+                        required
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Longitude *</span>
+                      <input
+                        value={form.longitude}
+                        onChange={updateField('longitude')}
+                        className={fieldClassName}
+                        style={fieldStyle}
+                        placeholder="Auto-filled from map pin"
+                        readOnly
+                        required
+                      />
+                    </label>
+                  </div>
+                </div>
               </fieldset>
-            ) : (
+            ) : null}
+
+            {activePage === 3 ? (
               <>
                 <fieldset className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
                   <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Lead Account Details</legend>
@@ -1489,20 +2099,17 @@ export default function OrganizationApplicationPage() {
 
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Lead Contact Number *</span>
-                      <div className="flex overflow-hidden rounded-xl border" style={{ borderColor: `${secondaryColor}55` }}>
-                        <span className="grid place-items-center border-r bg-slate-100 px-3 text-sm font-semibold text-slate-600" style={{ borderColor: `${secondaryColor}44` }}>
-                          +63
-                        </span>
-                        <input
-                          type="tel"
-                          value={formatPhilippineMobile(form.leadContactNumber)}
-                          onChange={onContactNumberChange('leadContactNumber')}
-                          className="w-full bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none"
-                          placeholder="912 123 1234"
-                          required
-                        />
-                      </div>
-                      <p className="text-[11px]" style={{ color: secondaryTextColor }}>Format: +63 912 123 1234</p>
+                      <input
+                        type="tel"
+                        value={formatPhilippineMobileWithCountry(form.leadContactNumber)}
+                        onChange={onContactNumberChange('leadContactNumber')}
+                        className={fieldClassName}
+                        style={fieldStyle}
+                        inputMode="numeric"
+                        placeholder="+63 912 345 6789"
+                        required
+                      />
+                      <p className="text-[11px]" style={{ color: secondaryTextColor }}>Format only: +63 912 345 6789</p>
                     </label>
 
                     <label className="space-y-1 text-sm md:col-span-2">
@@ -1703,7 +2310,7 @@ export default function OrganizationApplicationPage() {
                   </div>
                 </fieldset>
               </>
-            )}
+            ) : null}
 
             {errorMessage ? (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -1722,6 +2329,27 @@ export default function OrganizationApplicationPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
+                  onClick={goToDetailsPage}
+                  className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Next: {applicationType ? `${entityDisplayName} Details` : 'Select Type'}
+                </button>
+              </div>
+            ) : null}
+
+            {activePage === 2 ? (
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={goToSelectionPage}
+                  className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
+                  style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
                   onClick={goToLeadPage}
                   className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
                   style={{ backgroundColor: primaryColor }}
@@ -1732,12 +2360,12 @@ export default function OrganizationApplicationPage() {
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs" style={{ color: secondaryTextColor }}>
-                  By submitting, you confirm your details are accurate. Your organization profile will remain pending until Super Admin review.
+                  By submitting, you confirm your details are accurate. Your {isHospitalApplication ? 'partner hospital' : 'organization'} profile will remain pending until Super Admin review.
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={goToOrganizationPage}
+                    onClick={goToDetailsFromLeadPage}
                     className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
                     style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
                   >

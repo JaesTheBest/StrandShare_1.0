@@ -21,17 +21,24 @@ import { useTheme } from '../../../context/ThemeContext';
 const USERS_TABLE = 'users';
 const UI_SETTINGS_TABLE = 'UI_Settings';
 const ORGANIZATIONS_TABLE = 'Organizations';
+const HOSPITALS_TABLE = 'Hospitals';
 const ORGANIZATION_MEMBERS_TABLE = 'Organization_Members';
 const USER_DETAILS_TABLE = 'user_details';
 const ORGANIZATION_LOGOS_BUCKET = 'organization_logos';
+const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 let adminAuthClient = null;
 
 const TABS = [
-  { key: 'applications', label: 'Applications' },
-  { key: 'active', label: 'Active Organizations' },
+  { key: 'pending', label: 'Pending' },
   { key: 'approved', label: 'Approved' },
   { key: 'rejected', label: 'Rejected' },
   { key: 'all', label: 'All' },
+];
+
+const APPLICATION_TYPE_OPTIONS = [
+  { key: 'all', label: 'All Applications' },
+  { key: 'organization', label: 'Organizations' },
+  { key: 'hospital', label: 'Hospitals' },
 ];
 
 function normalizeStatus(value = '') {
@@ -118,6 +125,15 @@ function resolveOrganizationLogoUrl(value = '') {
   return data?.publicUrl || '';
 }
 
+function resolveHospitalLogoUrl(value = '') {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+  if (/^https?:\/\//i.test(rawValue)) return rawValue;
+
+  const { data } = supabase.storage.from(HOSPITAL_LOGOS_BUCKET).getPublicUrl(rawValue);
+  return data?.publicUrl || '';
+}
+
 function resolveLeadMembership(rows = []) {
   if (!rows.length) return null;
 
@@ -142,8 +158,9 @@ function mapOrganizationSchemaError(rawMessage) {
   if (
     message.includes("Could not find the table 'public.Organizations'")
     || message.includes("Could not find the table 'public.Organization_Members'")
+    || message.includes("Could not find the table 'public.Hospitals'")
   ) {
-    return 'Organization tables are missing. Run migration 024_simplify_organization_tables_to_two_tables.sql and refresh the app.';
+    return 'Application tables are missing. Run organization and hospital migrations, then refresh the app.';
   }
 
   if (message.toLowerCase().includes('invite')) {
@@ -327,8 +344,6 @@ async function sendInviteUserEmail({
 
 function getTabCount(rows, tabKey) {
   if (tabKey === 'all') return rows.length;
-  if (tabKey === 'applications') return rows.filter((row) => ['pending', 'rejected'].includes(normalizeStatus(row.Approval_Status))).length;
-  if (tabKey === 'active') return rows.filter((row) => normalizeStatus(row.Approval_Status) === 'approved' && normalizeStatus(row.Organization_Status) === 'active').length;
   return rows.filter((row) => normalizeStatus(row.Approval_Status) === tabKey).length;
 }
 
@@ -337,9 +352,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
 
   const [uiSettings, setUiSettings] = useState(null);
   const [records, setRecords] = useState([]);
-  const [activeTab, setActiveTab] = useState('applications');
+  const [activeTab, setActiveTab] = useState('pending');
   const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [applicationTypeFilter, setApplicationTypeFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [notice, setNotice] = useState({ type: '', message: '' });
@@ -392,27 +407,33 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     setNotice({ type: '', message: '' });
 
     try {
-      const orgResult = await supabase
-        .from(ORGANIZATIONS_TABLE)
-        .select('*')
-        .order('Created_At', { ascending: false });
+      const [orgResult, hospitalResult] = await Promise.all([
+        supabase
+          .from(ORGANIZATIONS_TABLE)
+          .select('*')
+          .order('Created_At', { ascending: false }),
+        supabase
+          .from(HOSPITALS_TABLE)
+          .select('*')
+          .order('Created_At', { ascending: false }),
+      ]);
 
       if (orgResult.error) {
         throw new Error(orgResult.error.message);
       }
-
-      const organizations = orgResult.data || [];
-      const organizationIds = organizations.map((org) => org.Organization_ID).filter(Boolean);
-
-      if (!organizationIds.length) {
-        setRecords([]);
-        return;
+      if (hospitalResult.error) {
+        throw new Error(hospitalResult.error.message);
       }
 
-      const membersResult = await supabase
-        .from(ORGANIZATION_MEMBERS_TABLE)
-        .select('Member_ID, Organization_ID, User_ID, Membership_Role, Is_Primary, Status, Created_At, Updated_At')
-        .in('Organization_ID', organizationIds);
+      const organizations = orgResult.data || [];
+      const hospitals = hospitalResult.data || [];
+      const organizationIds = organizations.map((org) => org.Organization_ID).filter(Boolean);
+      const membersResult = organizationIds.length
+        ? await supabase
+          .from(ORGANIZATION_MEMBERS_TABLE)
+          .select('Member_ID, Organization_ID, User_ID, Membership_Role, Is_Primary, Status, Created_At, Updated_At')
+          .in('Organization_ID', organizationIds)
+        : { data: [], error: null };
 
       if (membersResult.error) {
         throw new Error(membersResult.error.message);
@@ -462,7 +483,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       const usersById = new Map((usersResult.data || []).map((row) => [row.user_id, row]));
       const detailsByUserId = new Map((userDetailsResult.data || []).map((row) => [row.user_id, row]));
 
-      const rows = organizations.map((org) => {
+      const organizationRows = organizations.map((org) => {
         const orgMembers = membersByOrganization.get(org.Organization_ID) || [];
         const leadMembership = resolveLeadMembership(orgMembers);
         const leadUserId = leadMembership?.User_ID || org.Created_By || null;
@@ -481,6 +502,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
         );
 
         return {
+          Record_Key: `organization:${org.Organization_ID}`,
+          Application_Type: 'organization',
+          Application_Type_Label: 'Organization',
           Organization_ID: org.Organization_ID,
           Organization_Name: org.Organization_Name,
           Organization_Type: org.Organization_Type,
@@ -521,12 +545,62 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
         };
       });
 
-      setRecords(rows);
+      const hospitalRows = hospitals.map((hospital) => {
+        return {
+          Record_Key: `hospital:${hospital.Hospital_ID}`,
+          Application_Type: 'hospital',
+          Application_Type_Label: 'Hospital',
+          Hospital_ID: hospital.Hospital_ID,
+          Organization_ID: hospital.Hospital_ID,
+          Organization_Name: hospital.Hospital_Name,
+          Organization_Type: 'Partner Hospital',
+          Organization_Logo_URL: resolveHospitalLogoUrl(hospital.Hospital_Logo),
+          Contact_Number: hospital.Contact_Number,
+          Street: hospital.Street,
+          Barangay: hospital.Barangay,
+          City: hospital.City,
+          Province: hospital.Province,
+          Region: hospital.Region,
+          Country: hospital.Country,
+          Latitude: hospital.Latitude,
+          Longitude: hospital.Longitude,
+          Approval_Status: hospital.Approval_Status || 'Pending',
+          Organization_Status: Boolean(hospital.Is_Approved) ? 'Active' : 'Inactive',
+          Is_Approved: Boolean(hospital.Is_Approved),
+          Approved_By: hospital.Approved_By,
+          Approved_At: hospital.Approved_At,
+          Created_By: null,
+          Created_At: hospital.Created_At,
+          Updated_At: hospital.Updated_At,
+          Review_Notes: hospital.Review_Notes,
+          Lead_User_ID: null,
+          Lead_Email: '',
+          Lead_Role: '',
+          Lead_Is_Active: false,
+          Lead_Access_Start: null,
+          Lead_Access_End: null,
+          Lead_Auth_User_ID: null,
+          Lead_First_Name: '',
+          Lead_Last_Name: '',
+          Lead_Contact: '',
+          Lead_Address: '',
+          Members: [],
+          Member_Stats: { total: 0, active: 0, inactive: 0, leaders: 0 },
+        };
+      });
+
+      const allRows = [...organizationRows, ...hospitalRows].sort((left, right) => {
+        const leftMs = new Date(left.Created_At || left.Updated_At || 0).getTime() || 0;
+        const rightMs = new Date(right.Created_At || right.Updated_At || 0).getTime() || 0;
+        return rightMs - leftMs;
+      });
+
+      setRecords(allRows);
     } catch (error) {
       setRecords([]);
       setNotice({
         type: 'error',
-        message: mapOrganizationSchemaError(error?.message) || 'Unable to load organizations.',
+        message: mapOrganizationSchemaError(error?.message) || 'Unable to load applications.',
       });
     } finally {
       setIsLoading(false);
@@ -538,18 +612,8 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     loadRecords();
   }, [fetchUiSettings, loadRecords]);
 
-  const organizationTypes = useMemo(() => {
-    return Array.from(new Set(records.map((row) => row.Organization_Type).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  }, [records]);
-
   const tabFiltered = useMemo(() => {
     if (activeTab === 'all') return records;
-    if (activeTab === 'applications') {
-      return records.filter((row) => ['pending', 'rejected'].includes(normalizeStatus(row.Approval_Status)));
-    }
-    if (activeTab === 'active') {
-      return records.filter((row) => normalizeStatus(row.Approval_Status) === 'approved' && normalizeStatus(row.Organization_Status) === 'active');
-    }
     return records.filter((row) => normalizeStatus(row.Approval_Status) === activeTab);
   }, [activeTab, records]);
 
@@ -557,11 +621,12 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     const keyword = query.trim().toLowerCase();
 
     return tabFiltered.filter((row) => {
-      const matchesType = typeFilter === 'all' || String(row.Organization_Type || '').toLowerCase() === typeFilter;
+      const matchesType = applicationTypeFilter === 'all' || row.Application_Type === applicationTypeFilter;
       if (!matchesType) return false;
       if (!keyword) return true;
 
       return [
+        row.Application_Type_Label,
         row.Organization_Name,
         row.Organization_Type,
         row.Lead_Email,
@@ -574,14 +639,14 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(keyword));
     });
-  }, [tabFiltered, query, typeFilter]);
+  }, [tabFiltered, query, applicationTypeFilter]);
 
   const metrics = useMemo(() => {
     return {
       pending: records.filter((row) => normalizeStatus(row.Approval_Status) === 'pending').length,
       approved: records.filter((row) => normalizeStatus(row.Approval_Status) === 'approved').length,
       rejected: records.filter((row) => normalizeStatus(row.Approval_Status) === 'rejected').length,
-      active: records.filter((row) => normalizeStatus(row.Organization_Status) === 'active').length,
+      total: records.length,
     };
   }, [records]);
 
@@ -602,8 +667,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
 
   const processDecision = async () => {
     const organization = approvalModal.organization;
-    if (!organization?.Organization_ID || !organization?.Lead_User_ID) {
-      setNotice({ type: 'error', message: 'Invalid organization record.' });
+    const isHospitalApplication = organization?.Application_Type === 'hospital';
+    if (!organization?.Record_Key) {
+      setNotice({ type: 'error', message: 'Invalid application record.' });
       return;
     }
 
@@ -616,7 +682,12 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
     const accessStartIso = toIsoOrNull(approvalModal.accessStart);
     const accessEndIso = toIsoOrNull(approvalModal.accessEnd);
 
-    if (!organization?.Lead_Email) {
+    if (!isHospitalApplication && (!organization?.Organization_ID || !organization?.Lead_User_ID)) {
+      setNotice({ type: 'error', message: 'Invalid organization record.' });
+      return;
+    }
+
+    if (!isHospitalApplication && !organization?.Lead_Email) {
       const message = 'Lead email is required to send the invite email and complete this decision.';
       setNotice({ type: 'error', message });
       setCompletionModal({
@@ -628,7 +699,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       return;
     }
 
-    if (!inviteEmailConfigured) {
+    if (!isHospitalApplication && !inviteEmailConfigured) {
       const message = mapInviteSendError('missing-service-role');
       setNotice({
         type: 'error',
@@ -643,110 +714,142 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       return;
     }
 
-    if (accessStartIso && accessEndIso && new Date(accessStartIso) > new Date(accessEndIso)) {
+    if (!isHospitalApplication && accessStartIso && accessEndIso && new Date(accessStartIso) > new Date(accessEndIso)) {
       setNotice({ type: 'error', message: 'Access end must be later than access start.' });
       return;
     }
 
-    setProcessingId(organization.Organization_ID);
+    setProcessingId(organization.Record_Key);
     setNotice({ type: '', message: '' });
 
     try {
       const nowIso = new Date().toISOString();
-      const leadShouldBeActive = isApprove;
-      let updatedAuthUserId = organization.Lead_Auth_User_ID;
-      const temporaryPassword = generateTemporaryPassword();
+      if (isHospitalApplication) {
+        const updateHospitalResult = await supabase
+          .from(HOSPITALS_TABLE)
+          .update({
+            Is_Approved: isApprove,
+            Approval_Status: isApprove ? 'Approved' : 'Rejected',
+            Approved_By: adminUserId,
+            Approved_At: nowIso,
+            Review_Notes: (approvalModal.notes || '').trim() || null,
+            Updated_At: nowIso,
+          })
+          .eq('Hospital_ID', organization.Hospital_ID);
 
-      const inviteOutcome = await sendInviteUserEmail({
-        email: organization.Lead_Email,
-        organizationName: organization.Organization_Name,
-        reviewNotes: approvalModal.notes,
-        accessStart: accessStartIso,
-        accessEnd: accessEndIso,
-        temporaryPassword,
-        decision: isApprove ? 'approved' : 'rejected',
-        existingAuthUserId: updatedAuthUserId,
-      });
+        if (updateHospitalResult.error) {
+          throw new Error(updateHospitalResult.error.message);
+        }
 
-      if (!inviteOutcome.sent) {
-        throw new Error(mapInviteSendError(inviteOutcome.reason));
+        setNotice({
+          type: 'success',
+          message: isApprove ? 'Hospital application approved.' : 'Hospital application rejected.',
+        });
+
+        setCompletionModal({
+          open: true,
+          tone: 'success',
+          title: isApprove ? 'Hospital Approved' : 'Hospital Rejected',
+          message: isApprove
+            ? 'Hospital application was approved successfully.'
+            : 'Hospital application was rejected successfully.',
+        });
+      } else {
+        const leadShouldBeActive = isApprove;
+        let updatedAuthUserId = organization.Lead_Auth_User_ID;
+        const temporaryPassword = generateTemporaryPassword();
+
+        const inviteOutcome = await sendInviteUserEmail({
+          email: organization.Lead_Email,
+          organizationName: organization.Organization_Name,
+          reviewNotes: approvalModal.notes,
+          accessStart: accessStartIso,
+          accessEnd: accessEndIso,
+          temporaryPassword,
+          decision: isApprove ? 'approved' : 'rejected',
+          existingAuthUserId: updatedAuthUserId,
+        });
+
+        if (!inviteOutcome.sent) {
+          throw new Error(mapInviteSendError(inviteOutcome.reason));
+        }
+
+        if (inviteOutcome.invitedAuthUserId) {
+          updatedAuthUserId = inviteOutcome.invitedAuthUserId;
+        }
+
+        const updateOrganizationResult = await supabase
+          .from(ORGANIZATIONS_TABLE)
+          .update({
+            Is_Approved: isApprove,
+            Approval_Status: isApprove ? 'Approved' : 'Rejected',
+            Approved_By: adminUserId,
+            Approved_At: nowIso,
+            Review_Notes: (approvalModal.notes || '').trim() || null,
+            Status: isApprove ? 'Active' : 'Inactive',
+            Updated_By: adminUserId,
+            Updated_At: nowIso,
+          })
+          .eq('Organization_ID', organization.Organization_ID);
+
+        if (updateOrganizationResult.error) {
+          throw new Error(updateOrganizationResult.error.message);
+        }
+
+        const updateMembershipResult = await supabase
+          .from(ORGANIZATION_MEMBERS_TABLE)
+          .update({
+            Status: leadShouldBeActive ? 'Active' : 'Inactive',
+            Updated_At: nowIso,
+          })
+          .eq('Organization_ID', organization.Organization_ID)
+          .eq('User_ID', organization.Lead_User_ID);
+
+        if (updateMembershipResult.error) {
+          throw new Error(updateMembershipResult.error.message);
+        }
+
+        const updateUserResult = await supabase
+          .from(USERS_TABLE)
+          .update({
+            auth_user_id: updatedAuthUserId || null,
+            role: isApprove ? 'organization' : 'user',
+            is_active: leadShouldBeActive,
+            access_start: isApprove ? accessStartIso : null,
+            access_end: isApprove ? accessEndIso : null,
+            updated_at: nowIso,
+          })
+          .eq('user_id', organization.Lead_User_ID);
+
+        if (updateUserResult.error) {
+          throw new Error(updateUserResult.error.message);
+        }
+
+        const accessWindowSnippet = accessStartIso || accessEndIso
+          ? ` Access window: ${formatAccessWindowLabel(accessStartIso, accessEndIso)}.`
+          : '';
+
+        setNotice({
+          type: 'success',
+          message: isApprove
+            ? `Organization approved. Supabase invite email sent to ${organization.Lead_Email || 'lead account'} with account credentials.${accessWindowSnippet}`
+            : `Organization rejected. Supabase decision email sent to ${organization.Lead_Email || 'lead account'} with decision details and credentials.`,
+        });
+
+        setCompletionModal({
+          open: true,
+          tone: 'success',
+          title: isApprove ? 'Organization Approved' : 'Organization Rejected',
+          message: isApprove
+            ? `Completed. Invite email with credentials was sent to ${organization.Lead_Email || 'the lead account'}.`
+            : `Completed. Rejection email with decision details and credentials was sent to ${organization.Lead_Email || 'the lead account'}.`,
+        });
       }
-
-      if (inviteOutcome.invitedAuthUserId) {
-        updatedAuthUserId = inviteOutcome.invitedAuthUserId;
-      }
-
-      const updateOrganizationResult = await supabase
-        .from(ORGANIZATIONS_TABLE)
-        .update({
-          Is_Approved: isApprove,
-          Approval_Status: isApprove ? 'Approved' : 'Rejected',
-          Approved_By: adminUserId,
-          Approved_At: nowIso,
-          Review_Notes: (approvalModal.notes || '').trim() || null,
-          Status: isApprove ? 'Active' : 'Inactive',
-          Updated_By: adminUserId,
-          Updated_At: nowIso,
-        })
-        .eq('Organization_ID', organization.Organization_ID);
-
-      if (updateOrganizationResult.error) {
-        throw new Error(updateOrganizationResult.error.message);
-      }
-
-      const updateMembershipResult = await supabase
-        .from(ORGANIZATION_MEMBERS_TABLE)
-        .update({
-          Status: leadShouldBeActive ? 'Active' : 'Inactive',
-          Updated_At: nowIso,
-        })
-        .eq('Organization_ID', organization.Organization_ID)
-        .eq('User_ID', organization.Lead_User_ID);
-
-      if (updateMembershipResult.error) {
-        throw new Error(updateMembershipResult.error.message);
-      }
-
-      const updateUserResult = await supabase
-        .from(USERS_TABLE)
-        .update({
-          auth_user_id: updatedAuthUserId || null,
-          role: isApprove ? 'organization' : 'user',
-          is_active: leadShouldBeActive,
-          access_start: isApprove ? accessStartIso : null,
-          access_end: isApprove ? accessEndIso : null,
-          updated_at: nowIso,
-        })
-        .eq('user_id', organization.Lead_User_ID);
-
-      if (updateUserResult.error) {
-        throw new Error(updateUserResult.error.message);
-      }
-
-      const accessWindowSnippet = accessStartIso || accessEndIso
-        ? ` Access window: ${formatAccessWindowLabel(accessStartIso, accessEndIso)}.`
-        : '';
-
-      setNotice({
-        type: 'success',
-        message: isApprove
-          ? `Organization approved. Supabase invite email sent to ${organization.Lead_Email || 'lead account'} with account credentials.${accessWindowSnippet}`
-          : `Organization rejected. Supabase decision email sent to ${organization.Lead_Email || 'lead account'} with decision details and credentials.`,
-      });
-
-      setCompletionModal({
-        open: true,
-        tone: 'success',
-        title: isApprove ? 'Organization Approved' : 'Organization Rejected',
-        message: isApprove
-          ? `Completed. Invite email with credentials was sent to ${organization.Lead_Email || 'the lead account'}.`
-          : `Completed. Rejection email with decision details and credentials was sent to ${organization.Lead_Email || 'the lead account'}.`,
-      });
 
       closeDecisionModal();
       await loadRecords();
     } catch (error) {
-      const mappedMessage = mapOrganizationSchemaError(error?.message) || 'Unable to process organization decision.';
+      const mappedMessage = mapOrganizationSchemaError(error?.message) || 'Unable to process application decision.';
       setNotice({
         type: 'error',
         message: mappedMessage,
@@ -771,9 +874,9 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>Manage Organizations</h2>
+            <h2 className="text-2xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>Manage Applications</h2>
             <p className="mt-1 text-sm" style={{ color: secondaryTextColor }}>
-              Review applications, monitor active organizations, and manage lead account activation.
+              Review organization and hospital applications, then approve or reject each submission.
             </p>
           </div>
           <button
@@ -801,8 +904,8 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             <p className="mt-1 text-2xl font-bold" style={{ color: '#be123c' }}>{metrics.rejected}</p>
           </article>
           <article className="rounded-xl border bg-white p-4" style={{ borderColor: `${secondaryColor}33` }}>
-            <p className="text-sm" style={{ color: secondaryTextColor }}>Active Org</p>
-            <p className="mt-1 text-2xl font-bold" style={{ color: '#0369a1' }}>{metrics.active}</p>
+            <p className="text-sm" style={{ color: secondaryTextColor }}>Total Applications</p>
+            <p className="mt-1 text-2xl font-bold" style={{ color: '#0369a1' }}>{metrics.total}</p>
           </article>
         </div>
 
@@ -833,7 +936,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search organization, lead, email, or location"
+              placeholder="Search application, lead, email, or location"
               className="w-full bg-transparent text-sm outline-none"
               style={{ color: primaryTextColor }}
             />
@@ -842,14 +945,13 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
           <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}55` }}>
             <Filter size={14} style={{ color: secondaryTextColor }} />
             <select
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value)}
+              value={applicationTypeFilter}
+              onChange={(event) => setApplicationTypeFilter(event.target.value)}
               className="w-full bg-transparent text-sm outline-none"
               style={{ color: primaryTextColor }}
             >
-              <option value="all">All Types</option>
-              {organizationTypes.map((type) => (
-                <option key={type} value={String(type).toLowerCase()}>{type}</option>
+              {APPLICATION_TYPE_OPTIONS.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
               ))}
             </select>
           </label>
@@ -869,57 +971,87 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
       <section className="rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: `${secondaryColor}30` }}>
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 px-4 py-14 text-sm" style={{ color: secondaryTextColor }}>
-            <Loader2 size={16} className="animate-spin" /> Loading organizations...
+            <Loader2 size={16} className="animate-spin" /> Loading applications...
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="px-4 py-14 text-center text-sm" style={{ color: secondaryTextColor }}>
-            No organizations found for the selected tab and filters.
+            No applications found for the selected tab and filters.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="text-sm" style={{ backgroundColor: `${primaryColor}20`, color: primaryTextColor }}>
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Organization</th>
+                  <th className="px-4 py-3 text-left font-semibold">Application</th>
                   <th className="px-4 py-3 text-left font-semibold">Lead</th>
-                  <th className="px-4 py-3 text-left font-semibold">Members</th>
+                  <th className="px-4 py-3 text-left font-semibold">Details</th>
                   <th className="px-4 py-3 text-left font-semibold">Status</th>
-                  <th className="px-4 py-3 text-left font-semibold">Access</th>
+                  <th className="px-4 py-3 text-left font-semibold">Review</th>
                   <th className="px-4 py-3 text-center font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRecords.map((item) => {
+                  const isOrganizationApplication = item.Application_Type === 'organization';
                   const approval = normalizeStatus(item.Approval_Status);
                   const canProcess = approval === 'pending';
-                  const isProcessing = processingId === item.Organization_ID;
+                  const isProcessing = processingId === item.Record_Key;
 
                   return (
-                    <tr key={item.Organization_ID} className="border-t align-middle" style={{ borderColor: `${secondaryColor}22` }}>
+                    <tr key={item.Record_Key} className="border-t align-middle" style={{ borderColor: `${secondaryColor}22` }}>
                       <td className="px-4 py-3">
                         <p className="font-semibold" style={{ color: primaryTextColor }}>{item.Organization_Name}</p>
-                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{item.Organization_Type || '-'}</p>
+                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{item.Organization_Type || item.Application_Type_Label || '-'}</p>
                         <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{[item.City, item.Province, item.Region].filter(Boolean).join(', ') || '-'}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-semibold" style={{ color: primaryTextColor }}>{[item.Lead_First_Name, item.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
-                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{item.Lead_Email || '-'}</p>
-                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Lead ID: {item.Lead_User_ID || '-'}</p>
+                        {isOrganizationApplication ? (
+                          <>
+                            <p className="font-semibold" style={{ color: primaryTextColor }}>{[item.Lead_First_Name, item.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
+                            <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>{item.Lead_Email || '-'}</p>
+                            <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Lead ID: {item.Lead_User_ID || '-'}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-semibold" style={{ color: primaryTextColor }}>No linked lead account</p>
+                            <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Hospital approvals currently update application status only.</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: secondaryTextColor }}>
-                        <p className="inline-flex items-center gap-1"><Users size={12} /> Total: {item.Member_Stats.total}</p>
-                        <p className="mt-1">Active: {item.Member_Stats.active} | Inactive: {item.Member_Stats.inactive}</p>
-                        <p className="mt-1">Leaders: {item.Member_Stats.leaders}</p>
+                        {isOrganizationApplication ? (
+                          <>
+                            <p className="inline-flex items-center gap-1"><Users size={12} /> Total: {item.Member_Stats.total}</p>
+                            <p className="mt-1">Active: {item.Member_Stats.active} | Inactive: {item.Member_Stats.inactive}</p>
+                            <p className="mt-1">Leaders: {item.Member_Stats.leaders}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p>Contact: {item.Contact_Number || '-'}</p>
+                            <p className="mt-1">Submitted: {formatDate(item.Created_At)}</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${approval === 'pending' ? 'bg-amber-100 text-amber-800' : approval === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                           {item.Approval_Status}
                         </span>
-                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>Org: {item.Organization_Status}</p>
+                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>
+                          Type: {item.Application_Type_Label}
+                        </p>
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: secondaryTextColor }}>
-                        <p>{formatAccessWindowLabel(item.Lead_Access_Start, item.Lead_Access_End)}</p>
-                        <p className="mt-1">Lead active: {item.Lead_Is_Active ? 'Yes' : 'No'}</p>
+                        {isOrganizationApplication ? (
+                          <>
+                            <p>{formatAccessWindowLabel(item.Lead_Access_Start, item.Lead_Access_End)}</p>
+                            <p className="mt-1">Lead active: {item.Lead_Is_Active ? 'Yes' : 'No'}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p>Reviewed: {formatDate(item.Approved_At || item.Updated_At)}</p>
+                            <p className="mt-1">Notes: {item.Review_Notes || '-'}</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="inline-flex flex-wrap items-center justify-center gap-2">
@@ -944,7 +1076,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                                   color: primaryColor,
                                 }}
                               >
-                                {isProcessing ? <Loader2 size={13} className="animate-spin" /> : <MailCheck size={13} />} Approve
+                                {isProcessing ? <Loader2 size={13} className="animate-spin" /> : (isOrganizationApplication ? <MailCheck size={13} /> : <CheckCircle2 size={13} />)} Approve
                               </button>
                               <button
                                 type="button"
@@ -974,7 +1106,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             <div className="fixed inset-0 z-40">
               <button
                 type="button"
-                aria-label="Close organization details panel"
+                aria-label="Close application details panel"
                 className="absolute inset-0 bg-black/50 backdrop-blur-sm"
                 onClick={() => setSelectedOrganization(null)}
               />
@@ -993,7 +1125,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
               >
                 <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Organization Info</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Application Info</p>
                     <h3 className="text-xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
                       {selectedOrganization.Organization_Name}
                     </h3>
@@ -1002,7 +1134,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                   <button
                     type="button"
                     onClick={() => setSelectedOrganization(null)}
-                    aria-label="Close organization details panel"
+                    aria-label="Close application details panel"
                     className="rounded-md border p-1"
                     style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
                   >
@@ -1016,7 +1148,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                 {selectedOrganization.Organization_Logo_URL ? (
                   <img
                     src={selectedOrganization.Organization_Logo_URL}
-                    alt="Organization logo"
+                    alt="Application logo"
                     className="h-16 w-16 rounded-lg border bg-white object-contain"
                     style={{ borderColor: `${secondaryColor}30` }}
                   />
@@ -1034,7 +1166,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                     {selectedOrganization.Organization_Name}
                   </p>
                   <p className="mt-0.5 text-xs" style={{ color: secondaryTextColor }}>
-                    {selectedOrganization.Organization_Type || 'Organization'}
+                    {selectedOrganization.Organization_Type || selectedOrganization.Application_Type_Label || 'Application'}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${normalizeStatus(selectedOrganization.Approval_Status) === 'pending' ? 'bg-amber-100 text-amber-800' : normalizeStatus(selectedOrganization.Approval_Status) === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
@@ -1049,11 +1181,11 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             </section>
 
             <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Organization Profile</p>
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Application Profile</p>
               <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${secondaryColor}24` }}>
                 <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
                   <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Type</p>
-                  <p className="font-medium" style={{ color: primaryTextColor }}>{selectedOrganization.Organization_Type || '-'}</p>
+                  <p className="font-medium" style={{ color: primaryTextColor }}>{selectedOrganization.Organization_Type || selectedOrganization.Application_Type_Label || '-'}</p>
                 </div>
                 <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
                   <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Contact</p>
@@ -1078,61 +1210,65 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
               </div>
             </section>
 
-            <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Lead Account</p>
-              <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${secondaryColor}24` }}>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Name</p>
-                  <p className="font-medium" style={{ color: primaryTextColor }}>{[selectedOrganization.Lead_First_Name, selectedOrganization.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Email</p>
-                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Email || '-'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Contact</p>
-                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Contact || '-'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Address</p>
-                  <p className="leading-relaxed" style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Address || '-'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role</p>
-                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Role || '-'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
-                  <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Is_Active ? 'Yes' : 'No'}</p>
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access</p>
-                  <p style={{ color: primaryTextColor }}>{formatAccessWindowLabel(selectedOrganization.Lead_Access_Start, selectedOrganization.Lead_Access_End)}</p>
-                </div>
-              </div>
-            </section>
+            {selectedOrganization.Application_Type === 'organization' ? (
+              <>
+                <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Lead Account</p>
+                  <div className="mt-2 overflow-hidden rounded-lg border bg-white" style={{ borderColor: `${secondaryColor}24` }}>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Name</p>
+                      <p className="font-medium" style={{ color: primaryTextColor }}>{[selectedOrganization.Lead_First_Name, selectedOrganization.Lead_Last_Name].filter(Boolean).join(' ') || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Email</p>
+                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Email || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Contact</p>
+                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Contact || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Address</p>
+                      <p className="leading-relaxed" style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Address || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Role</p>
+                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Role || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
+                      <p style={{ color: primaryTextColor }}>{selectedOrganization.Lead_Is_Active ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Access</p>
+                      <p style={{ color: primaryTextColor }}>{formatAccessWindowLabel(selectedOrganization.Lead_Access_Start, selectedOrganization.Lead_Access_End)}</p>
+                    </div>
+                  </div>
+                </section>
 
-            <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Member Summary</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
-                  <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Total</p>
-                  <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.total}</p>
-                </div>
-                <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
-                  <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
-                  <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.active}</p>
-                </div>
-                <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
-                  <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Inactive</p>
-                  <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.inactive}</p>
-                </div>
-                <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
-                  <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Leaders</p>
-                  <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.leaders}</p>
-                </div>
-              </div>
-            </section>
+                <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Member Summary</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
+                      <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Total</p>
+                      <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.total}</p>
+                    </div>
+                    <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
+                      <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Active</p>
+                      <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.active}</p>
+                    </div>
+                    <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
+                      <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Inactive</p>
+                      <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.inactive}</p>
+                    </div>
+                    <div className="rounded-lg border bg-white px-3 py-2" style={{ borderColor: `${secondaryColor}24` }}>
+                      <p className="text-[11px] uppercase tracking-wider" style={{ color: secondaryTextColor }}>Leaders</p>
+                      <p className="text-lg font-semibold" style={{ color: primaryTextColor }}>{selectedOrganization.Member_Stats.leaders}</p>
+                    </div>
+                  </div>
+                </section>
+              </>
+            ) : null}
 
             <section className="rounded-xl border bg-slate-50 p-3" style={{ borderColor: `${secondaryColor}30` }}>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Approval Timeline</p>
@@ -1150,7 +1286,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                   <p style={{ color: primaryTextColor }}>{selectedOrganization.Approval_Status || '-'}</p>
                 </div>
                 <div className="grid grid-cols-[120px_1fr] gap-3 border-b px-3 py-2" style={{ borderColor: `${secondaryColor}20` }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Org Status</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Entity Status</p>
                   <p style={{ color: primaryTextColor }}>{selectedOrganization.Organization_Status || '-'}</p>
                 </div>
                 <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2">
@@ -1249,9 +1385,11 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             <div className="border-b px-5 py-4" style={{ borderColor: `${secondaryColor}30` }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Organization Decision</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: secondaryTextColor }}>Application Decision</p>
                   <h3 className="text-xl font-bold" style={{ color: primaryTextColor, fontFamily: `${headingFont}, sans-serif` }}>
-                    {approvalModal.mode === 'approve' ? 'Approve Organization' : 'Reject Organization'}
+                    {approvalModal.mode === 'approve'
+                      ? `Approve ${approvalModal.organization?.Application_Type === 'hospital' ? 'Hospital' : 'Organization'}`
+                      : `Reject ${approvalModal.organization?.Application_Type === 'hospital' ? 'Hospital' : 'Organization'}`}
                   </h3>
                   <p className="text-sm" style={{ color: secondaryTextColor }}>{approvalModal.organization?.Organization_Name}</p>
                 </div>
@@ -1262,17 +1400,23 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
             </div>
 
             <div className="space-y-3 px-5 py-4 text-sm">
-              <div className="rounded-lg border bg-slate-50 px-3 py-2" style={{ borderColor: `${secondaryColor}30`, color: secondaryTextColor }}>
-                Supabase invite email is sent for both approve and reject decisions.
-              </div>
+              {approvalModal.organization?.Application_Type === 'organization' ? (
+                <div className="rounded-lg border bg-slate-50 px-3 py-2" style={{ borderColor: `${secondaryColor}30`, color: secondaryTextColor }}>
+                  Supabase invite email is sent for both approve and reject decisions.
+                </div>
+              ) : (
+                <div className="rounded-lg border bg-slate-50 px-3 py-2" style={{ borderColor: `${secondaryColor}30`, color: secondaryTextColor }}>
+                  Hospital decisions update only application approval fields.
+                </div>
+              )}
 
-              {!inviteEmailConfigured ? (
+              {approvalModal.organization?.Application_Type === 'organization' && !inviteEmailConfigured ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Invite email service is not configured in this frontend build. Configure the service-role key first, then retry this decision.
                 </div>
               ) : null}
 
-              {approvalModal.mode === 'approve' ? (
+              {approvalModal.organization?.Application_Type === 'organization' && approvalModal.mode === 'approve' ? (
                 <>
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="space-y-1">
@@ -1307,7 +1451,7 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                   onChange={(event) => setApprovalModal((prev) => ({ ...prev, notes: event.target.value }))}
                   className="w-full rounded-lg border px-3 py-2 outline-none"
                   style={{ borderColor: `${secondaryColor}44` }}
-                  placeholder="Optional notes shown in decision email"
+                  placeholder="Optional review notes"
                 />
               </label>
             </div>
@@ -1325,20 +1469,22 @@ export default function ManageOrganizationApplicationsPage({ userProfile }) {
                 type="button"
                 onClick={processDecision}
                 disabled={
-                  processingId === approvalModal.organization?.Organization_ID
-                  || !inviteEmailConfigured
+                  processingId === approvalModal.organization?.Record_Key
+                  || (approvalModal.organization?.Application_Type === 'organization' && !inviteEmailConfigured)
                 }
                 className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: approvalModal.mode === 'approve' ? primaryColor : '#dc2626' }}
               >
-                {processingId === approvalModal.organization?.Organization_ID ? (
+                {processingId === approvalModal.organization?.Record_Key ? (
                   <><Loader2 size={14} className="animate-spin" /> Processing...</>
                 ) : (
                   <>
                     {approvalModal.mode === 'approve' ? <ChevronRight size={14} /> : <XCircle size={14} />}
-                    {approvalModal.mode === 'approve'
-                      ? (inviteEmailConfigured ? 'Approve And Send Email' : 'Invite Not Configured')
-                      : (inviteEmailConfigured ? 'Reject And Send Email' : 'Invite Not Configured')}
+                    {approvalModal.organization?.Application_Type === 'organization'
+                      ? (approvalModal.mode === 'approve'
+                        ? (inviteEmailConfigured ? 'Approve And Send Email' : 'Invite Not Configured')
+                        : (inviteEmailConfigured ? 'Reject And Send Email' : 'Invite Not Configured'))
+                      : (approvalModal.mode === 'approve' ? 'Approve Application' : 'Reject Application')}
                   </>
                 )}
               </button>

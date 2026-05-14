@@ -26,7 +26,7 @@ const superAdminNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'manage-user-accounts', label: 'Manage User Accounts', icon: Users },
   { id: 'manage-hospital-accounts', label: 'Manage H-Representative Accounts', icon: Building2 },
-  { id: 'manage-organization-applications', label: 'Manage Organization Applications', icon: ShieldCheck },
+  { id: 'manage-organization-applications', label: 'Manage Applications', icon: ShieldCheck },
   { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: ClipboardList },
   { id: 'approve-donation-drives', label: 'Approve Donation Drives', icon: ShieldCheck },
   { id: 'legal-documents', label: 'Legal Documents', icon: FileText },

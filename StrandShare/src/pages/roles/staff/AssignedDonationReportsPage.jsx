@@ -58,6 +58,16 @@ const STATUS = {
   approved: 'Approved',
   completed: 'Completed',
 };
+const MANILA_TIME_ZONE = 'Asia/Manila';
+const MANILA_UTC_OFFSET_HOURS = 8;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const TIMESTAMP_WITHOUT_TIMEZONE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?)?$/;
+const MANILA_DATE_PARTS_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: MANILA_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 function createInitialCompletionForm() {
   return {
@@ -254,6 +264,53 @@ function normalizeStatusKey(value) {
   return normalizeText(value).replace(/[^a-z0-9]/g, '');
 }
 
+function parseTimestampWithoutTimezoneAsManila(rawValue) {
+  const input = String(rawValue || '').trim();
+  const match = input.match(TIMESTAMP_WITHOUT_TIMEZONE_PATTERN);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1] || 0);
+  const month = Number(match[2] || 1);
+  const day = Number(match[3] || 1);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+  const second = Number(match[6] || 0);
+  const milliRaw = String(match[7] || '');
+  const millisecond = milliRaw ? Number(`${milliRaw}000`.slice(0, 3)) : 0;
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  const utcMs = Date.UTC(
+    year,
+    Math.max(0, month - 1),
+    Math.max(1, day),
+    hour - MANILA_UTC_OFFSET_HOURS,
+    minute,
+    second,
+    millisecond,
+  );
+
+  const parsed = new Date(utcMs);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getManilaDayStartMs(baseDate = new Date()) {
+  const parts = Object.fromEntries(
+    MANILA_DATE_PARTS_FORMATTER
+      .formatToParts(baseDate)
+      .map((part) => [part.type, part.value]),
+  );
+  const year = Number(parts.year || 0);
+  const month = Number(parts.month || 1);
+  const day = Number(parts.day || 1);
+  return Date.UTC(year, Math.max(0, month - 1), Math.max(1, day), -MANILA_UTC_OFFSET_HOURS, 0, 0, 0);
+}
+
 function scanStatusChipClass(statusValue) {
   const key = normalizeStatusKey(statusValue);
 
@@ -273,17 +330,13 @@ function scanStatusChipClass(statusValue) {
 }
 
 function formatDateTime(value) {
-  if (!value) {
-    return 'N/A';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = toDateValue(value);
+  if (!parsed) {
     return 'N/A';
   }
 
   return parsed.toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: MANILA_TIME_ZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -312,17 +365,13 @@ function formatDateRange(startDate, endDate) {
 }
 
 function formatTimeOnly(value) {
-  if (!value) {
-    return 'Time TBD';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = toDateValue(value);
+  if (!parsed) {
     return 'Time TBD';
   }
 
   return parsed.toLocaleTimeString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: MANILA_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -333,7 +382,31 @@ function toDateValue(value) {
     return null;
   }
 
-  const parsed = new Date(value);
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number') {
+    const numericDate = new Date(value);
+    return Number.isNaN(numericDate.getTime()) ? null : numericDate;
+  }
+
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.replace(' ', 'T');
+  const hasExplicitTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+
+  if (!hasExplicitTimezone) {
+    const parsedManila = parseTimestampWithoutTimezoneAsManila(raw);
+    if (parsedManila) {
+      return parsedManila;
+    }
+  }
+
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }
@@ -348,7 +421,7 @@ function formatDateOnly(value) {
   }
 
   return parsed.toLocaleDateString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: MANILA_TIME_ZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -374,14 +447,9 @@ function formatDateTabLabel(startDate, endDate) {
 function getDriveTimelineMeta(row) {
   const startDate = toDateValue(row.Start_Date);
   const endDate = toDateValue(row.End_Date);
-  const now = new Date();
-  const nowMs = now.getTime();
-  const dayStart = new Date(now);
-
-  dayStart.setHours(0, 0, 0, 0);
-
-  const dayStartMs = dayStart.getTime();
-  const dayEndMs = dayStartMs + (24 * 60 * 60 * 1000) - 1;
+  const nowMs = Date.now();
+  const dayStartMs = getManilaDayStartMs();
+  const dayEndMs = dayStartMs + ONE_DAY_MS - 1;
   const startMs = startDate ? startDate.getTime() : Number.NaN;
   const endMs = endDate ? endDate.getTime() : Number.NaN;
   const updatedMs = toDateValue(row.Updated_At)?.getTime() || Number.MAX_SAFE_INTEGER;
@@ -888,14 +956,8 @@ export default function AssignedDonationReportsPage({ userProfile }) {
 
   const filteredSidebarEvents = useMemo(() => {
     const query = normalizeText(eventSearchQuery);
-    const now = new Date();
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const weekEnd = new Date(dayStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
-    const weekEndMs = weekEnd.getTime();
+    const dayStartMs = getManilaDayStartMs();
+    const weekEndMs = dayStartMs + (7 * ONE_DAY_MS);
 
     return eventTabs.filter((row) => {
       const matchesQuery = !query
@@ -921,16 +983,8 @@ export default function AssignedDonationReportsPage({ userProfile }) {
   }, [eventFilterId, eventSearchQuery, eventTabs]);
 
   const sidebarEventGroups = useMemo(() => {
-    const now = new Date();
-    const tomorrowStart = new Date(now);
-    tomorrowStart.setHours(0, 0, 0, 0);
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
-    const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setHours(23, 59, 59, 999);
-
-    const tomorrowStartMs = tomorrowStart.getTime();
-    const tomorrowEndMs = tomorrowEnd.getTime();
+    const tomorrowStartMs = getManilaDayStartMs() + ONE_DAY_MS;
+    const tomorrowEndMs = tomorrowStartMs + ONE_DAY_MS - 1;
 
     const todayRows = filteredSidebarEvents.filter((row) => row.isToday);
     const tomorrowRows = filteredSidebarEvents.filter((row) => (
