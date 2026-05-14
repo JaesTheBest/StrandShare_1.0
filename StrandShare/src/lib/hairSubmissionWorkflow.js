@@ -527,6 +527,7 @@ export async function completeWigBundle({
     .from(WIGS_TABLE)
     .upsert({
       Bundle_ID: bundleId,
+      Wig_Code: String(bundle.Submission_Code || '').trim() || null,
       Wig_Name: trimmedWigName,
       Total_Donated_Hairs: members.length,
       Total_Bundles_Used: 1,

@@ -6,11 +6,14 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 
 const WIG_REQUESTS_TABLE = 'Wig_Requests';
 const WIG_REQUEST_SPECS_TABLE = 'Wig_Request_Specifications';
+const WIGS_TABLE = 'Wigs';
 const PATIENTS_TABLE = 'Patients';
 const USERS_TABLE = 'users';
 const HOSPITALS_TABLE = 'Hospitals';
 const RELEASE_SCHEDULES_TABLE = 'Release_Schedules';
 const WIG_REQUEST_PREVIEWS_BUCKET = 'wig_request_previews';
+const PST_TIMEZONE = 'Asia/Manila';
+const PST_OFFSET = '+08:00';
 
 const REQUEST_STATUS = {
   pending: 'Pending',
@@ -19,7 +22,7 @@ const REQUEST_STATUS = {
   inProduction: 'In Production',
   toBeRelease: 'To Be Release',
   releasing: 'Releasing',
-  completed: 'Completed',
+  released: 'Released',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
 };
@@ -39,6 +42,7 @@ const REVIEW_QUEUE_STATUS_KEYS = ['pending', 'accepted_allocated', 'accepted_no_
 const ACTION_DEFINITIONS = {
   accept_allocated: {
     label: 'Accept - Wig Allocated',
+    requiresWigSelection: true,
   },
   accept_no_wig: {
     label: 'Accept - No Wig Available',
@@ -136,7 +140,7 @@ function getCanonicalStatusKey(statusValue) {
   }
 
   if (['completed', 'complete', 'released', 'releasecompleted', 'done'].includes(key)) {
-    return 'completed';
+    return 'released';
   }
 
   if (['rejected', 'declined', 'denied'].includes(key)) {
@@ -162,7 +166,7 @@ function getStatusLabel(statusValue) {
   if (key === 'in_production') return REQUEST_STATUS.inProduction;
   if (key === 'to_be_release') return REQUEST_STATUS.toBeRelease;
   if (key === 'releasing') return REQUEST_STATUS.releasing;
-  if (key === 'completed') return REQUEST_STATUS.completed;
+  if (key === 'released') return REQUEST_STATUS.released;
   if (key === 'rejected') return REQUEST_STATUS.rejected;
   if (key === 'cancelled') return REQUEST_STATUS.cancelled;
   return REQUEST_STATUS.pending;
@@ -176,7 +180,7 @@ function statusClass(statusValue) {
   if (key === 'in_production') return 'bg-sky-100 text-sky-700';
   if (key === 'to_be_release') return 'bg-indigo-100 text-indigo-700';
   if (key === 'releasing') return 'bg-teal-100 text-teal-700';
-  if (key === 'completed') return 'bg-green-100 text-green-700';
+  if (key === 'released') return 'bg-green-100 text-green-700';
   if (key === 'rejected') return 'bg-red-100 text-red-700';
   if (key === 'cancelled') return 'bg-slate-200 text-slate-700';
   return 'bg-amber-100 text-amber-700';
@@ -250,7 +254,7 @@ function formatDateTime(value) {
   }
 
   return parsed.toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
+    timeZone: PST_TIMEZONE,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -266,7 +270,7 @@ function toDateTimeLocalValue(value) {
   }
 
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
+    timeZone: PST_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -289,15 +293,48 @@ function toIsoFromDateTimeLocal(value) {
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2}))?$/);
   if (match) {
     const seconds = match[7] || '00';
-    const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}+08:00`);
-    if (Number.isNaN(parsed.getTime())) return '';
-    return parsed.toISOString();
+    return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${seconds}${PST_OFFSET}`;
   }
   const fallback = new Date(raw);
   if (Number.isNaN(fallback.getTime())) {
     return '';
   }
-  return fallback.toISOString();
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(fallback).map((part) => [part.type, part.value]),
+  );
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}${PST_OFFSET}`;
+}
+
+function getPstTimestamp(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}${PST_OFFSET}`;
 }
 
 function isAbsoluteUrl(value) {
@@ -361,6 +398,20 @@ function actionRequiresReason(actionId) {
   return Boolean(ACTION_DEFINITIONS[actionId]?.requiresReason);
 }
 
+function actionRequiresWigSelection(actionId) {
+  return Boolean(ACTION_DEFINITIONS[actionId]?.requiresWigSelection);
+}
+
+function getCanonicalWigStatusLabel(statusValue) {
+  const key = normalizeStatusKey(statusValue);
+  if (['inproduction', 'production', 'inprocess'].includes(key)) return 'In Production';
+  if (['readyforrelease', 'readyforevent', 'available'].includes(key)) return 'Ready for Release';
+  if (['wigallocated', 'allocatedwig', 'allocated'].includes(key)) return 'Wig Allocated';
+  if (['releasing', 'forrelease'].includes(key)) return 'Releasing';
+  if (['released', 'completed', 'done'].includes(key)) return 'Released';
+  return String(statusValue || '').trim() || 'In Production';
+}
+
 function getAllowedActionsForRow(row) {
   if (!row) {
     return [];
@@ -371,7 +422,7 @@ function getAllowedActionsForRow(row) {
   }
 
   if (row.statusKey === 'accepted_no_wig') {
-    return ['move_in_production', 'cancel'];
+    return ['accept_allocated', 'move_in_production', 'cancel'];
   }
 
   if (row.statusKey === 'accepted_allocated' || row.statusKey === 'in_production') {
@@ -406,6 +457,9 @@ function buildSearchBlob(row) {
     row.specTexture,
     row.specCapSize,
     row.specSpecialNote,
+    row.allocatedWigCode,
+    row.allocatedWigName,
+    row.allocatedWigStatus,
     formatDateTime(row.requestDate),
     formatDateTime(row.releaseDate),
   ]
@@ -425,6 +479,9 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
   const [selectedRow, setSelectedRow] = useState(null);
   const [selectedAction, setSelectedAction] = useState('');
+  const [selectedWigId, setSelectedWigId] = useState('');
+  const [availableWigs, setAvailableWigs] = useState([]);
+  const [isLoadingAvailableWigs, setIsLoadingAvailableWigs] = useState(false);
   const [actionReason, setActionReason] = useState('');
   const [actionReleaseDate, setActionReleaseDate] = useState('');
 
@@ -455,6 +512,14 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       if (specsRes.error) throw specsRes.error;
       if (patientsRes.error) throw patientsRes.error;
       if (hospitalsRes.error) throw hospitalsRes.error;
+
+      const requestIds = Array.from(
+        new Set(
+          (requestsRes.data || [])
+            .map((row) => Number(row.Req_ID || 0))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      );
 
       const linkedUserIds = Array.from(
         new Set(
@@ -509,9 +574,31 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
       setIsReleaseWorkflowAvailable(releaseWorkflowAvailable);
 
+      let allocatedWigs = [];
+      if (requestIds.length > 0) {
+        const allocatedWigsRes = await supabase
+          .from(WIGS_TABLE)
+          .select('Wig_ID, Req_ID, Wig_Code, Wig_Name, Wig_Status')
+          .in('Req_ID', requestIds);
+        if (allocatedWigsRes.error) throw allocatedWigsRes.error;
+        allocatedWigs = allocatedWigsRes.data || [];
+      }
+
       const patientById = new Map((patientsRes.data || []).map((row) => [Number(row.Patient_ID), row]));
       const hospitalById = new Map((hospitalsRes.data || []).map((row) => [Number(row.Hospital_ID), row]));
       const specByReqId = new Map((specsRes.data || []).map((row) => [Number(row.Req_ID), row]));
+      const allocatedWigByReqId = new Map(
+        allocatedWigs
+          .map((row) => ({
+            reqId: Number(row.Req_ID || 0),
+            wigId: Number(row.Wig_ID || 0),
+            wigCode: String(row.Wig_Code || '').trim(),
+            wigName: String(row.Wig_Name || '').trim(),
+            wigStatus: getCanonicalWigStatusLabel(row.Wig_Status),
+          }))
+          .filter((row) => row.reqId > 0 && row.wigId > 0)
+          .map((row) => [row.reqId, row]),
+      );
       const currentScheduleByReqId = new Map(
         currentSchedules
           .filter((row) => Number(row.Req_ID || 0) > 0)
@@ -526,6 +613,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
         const patient = patientById.get(patientId) || null;
         const hospital = hospitalById.get(hospitalId) || null;
         const spec = specByReqId.get(reqId) || {};
+        const allocatedWig = allocatedWigByReqId.get(reqId) || null;
         const schedule = currentScheduleByReqId.get(reqId) || null;
         const linkedPatientUser = patient ? patientUsersById[Number(patient.User_ID || 0)] : null;
 
@@ -559,6 +647,10 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
           specTexture: String(spec.Hair_Texture || '').trim() || 'N/A',
           specCapSize: String(spec.Cap_Size || '').trim() || 'N/A',
           specSpecialNote: parseSpecialNotes(spec.Special_Notes) || 'N/A',
+          allocatedWigId: allocatedWig?.wigId || null,
+          allocatedWigCode: allocatedWig?.wigCode || '',
+          allocatedWigName: allocatedWig?.wigName || '',
+          allocatedWigStatus: allocatedWig?.wigStatus || '',
           releaseDate: schedule?.Proposed_Release_Date || null,
           releaseScheduleId: Number(schedule?.Release_Schedule_ID || 0) || null,
           releaseWorkflowStatus: releaseWorkflowRaw || '',
@@ -595,6 +687,48 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       setNotice({ kind: 'error', text: mapLoadError(error.message) });
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const loadAvailableWigs = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setAvailableWigs([]);
+      return;
+    }
+
+    try {
+      setIsLoadingAvailableWigs(true);
+      const { data, error } = await supabase
+        .from(WIGS_TABLE)
+        .select('Wig_ID, Wig_Code, Wig_Name, Wig_Status, Req_ID, Bundle_ID, Completed_At')
+        .is('Req_ID', null)
+        .order('Completed_At', { ascending: false, nullsFirst: false })
+        .limit(300);
+
+      if (error) throw error;
+
+      const nextRows = (data || [])
+        .map((row) => {
+          const statusLabel = getCanonicalWigStatusLabel(row.Wig_Status);
+          const statusKey = normalizeStatusKey(statusLabel);
+          return {
+            wigId: Number(row.Wig_ID || 0),
+            wigCode: String(row.Wig_Code || '').trim(),
+            wigName: String(row.Wig_Name || '').trim(),
+            wigStatus: statusLabel,
+            wigStatusKey: statusKey,
+            bundleId: Number(row.Bundle_ID || 0) || null,
+            completedAt: row.Completed_At || null,
+          };
+        })
+        .filter((row) => row.wigId > 0 && (row.wigStatusKey === 'readyforrelease' || row.wigStatusKey === 'inproduction'));
+
+      setAvailableWigs(nextRows);
+    } catch (error) {
+      setNotice({ kind: 'error', text: mapLoadError(error.message) });
+      setAvailableWigs([]);
+    } finally {
+      setIsLoadingAvailableWigs(false);
     }
   }, []);
 
@@ -649,9 +783,20 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
   useEffect(() => {
     setSelectedAction('');
+    setSelectedWigId('');
+    setAvailableWigs([]);
     setActionReason('');
     setActionReleaseDate('');
   }, [selectedRow?.reqId]);
+
+  useEffect(() => {
+    setSelectedWigId('');
+    if (selectedAction === 'accept_allocated' && selectedRow) {
+      void loadAvailableWigs();
+    } else {
+      setAvailableWigs([]);
+    }
+  }, [selectedAction, selectedRow, loadAvailableWigs]);
 
   useEffect(() => {
     if (!selectedAction || !actionRequiresReleaseDate(selectedAction) || actionReleaseDate) {
@@ -682,6 +827,10 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       return false;
     }
 
+    if (actionRequiresWigSelection(selectedAction) && !Number(selectedWigId || 0)) {
+      return false;
+    }
+
     return true;
   }, [
     selectedRow,
@@ -690,6 +839,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
     isReleaseWorkflowAvailable,
     actionReleaseDate,
     actionReason,
+    selectedWigId,
   ]);
 
   const updateRequestWithStatusReasonFallback = useCallback(async (reqId, payload) => {
@@ -721,7 +871,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
   }, []);
 
   const proposeReleaseSchedule = useCallback(async ({ requestRow, releaseDateIso, note, actorUserId }) => {
-    const nowIso = new Date().toISOString();
+    const nowIso = getPstTimestamp();
 
     const { error: clearCurrentError } = await supabase
       .from(RELEASE_SCHEDULES_TABLE)
@@ -838,14 +988,41 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
       setIsApplyingAction(true);
       setNotice({ kind: '', text: '' });
 
-      const nowIso = new Date().toISOString();
+      const nowIso = getPstTimestamp();
 
       if (selectedAction === 'accept_allocated') {
+        const selectedWigNumericId = Number(selectedWigId || 0);
+        if (!selectedWigNumericId) {
+          throw new Error('Select a wig to allocate for this request.');
+        }
+
+        const chosenWig = availableWigs.find((row) => row.wigId === selectedWigNumericId);
+        if (!chosenWig) {
+          throw new Error('Selected wig is no longer available. Refresh and try again.');
+        }
+
+        const nextWigStatus = chosenWig.wigStatusKey === 'inproduction'
+          ? 'In Production'
+          : 'Wig Allocated';
+
         await updateRequestWithStatusReasonFallback(selectedRow.reqId, {
           Status: REQUEST_STATUS.acceptedAllocated,
           Updated_At: nowIso,
           Status_Reason: null,
         });
+
+        const { error: wigUpdateError } = await supabase
+          .from(WIGS_TABLE)
+          .update({
+            Req_ID: selectedRow.reqId,
+            Wig_Status: nextWigStatus,
+            Updated_At: nowIso,
+          })
+          .eq('Wig_ID', selectedWigNumericId);
+
+        if (wigUpdateError) {
+          throw wigUpdateError;
+        }
       }
 
       if (selectedAction === 'accept_no_wig') {
@@ -904,6 +1081,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
 
       await loadReviewRows(selectedRow.reqId);
       setSelectedAction('');
+      setSelectedWigId('');
       setActionReason('');
       setActionReleaseDate('');
       setNotice({ kind: 'success', text: `${requestCode} updated successfully using "${actionLabel}".` });
@@ -1044,6 +1222,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
                       <p className="text-xs">Style: {row.specStyle}</p>
                       <p className="text-xs">Color: {row.specColor}</p>
                       <p className="text-xs">Length: {row.specLength}</p>
+                      {row.allocatedWigCode ? <p className="text-xs font-semibold text-emerald-700">Allocated Wig: {row.allocatedWigCode}</p> : null}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatDateTime(row.releaseDate)}</td>
                     <td className="px-4 py-3">
@@ -1119,6 +1298,7 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
                   <p><span className="font-semibold text-slate-900">Length:</span> {selectedRow.specLength}</p>
                   <p><span className="font-semibold text-slate-900">Texture:</span> {selectedRow.specTexture}</p>
                   <p><span className="font-semibold text-slate-900">Cap Size:</span> {selectedRow.specCapSize}</p>
+                  <p><span className="font-semibold text-slate-900">Allocated Wig:</span> {selectedRow.allocatedWigCode || 'Not assigned yet'}</p>
                 </div>
                 <p className="mt-3 whitespace-pre-line text-sm text-slate-700">
                   <span className="font-semibold text-slate-900">Special Note:</span> {selectedRow.specSpecialNote}
@@ -1166,6 +1346,43 @@ export default function UpdateWigRequestStatusPage({ userProfile }) {
                         ))}
                       </select>
                     </div>
+
+                    {selectedAction === 'accept_allocated' && (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-600">Select Wig (required)</label>
+                          <button
+                            type="button"
+                            onClick={() => { void loadAvailableWigs(); }}
+                            disabled={isLoadingAvailableWigs || isApplyingAction}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            {isLoadingAvailableWigs ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                            Refresh Wig List
+                          </button>
+                        </div>
+
+                        <select
+                          value={selectedWigId}
+                          onChange={(event) => setSelectedWigId(event.target.value)}
+                          disabled={isApplyingAction || isLoadingAvailableWigs}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                        >
+                          <option value="">{isLoadingAvailableWigs ? 'Loading wigs...' : 'Select available wig'}</option>
+                          {availableWigs.map((wigRow) => (
+                            <option key={wigRow.wigId} value={String(wigRow.wigId)}>
+                              {(wigRow.wigCode || `Wig #${wigRow.wigId}`)} | {wigRow.wigName || 'Unnamed Wig'} | {wigRow.wigStatus}
+                            </option>
+                          ))}
+                        </select>
+
+                        {!isLoadingAvailableWigs && availableWigs.length === 0 && (
+                          <p className="mt-1 text-xs text-amber-700">
+                            No assignable wigs found right now. You can use "Accept - No Wig Available" and assign later.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {selectedAction && actionRequiresReleaseDate(selectedAction) && (
                       <div>

@@ -37,7 +37,7 @@ const TABS = [
 const TEXTURE_OPTIONS = ['Straight', 'Wavy', 'Curly', 'Coily'];
 const COLOR_OPTIONS = ['Black', 'Dark Brown', 'Light Brown', 'Auburn', 'Blonde', 'Grey'];
 const CAP_SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL'];
-const WIG_STATUS_OPTIONS = ['In Production', 'Ready for Release', 'Releasing', 'Released'];
+const WIG_STATUS_OPTIONS = ['In Production', 'Ready for Release', 'Wig Allocated', 'Releasing', 'Released'];
 
 function withColorAlpha(colorValue, alpha, fallback = '#0275d8') {
   const safeAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
@@ -80,6 +80,7 @@ function normalizeWigStatus(value) {
   if (!key) return 'In Production';
   if (key === 'in production' || key === 'in_production') return 'In Production';
   if (key === 'ready for release' || key === 'ready_for_release' || key === 'available') return 'Ready for Release';
+  if (key === 'wig allocated' || key === 'wig_allocated' || key === 'allocated') return 'Wig Allocated';
   if (key === 'releasing') return 'Releasing';
   if (key === 'released') return 'Released';
   return 'In Production';
@@ -104,6 +105,11 @@ function buildSpecSignature(row) {
 
 function isEmptySpecSignature(signature) {
   return !String(signature || '').replace(/\|/g, '').trim();
+}
+
+function isCountedAsAvailableStock(wigStatusValue) {
+  const status = normalizeWigStatus(wigStatusValue);
+  return status === 'In Production' || status === 'Ready for Release';
 }
 
 const initialPhotoState = { file: null, previewUrl: '' };
@@ -189,7 +195,7 @@ export default function UploadWigStocksPage({ userProfile }) {
     try {
       const wigsResult = await supabase
         .from(WIGS_TABLE)
-        .select('Wig_ID, Wig_Name, Bundle_ID, Total_Donated_Hairs, Total_Bundles_Used, Wig_Status, Completed_At, Added_By, Production_Notes, Wig_Front_Image_Path, Wig_Side_Image_Path, Wig_Top_Image_Path')
+        .select('Wig_ID, Wig_Code, Wig_Name, Bundle_ID, Total_Donated_Hairs, Total_Bundles_Used, Wig_Status, Completed_At, Added_By, Production_Notes, Wig_Front_Image_Path, Wig_Side_Image_Path, Wig_Top_Image_Path')
         .order('Completed_At', { ascending: false, nullsFirst: false })
         .limit(300);
       if (wigsResult.error) throw wigsResult.error;
@@ -223,7 +229,7 @@ export default function UploadWigStocksPage({ userProfile }) {
           Cap_Size: spec.Cap_Size ?? null,
         };
         const signature = buildSpecSignature(merged);
-        if (!isEmptySpecSignature(signature) && normalizedStatus !== 'Released') {
+        if (!isEmptySpecSignature(signature) && isCountedAsAvailableStock(normalizedStatus)) {
           stockCountBySignature.set(signature, (stockCountBySignature.get(signature) || 0) + 1);
         }
         return merged;
@@ -552,7 +558,7 @@ export default function UploadWigStocksPage({ userProfile }) {
         const stockCountBySignature = new Map();
         updatedRows.forEach((row) => {
           const signature = buildSpecSignature(row);
-          if (!isEmptySpecSignature(signature) && normalizeWigStatus(row.Wig_Status) !== 'Released') {
+          if (!isEmptySpecSignature(signature) && isCountedAsAvailableStock(row.Wig_Status)) {
             stockCountBySignature.set(signature, (stockCountBySignature.get(signature) || 0) + 1);
           }
         });
@@ -945,6 +951,7 @@ export default function UploadWigStocksPage({ userProfile }) {
                 <thead style={{ backgroundColor: withColorAlpha(primaryColor, 0.08) }}>
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Wig</th>
+                    <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Code</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Photos</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Bundle</th>
                     <th className="px-4 py-3 text-left font-semibold" style={{ color: primaryTextColor }}>Length</th>
@@ -966,6 +973,7 @@ export default function UploadWigStocksPage({ userProfile }) {
                         <p className="font-semibold">{row.Wig_Name || `Wig #${row.Wig_ID}`}</p>
                         {row.Production_Notes ? <p className="text-xs mt-0.5" style={{ color: tertiaryTextColor }}>{row.Production_Notes}</p> : null}
                       </td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: secondaryTextColor }}>{row.Wig_Code || '-'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           {[row.frontPhotoUrl, row.sidePhotoUrl, row.topPhotoUrl].map((url, index) => (
