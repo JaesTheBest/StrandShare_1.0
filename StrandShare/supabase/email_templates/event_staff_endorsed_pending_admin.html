@@ -1,0 +1,95 @@
+<!--
+  Template:  event_staff_endorsed_pending_admin
+  Subject:   Event Application Update - Staff Review Completed
+  Trigger:   AFTER UPDATE on public."Event_Applications" when Status transitions
+             ('pendingstaffreview' | 'rejected' | 'appealed') -> 'pendingadmindecision'.
+  SQL:       076_remove_admin_fields_from_event_applications_and_use_utc8_timestamps.sql
+  Extras:    linked_event_request_id
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Staff Review Completed</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#111111;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+      Your event application has been reviewed by our staff and is now awaiting admin approval.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#111111;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background-color:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="padding:22px 24px;background:#000000;border-bottom:1px solid #2a2a2a;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="width:44px;vertical-align:middle;">
+                      <div style="width:40px;height:40px;border-radius:10px;background:#111111;border:1px solid #2e2e2e;text-align:center;line-height:40px;font-size:18px;color:#0ea5e9;">
+                        &#9202;
+                      </div>
+                    </td>
+                    <td style="padding-left:10px;vertical-align:middle;">
+                      <div style="font-family:Segoe UI,Arial,Helvetica,sans-serif;font-size:20px;line-height:1.2;font-weight:800;color:#ffffff;">StrandShare</div>
+                      <div style="font-family:Segoe UI,Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;color:#b3b3b3;">Staff Review Completed</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:28px 24px 20px 24px;font-family:Segoe UI,Arial,Helvetica,sans-serif;">
+                <p style="margin:0 0 10px 0;font-size:12px;line-height:1.4;color:#9ca3af;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;">
+                  Application EA-{{event_application_id}} &middot; Request ER-{{linked_event_request_id}}
+                </p>
+                <h1 style="margin:0 0 12px 0;font-size:26px;line-height:1.25;color:#ffffff;font-weight:800;">
+                  Staff finished reviewing your application
+                </h1>
+                <p style="margin:0 0 16px 0;font-size:14px;line-height:1.7;color:#c9c9c9;">
+                  {{message}}
+                </p>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:10px 0 14px 0;">
+                  <tr>
+                    <td style="background-color:#121212;border:1px solid #2a2a2a;border-radius:12px;padding:16px;">
+                      <div style="font-size:11px;line-height:1.4;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">
+                        Event Details
+                      </div>
+                      <div style="font-size:14px;line-height:1.8;color:#ffffff;font-family:Segoe UI,Arial,Helvetica,sans-serif;">
+                        <div><strong>Event:</strong> {{event_name}}</div>
+                        {{#proposed_start_at}}<div><strong>Proposed Start:</strong> {{proposed_start_at}}</div>{{/proposed_start_at}}
+                        {{#proposed_end_at}}<div><strong>Proposed End:</strong> {{proposed_end_at}}</div>{{/proposed_end_at}}
+                        {{#expected_attendees}}<div><strong>Expected Attendees:</strong> {{expected_attendees}}</div>{{/expected_attendees}}
+                        {{#venue_address}}<div><strong>Venue:</strong> {{venue_address}}</div>{{/venue_address}}
+                        <div><strong>Preferred Contact:</strong> {{preferred_contact_method}}{{#preferred_contact_detail}} &middot; {{preferred_contact_detail}}{{/preferred_contact_detail}}</div>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 0 6px 0;font-size:12px;line-height:1.7;color:#9ca3af;">
+                  You will receive another email once admin has made a final decision.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:14px 24px;background-color:#0d0d0d;border-top:1px solid #2a2a2a;font-family:Segoe UI,Arial,Helvetica,sans-serif;">
+                <p style="margin:0;font-size:11px;line-height:1.6;color:#8a8a8a;">
+                  This is an automated email from StrandShare.
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin:12px 0 0 0;font-family:Segoe UI,Arial,Helvetica,sans-serif;font-size:11px;line-height:1.4;color:#6f6f6f;">
+            &copy; StrandShare
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

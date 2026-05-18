@@ -31,7 +31,7 @@ export default function ConfirmationCompletePage() {
         </div>
         <h1 className="mt-4 text-2xl font-extrabold md:text-3xl">Email confirmation complete</h1>
         <p className="mt-2 text-sm md:text-base" style={{ color: secondaryTextColor }}>
-          Your {brandName} email is now verified. If this was an organization application, wait for Super Admin approval before access is activated.
+          Your {brandName} email is now verified. If this request needs approval, wait for admin decision before access is activated.
         </p>
 
         <div className="mt-6">

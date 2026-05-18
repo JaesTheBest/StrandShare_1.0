@@ -36,7 +36,7 @@
             <tr>
               <td style="padding:28px 24px 20px 24px;font-family:Segoe UI,Arial,Helvetica,sans-serif;">
                 <p style="margin:0 0 10px 0;font-size:12px;line-height:1.4;color:#9ca3af;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;">
-                  {{ if eq .Data.account_type "patient" }}Patient Account{{ else if eq .Data.account_type "partner_hospital" }}Partner Hospital Account{{ else }}Account Decision{{ end }}
+                  {{ if eq .Data.account_type "patient" }}Patient Account{{ else if eq .Data.account_type "partner_hospital" }}Partner Hospital Account{{ else }}Event Application Update{{ end }}
                 </p>
 
                 {{ if eq .Data.account_type "patient" }}
@@ -65,17 +65,17 @@
                 {{ else }}
                   {{ if eq .Data.decision "approved" }}
                   <h1 style="margin:0 0 12px 0;font-size:26px;line-height:1.25;color:#ffffff;font-weight:800;">
-                    Organization Application Approved
+                    Event Application Approved
                   </h1>
                   <p style="margin:0 0 16px 0;font-size:14px;line-height:1.7;color:#c9c9c9;">
-                    Your organization account has been approved. Use the login credentials below, then change your password after your first login.
+                    Your event application was approved. Our team will contact you through your selected contact method to finalize event planning details.
                   </p>
                   {{ else }}
                   <h1 style="margin:0 0 12px 0;font-size:26px;line-height:1.25;color:#ffffff;font-weight:800;">
-                    Organization Application Rejected
+                    Event Application Rejected
                   </h1>
                   <p style="margin:0 0 16px 0;font-size:14px;line-height:1.7;color:#c9c9c9;">
-                    Your organization application was reviewed and was not approved at this time.
+                    Your event application was reviewed and was not approved at this time. Staff will contact you with the review result and next options.
                   </p>
                   {{ end }}
                 {{ end }}
@@ -84,7 +84,7 @@
                   <tr>
                     <td style="background-color:#121212;border:1px solid #2a2a2a;border-radius:12px;padding:16px;">
                       <div style="font-size:11px;line-height:1.4;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">
-                        {{ if eq .Data.account_type "patient" }}Patient Account Details{{ else if eq .Data.account_type "partner_hospital" }}Partner Hospital Confirmation{{ else }}Organization Confirmation{{ end }}
+                        {{ if eq .Data.account_type "patient" }}Patient Account Details{{ else if eq .Data.account_type "partner_hospital" }}Partner Hospital Confirmation{{ else }}Event Application Details{{ end }}
                       </div>
                       <div style="font-size:14px;line-height:1.8;color:#ffffff;font-family:Segoe UI,Arial,Helvetica,sans-serif;">
                         {{ if eq .Data.account_type "patient" }}
@@ -96,7 +96,7 @@
                         {{ if .Data.has_access_window }}
                         <div><strong>Access Window:</strong> {{ .Data.access_window }}</div>
                         {{ end }}
-                        {{ else }}
+                        {{ else if eq .Data.account_type "partner_hospital" }}
                         <div><strong>{{ .Data.account_label }}:</strong> {{ .Data.account_value }}</div>
                         <div><strong>Role:</strong> {{ .Data.role_label }}</div>
                         <div><strong>Login Email:</strong> {{ .Data.recipient_email }}</div>
@@ -105,6 +105,20 @@
                         {{ end }}
                         {{ if .Data.has_access_window }}
                         <div><strong>Access Window:</strong> {{ .Data.access_window }}</div>
+                        {{ end }}
+                        {{ else }}
+                        <div><strong>Application Reference:</strong> {{ .Data.account_value }}</div>
+                        {{ if .Data.event_name }}
+                        <div><strong>Event Name:</strong> {{ .Data.event_name }}</div>
+                        {{ end }}
+                        {{ if .Data.preferred_contact_method }}
+                        <div><strong>Preferred Contact:</strong> {{ .Data.preferred_contact_method }}</div>
+                        {{ end }}
+                        {{ if .Data.preferred_contact_detail }}
+                        <div><strong>Preferred Contact Detail:</strong> {{ .Data.preferred_contact_detail }}</div>
+                        {{ end }}
+                        {{ if .Data.review_notes }}
+                        <div><strong>Review Notes:</strong> {{ .Data.review_notes }}</div>
                         {{ end }}
                         {{ end }}
                       </div>
@@ -128,19 +142,22 @@
                 </table>
                 {{ end }}
 
+                {{ if or (eq .Data.account_type "patient") (eq .Data.account_type "partner_hospital") }}
                 <div style="margin:0 0 16px 0;">
                   <a href="{{ .SiteURL }}/login" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 18px;border-radius:8px;">
                     Go To Login
                   </a>
                 </div>
+                {{ end }}
 
                 <p style="margin:0 0 6px 0;font-size:12px;line-height:1.7;color:#9ca3af;">
-                  This invite layout supports patient, organization, and partner hospital accounts through invite_user metadata.
+                  This template supports patient, event application, and partner hospital communications through invite_user metadata.
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.7;color:#9ca3af;">
                   If you did not expect this email, you may safely ignore it.
                 </p>
 
+                {{ if or (eq .Data.account_type "patient") (eq .Data.account_type "partner_hospital") }}
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px;">
                   <tr>
                     <td style="border-top:1px dashed #2a2a2a;padding-top:12px;">
@@ -150,6 +167,7 @@
                     </td>
                   </tr>
                 </table>
+                {{ end }}
               </td>
             </tr>
 

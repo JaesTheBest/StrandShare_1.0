@@ -4,16 +4,13 @@ import { createClient } from '@supabase/supabase-js';
 import maplibregl from 'maplibre-gl';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../lib/supabaseClient';
-import organizationAddressOptions from '../../data/organizationAddressOptions.json';
+import philippineAddressOptions from '../../data/philippineAddressOptions.json';
 import { TransitionFlipEntrance } from '../../components/transitions/TransitionFlip';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const USERS_TABLE = 'users';
 const USER_DETAILS_TABLE = 'user_details';
-const ORGANIZATIONS_TABLE = 'Organizations';
 const HOSPITALS_TABLE = 'Hospitals';
-const ORGANIZATION_MEMBERS_TABLE = 'Organization_Members';
-const ORGANIZATION_LOGOS_BUCKET = 'organization_logos';
 const HOSPITAL_LOGOS_BUCKET = 'hospital_logos';
 const MAX_LOGO_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 let isolatedAuthClient = null;
@@ -21,59 +18,53 @@ const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
 const MAP_SATELLITE_STYLE = {
   version: 8,
   sources: {
-    esriSatellite: {
+    googleSatellite: {
       type: 'raster',
-      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tiles: [
+        'https://mt0.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt2.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt3.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      ],
       tileSize: 256,
-      attribution: 'Tiles © Esri',
+      attribution: '© Google',
     },
   },
   layers: [
     {
-      id: 'esriSatelliteLayer',
+      id: 'googleSatelliteLayer',
       type: 'raster',
-      source: 'esriSatellite',
+      source: 'googleSatellite',
     },
   ],
 };
 const MAP_STREET_STYLE = {
   version: 8,
   sources: {
-    openStreetMap: {
+    googleStreet: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: [
+        'https://mt0.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        'https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        'https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+      ],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© Google',
     },
   },
   layers: [
     {
-      id: 'openStreetMapLayer',
+      id: 'googleStreetLayer',
       type: 'raster',
-      source: 'openStreetMap',
+      source: 'googleStreet',
     },
   ],
 };
 
-const ORGANIZATION_TYPE_OPTIONS = [
-  'Non-Government Organization (NGO)',
-  'Foundation',
-  'Nonprofit Association',
-  'Patient Support Group',
-  'Community-Based Organization',
-  'Faith-Based Organization',
-  'Corporate Social Responsibility Partner',
-  'Government Agency',
-  'Other',
-];
-const APPLICATION_TYPE_OPTIONS = [
-  { id: 'organization', label: 'Apply as Organization' },
-  { id: 'partner_hospital', label: 'Apply as Partner Hospital' },
-];
-
 const DEFAULT_COUNTRY = 'Philippines';
-const PHILIPPINE_ADDRESS_TREE = organizationAddressOptions && typeof organizationAddressOptions === 'object'
-  ? organizationAddressOptions
+const PHILIPPINE_ADDRESS_TREE = philippineAddressOptions && typeof philippineAddressOptions === 'object'
+  ? philippineAddressOptions
   : {};
 
 function toUnifiedRegionOptions(addressData) {
@@ -154,11 +145,11 @@ function toUnifiedRegionOptions(addressData) {
 }
 
 const initialForm = {
-  applicationType: '',
-  organizationName: '',
   hospitalName: '',
-  organizationType: '',
-  contactNumber: '',
+  hospitalHeadName: '',
+  hospitalHeadTitle: '',
+  hospitalHeadContactNumber: '',
+  hospitalHeadEmail: '',
   street: '',
   barangay: '',
   city: '',
@@ -208,18 +199,7 @@ function normalizeRole(value = '') {
     .replace(/[\s_-]+/g, '');
 }
 
-function normalizeApplicationType(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'partner_hospital' || normalized === 'partnerhospital' || normalized === 'hospital') {
-    return 'partner_hospital';
-  }
-  if (normalized === 'organization' || normalized === 'org') {
-    return 'organization';
-  }
-  return '';
-}
-
-function toSafeFileName(fileName = 'organization-logo.png') {
+function toSafeFileName(fileName = 'hospital-logo.png') {
   return String(fileName)
     .trim()
     .replace(/\s+/g, '-')
@@ -260,7 +240,7 @@ function formatPhilippineMobile(value = '') {
 
 function formatPhilippineMobileWithCountry(value = '') {
   const localNumber = formatPhilippineMobile(value);
-  return localNumber ? `+63 ${localNumber}` : '+63 ';
+  return localNumber ? `+63 ${localNumber}` : '';
 }
 
 function toStoredPhoneNumber(value = '') {
@@ -299,22 +279,16 @@ function toCoordinateOrNull(value = '') {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function mapStorageUploadError(rawMessage, bucketId = ORGANIZATION_LOGOS_BUCKET) {
+function mapStorageUploadError(rawMessage, bucketId = HOSPITAL_LOGOS_BUCKET) {
   const message = String(rawMessage || '').trim();
   const lower = message.toLowerCase();
 
   if (lower.includes('bucket') && lower.includes('not found')) {
-    if (bucketId === HOSPITAL_LOGOS_BUCKET) {
-      return 'Hospital logo bucket is missing. Run migration 010_hospital_logos_storage_policies.sql and retry.';
-    }
-    return 'Organization logo bucket is missing. Run migration 025_organization_logos_storage_policies.sql and retry.';
+    return 'Hospital logo bucket is missing. Run migration 010_hospital_logos_storage_policies.sql and retry.';
   }
 
   if (lower.includes('row-level security')) {
-    if (bucketId === HOSPITAL_LOGOS_BUCKET) {
-      return 'Hospital logo upload blocked by Storage RLS policy. Run migration 054_force_open_application_logos_policies.sql in Supabase SQL Editor and retry. If still blocked, a leftover restrictive policy may exist — check pg_policies output.';
-    }
-    return 'Organization logo upload blocked by Storage RLS policy. Run migration 054_force_open_application_logos_policies.sql in Supabase SQL Editor and retry. If still blocked, a leftover restrictive policy may exist — check pg_policies output.';
+    return 'Hospital logo upload blocked by Storage RLS policy. Run migration 054_force_open_application_logos_policies.sql in Supabase SQL Editor and retry. If still blocked, a leftover restrictive policy may exist - check pg_policies output.';
   }
 
   return message;
@@ -617,16 +591,14 @@ function mapEmailOtpError(rawMessage) {
   return message;
 }
 
-function mapOrganizationSchemaError(rawMessage) {
+function mapApplicationSchemaError(rawMessage) {
   const message = String(rawMessage || '').trim();
   const lower = message.toLowerCase();
 
   if (
-    message.includes("Could not find the table 'public.Organizations'")
-    || message.includes("Could not find the table 'public.Organization_Members'")
-    || message.includes("Could not find the table 'public.Hospitals'")
+    message.includes("Could not find the table 'public.Hospitals'")
   ) {
-    return 'Application tables are not ready yet. Run the latest organization/hospital migrations, then refresh the app.';
+    return 'Hospital application tables are not ready yet. Run the latest hospital migrations, then refresh the app.';
   }
 
   if (
@@ -639,20 +611,20 @@ function mapOrganizationSchemaError(rawMessage) {
     || lower.includes('province')
     || lower.includes('latitude')
     || lower.includes('longitude')
+    || lower.includes('hospital_head_name')
+    || lower.includes('hospital_head_title')
+    || lower.includes('hospital_head_contact_number')
+    || lower.includes('hospital_head_email')
   ) {
-    return 'Hospitals schema is missing required application columns. Run migrations 048_alter_hospitals_application_columns.sql and 049_add_hospitals_province_column.sql, then refresh.';
+    return 'Hospitals schema is missing required application columns. Run migrations 048_alter_hospitals_application_columns.sql, 049_add_hospitals_province_column.sql, and 065_add_hospital_head_details_columns.sql, then refresh.';
   }
 
-  if (lower.includes('bucket') && lower.includes('organization_logos')) {
-    return 'Organization logo bucket is missing or blocked. Run migration 054_force_open_application_logos_policies.sql, then refresh the app.';
-  }
   if (lower.includes('bucket') && lower.includes('hospital_logos')) {
     return 'Hospital logo bucket is missing or blocked. Run migration 054_force_open_application_logos_policies.sql, then refresh the app.';
   }
 
   if (lower.includes('storage') || lower.includes('row-level security')) {
-    const inferredBucket = lower.includes('hospital_logos') ? HOSPITAL_LOGOS_BUCKET : ORGANIZATION_LOGOS_BUCKET;
-    return mapStorageUploadError(message, inferredBucket);
+    return mapStorageUploadError(message, HOSPITAL_LOGOS_BUCKET);
   }
 
   if (lower.includes('no unique or exclusion constraint matching the on conflict specification')) {
@@ -662,12 +634,12 @@ function mapOrganizationSchemaError(rawMessage) {
   return message;
 }
 
-async function uploadApplicationLogo(file, entityName, bucketId = ORGANIZATION_LOGOS_BUCKET) {
+async function uploadApplicationLogo(file, entityName, bucketId = HOSPITAL_LOGOS_BUCKET) {
   if (!supabase) {
     throw new Error('Supabase is not configured for file upload.');
   }
 
-  const safeName = toSafeFileName(file?.name || 'organization-logo.png');
+  const safeName = toSafeFileName(file?.name || 'hospital-logo.png');
   const slug = toSlug(entityName) || 'application';
   const filePath = `applications/${slug}-${Date.now()}-${safeName}`;
 
@@ -689,7 +661,7 @@ async function uploadApplicationLogo(file, entityName, bucketId = ORGANIZATION_L
   const publicUrl = publicUrlData?.publicUrl;
 
   if (!publicUrl) {
-    throw new Error('Could not resolve uploaded organization logo URL.');
+    throw new Error('Could not resolve uploaded hospital logo URL.');
   }
 
   return {
@@ -706,14 +678,12 @@ export default function PartnershipApplicationPage() {
   const primaryTextColor = theme.primaryTextColor || '#0f172a';
   const secondaryTextColor = theme.secondaryTextColor || '#334155';
   const [form, setForm] = useState(initialForm);
-  const [useCustomOrgType, setUseCustomOrgType] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmissionComplete, setIsSubmissionComplete] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [submittedOrganizationName, setSubmittedOrganizationName] = useState('');
-  const [submittedApplicationType, setSubmittedApplicationType] = useState('');
+  const [submittedHospitalName, setSubmittedHospitalName] = useState('');
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState('');
   const [isDraggingLogo, setIsDraggingLogo] = useState(false);
@@ -724,6 +694,7 @@ export default function PartnershipApplicationPage() {
   const [otpCooldownSeconds, setOtpCooldownSeconds] = useState(0);
   const [otpVerifiedEmail, setOtpVerifiedEmail] = useState('');
   const [otpVerifiedAuthUserId, setOtpVerifiedAuthUserId] = useState('');
+  const fieldRefs = useRef({});
   const logoInputRef = useRef(null);
   const otpClientRef = useRef(null);
   const fieldClassName = 'w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:ring-2';
@@ -822,43 +793,16 @@ export default function PartnershipApplicationPage() {
     };
   }, [otpCooldownSeconds]);
 
-  const applicationType = useMemo(() => normalizeApplicationType(form.applicationType), [form.applicationType]);
-  const isOrganizationApplication = applicationType === 'organization';
-  const isHospitalApplication = applicationType === 'partner_hospital';
-
   const selectedLatitude = useMemo(() => toCoordinateOrNull(form.latitude), [form.latitude]);
   const selectedLongitude = useMemo(() => toCoordinateOrNull(form.longitude), [form.longitude]);
-
-  const hasOrganizationRequiredFields = useMemo(() => {
-    return (
-      form.organizationName.trim()
-      && form.organizationType.trim()
-      && normalizePhilippineMobile(form.contactNumber).length === 10
-      && form.street.trim()
-      && form.city.trim()
-      && form.province.trim()
-      && form.region.trim()
-      && form.country.trim()
-      && selectedLatitude !== null
-      && selectedLongitude !== null
-    );
-  }, [
-    form.organizationName,
-    form.organizationType,
-    form.contactNumber,
-    form.street,
-    form.city,
-    form.province,
-    form.region,
-    form.country,
-    selectedLatitude,
-    selectedLongitude,
-  ]);
 
   const hasHospitalRequiredFields = useMemo(() => {
     return (
       form.hospitalName.trim()
-      && normalizePhilippineMobile(form.contactNumber).length === 10
+      && form.hospitalHeadName.trim()
+      && form.hospitalHeadTitle.trim()
+      && normalizePhilippineMobile(form.hospitalHeadContactNumber).length === 10
+      && isValidEmail(form.hospitalHeadEmail)
       && form.street.trim()
       && form.city.trim()
       && form.province.trim()
@@ -869,7 +813,10 @@ export default function PartnershipApplicationPage() {
     );
   }, [
     form.hospitalName,
-    form.contactNumber,
+    form.hospitalHeadName,
+    form.hospitalHeadTitle,
+    form.hospitalHeadContactNumber,
+    form.hospitalHeadEmail,
     form.street,
     form.city,
     form.province,
@@ -889,23 +836,74 @@ export default function PartnershipApplicationPage() {
       && form.leadProvince.trim()
       && form.leadRegion.trim()
       && form.leadCountry.trim()
-      && form.email.trim()
+      && isValidEmail(form.email)
     );
   }, [form.firstName, form.lastName, form.leadContactNumber, form.leadStreet, form.leadCity, form.leadProvince, form.leadRegion, form.leadCountry, form.email]);
 
-  const hasEntityRequiredFields = useMemo(() => {
-    if (isHospitalApplication) {
-      return hasHospitalRequiredFields;
-    }
-    if (isOrganizationApplication) {
-      return hasOrganizationRequiredFields;
-    }
-    return false;
-  }, [hasHospitalRequiredFields, hasOrganizationRequiredFields, isHospitalApplication, isOrganizationApplication]);
+  const hasEntityRequiredFields = useMemo(() => hasHospitalRequiredFields, [hasHospitalRequiredFields]);
 
   const hasRequiredFields = hasEntityRequiredFields && hasLeadRequiredFields;
 
   const canSubmit = hasRequiredFields && isEmailOtpVerified;
+
+  const setFieldRef = useCallback((fieldKey) => (node) => {
+    if (!fieldKey) return;
+    if (node) {
+      fieldRefs.current[fieldKey] = node;
+    } else {
+      delete fieldRefs.current[fieldKey];
+    }
+  }, []);
+
+  const focusField = useCallback((fieldKey) => {
+    const node = fieldRefs.current[fieldKey];
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+      if (typeof node.focus === 'function') node.focus();
+    }, 140);
+  }, []);
+
+  const getValidationIssue = useCallback((page) => {
+    const issue = (field, message) => ({ field, message });
+
+    if (page === 1) {
+      if (!form.hospitalName.trim()) return issue('hospitalName', 'Hospital name is required.');
+      if (!form.hospitalHeadName.trim()) return issue('hospitalHeadName', 'Hospital head/owner name is required.');
+      if (!form.hospitalHeadTitle.trim()) return issue('hospitalHeadTitle', 'Head/owner position is required.');
+      if (normalizePhilippineMobile(form.hospitalHeadContactNumber).length !== 10) return issue('hospitalHeadContactNumber', 'Head/owner contact number must be valid (+63 912 345 6789).');
+      if (!isValidEmail(form.hospitalHeadEmail)) return issue('hospitalHeadEmail', 'Head/owner email must be valid.');
+      if (!form.street.trim()) return issue('street', 'Street is required.');
+      if (!form.region.trim()) return issue('region', 'Region is required.');
+      if (!form.province.trim()) return issue('province', 'Province is required.');
+      if (!form.city.trim()) return issue('city', 'City/Municipality is required.');
+      if (selectedLatitude === null || selectedLongitude === null) return issue('latitude', 'Please set the exact location pin.');
+      return null;
+    }
+
+    if (page === 2) {
+      if (!form.firstName.trim()) return issue('firstName', 'First name is required.');
+      if (!form.lastName.trim()) return issue('lastName', 'Last name is required.');
+      if (normalizePhilippineMobile(form.leadContactNumber).length !== 10) return issue('leadContactNumber', 'H-Representative contact number must be valid (+63 912 345 6789).');
+      if (!isValidEmail(form.email)) return issue('email', 'H-Representative email must be valid.');
+      if (!form.leadStreet.trim()) return issue('leadStreet', 'Street is required.');
+      if (!form.leadRegion.trim()) return issue('leadRegion', 'Region is required.');
+      if (!form.leadProvince.trim()) return issue('leadProvince', 'Province is required.');
+      if (!form.leadCity.trim()) return issue('leadCity', 'City/Municipality is required.');
+      return null;
+    }
+
+    if (page === 4 && !isEmailOtpVerified) {
+      return issue('otpCode', 'Please verify email with the 6-digit OTP before submitting.');
+    }
+
+    return null;
+  }, [
+    form,
+    selectedLatitude,
+    selectedLongitude,
+    isEmailOtpVerified,
+  ]);
 
   const clearOtpVerificationState = (nextNotice = { type: '', message: '' }) => {
     setOtpCode('');
@@ -916,6 +914,8 @@ export default function PartnershipApplicationPage() {
 
   const updateField = (field) => (event) => {
     const nextValue = event.target.value;
+    setErrorMessage('');
+    setSuccessMessage('');
 
     if (field === 'email') {
       const normalizedNextEmail = String(nextValue || '').trim().toLowerCase();
@@ -936,43 +936,9 @@ export default function PartnershipApplicationPage() {
     }));
   };
 
-  const onApplicationTypeChange = (event) => {
-    const nextType = normalizeApplicationType(event.target.value);
+  const onLocationPinChange = (nextLat, nextLng) => {
     setErrorMessage('');
     setSuccessMessage('');
-    setOtpCode('');
-    setOtpNotice({ type: '', message: '' });
-    setOtpVerifiedEmail('');
-    setOtpVerifiedAuthUserId('');
-    setOtpCooldownSeconds(0);
-    setUseCustomOrgType(false);
-    if (logoPreviewUrl) {
-      URL.revokeObjectURL(logoPreviewUrl);
-    }
-    setLogoPreviewUrl('');
-    setLogoFile(null);
-    if (logoInputRef.current) {
-      logoInputRef.current.value = '';
-    }
-    setForm((prev) => ({
-      ...prev,
-      applicationType: nextType,
-      organizationName: '',
-      hospitalName: '',
-      organizationType: '',
-      contactNumber: '',
-      street: '',
-      barangay: '',
-      city: '',
-      province: '',
-      region: '',
-      country: DEFAULT_COUNTRY,
-      latitude: '',
-      longitude: '',
-    }));
-  };
-
-  const onLocationPinChange = (nextLat, nextLng) => {
     setForm((prev) => ({
       ...prev,
       latitude: Number(nextLat).toFixed(7),
@@ -1065,12 +1031,70 @@ export default function PartnershipApplicationPage() {
   };
 
   const onContactNumberChange = (field) => (event) => {
-    const digits = normalizePhilippineMobile(event.target.value);
+    const formatted = formatPhilippineMobileWithCountry(event.target.value);
     setForm((prev) => ({
       ...prev,
-      [field]: digits,
+      [field]: formatted,
     }));
   };
+
+  const autoPinFromAddressSnapshot = useCallback(async (formSnapshot) => {
+    const query = [
+      formSnapshot?.hospitalName,
+      formSnapshot?.street,
+      formSnapshot?.barangay,
+      formSnapshot?.city,
+      formSnapshot?.province,
+      formSnapshot?.region,
+      formSnapshot?.country || DEFAULT_COUNTRY,
+    ]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(', ');
+
+    if (!query) {
+      return false;
+    }
+
+    try {
+      const endpoint = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=ph&q=${encodeURIComponent(query)}`;
+      const response = await fetch(endpoint, { method: 'GET', headers: { Accept: 'application/json' } });
+      if (!response.ok) return false;
+      const rows = await response.json();
+      const first = Array.isArray(rows)
+        ? rows.find((row) => Number.isFinite(Number(row?.lat)) && Number.isFinite(Number(row?.lon)))
+        : null;
+
+      if (!first) return false;
+
+      setForm((previous) => ({
+        ...previous,
+        latitude: Number(first.lat).toFixed(7),
+        longitude: Number(first.lon).toFixed(7),
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const autoPinFromHospitalAddress = useCallback(async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!form.street.trim() || !form.city.trim() || !form.province.trim() || !form.region.trim()) {
+      setErrorMessage('Please complete street, city/municipality, province, and region first before auto-pin.');
+      focusField('street');
+      return;
+    }
+
+    const pinned = await autoPinFromAddressSnapshot(form);
+    if (pinned) {
+      setSuccessMessage('Map pin auto-set from hospital address.');
+    } else {
+      setErrorMessage('Unable to auto-pin this address right now. Adjust address or pin manually on the map.');
+    }
+  }, [autoPinFromAddressSnapshot, focusField, form]);
 
   const applyLogoFile = (file) => {
     if (!file) {
@@ -1223,7 +1247,7 @@ export default function PartnershipApplicationPage() {
       setOtpVerifiedAuthUserId(verifiedAuthUserId);
       setOtpNotice({
         type: 'success',
-        message: 'Email verified successfully. You can now submit your organization application.',
+        message: 'Email verified successfully. You can now submit your partner hospital application.',
       });
 
       const otpDisplayName = buildDisplayName(form.firstName, form.lastName);
@@ -1255,42 +1279,56 @@ export default function PartnershipApplicationPage() {
     window.location.assign('/');
   };
 
-  const goToDetailsPage = () => {
-    setErrorMessage('');
-    setSuccessMessage('');
-    if (!applicationType) {
-      setErrorMessage('Please choose an application type before continuing.');
-      return;
-    }
-    setActivePage(2);
-  };
-
   const goToLeadPage = () => {
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!hasEntityRequiredFields) {
-      setErrorMessage(
-        isHospitalApplication
-          ? 'Please complete all partner hospital information, including map pin and valid contact number, before continuing.'
-          : 'Please complete all organization information, including map pin and valid contact number, before continuing.'
-      );
+    const issue = getValidationIssue(1);
+    if (issue) {
+      setErrorMessage(issue.message);
+      focusField(issue.field);
+      return;
+    }
+
+    setActivePage(2);
+  };
+
+  const goToDetailsFromLeadPage = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setActivePage(1);
+  };
+
+  const goToConfirmationPage = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const issue = getValidationIssue(2);
+    if (issue) {
+      setErrorMessage(issue.message);
+      focusField(issue.field);
       return;
     }
 
     setActivePage(3);
   };
 
-  const goToSelectionPage = () => {
-    setErrorMessage('');
-    setSuccessMessage('');
-    setActivePage(1);
-  };
-
-  const goToDetailsFromLeadPage = () => {
+  const goToLeadPageFromConfirmation = () => {
     setErrorMessage('');
     setSuccessMessage('');
     setActivePage(2);
+  };
+
+  const goToOtpPage = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setActivePage(4);
+  };
+
+  const goBackToConfirmationFromOtp = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setActivePage(3);
   };
 
   const onSubmit = async (event) => {
@@ -1299,17 +1337,17 @@ export default function PartnershipApplicationPage() {
     setSuccessMessage('');
 
     if (activePage === 1) {
-      goToDetailsPage();
-      return;
-    }
-
-    if (activePage === 2) {
       goToLeadPage();
       return;
     }
 
-    if (!applicationType) {
-      setErrorMessage('Please choose if you are applying as Organization or Partner Hospital.');
+    if (activePage === 2) {
+      goToConfirmationPage();
+      return;
+    }
+
+    if (activePage === 3) {
+      goToOtpPage();
       return;
     }
 
@@ -1330,10 +1368,13 @@ export default function PartnershipApplicationPage() {
     const lastName = toTitle(form.lastName);
     const nowIso = getPhilippineTimestamp();
     const joinedDate = nowIso.slice(0, 10);
-    const organizationName = form.organizationName.trim();
     const hospitalName = form.hospitalName.trim();
-    const entityName = isHospitalApplication ? hospitalName : organizationName;
-    const entityContactNumber = toStoredPhoneNumber(form.contactNumber);
+    const hospitalHeadName = form.hospitalHeadName.trim();
+    const hospitalHeadTitle = form.hospitalHeadTitle.trim();
+    const hospitalHeadContactNumber = toStoredPhoneNumber(form.hospitalHeadContactNumber);
+    const hospitalHeadEmail = form.hospitalHeadEmail.trim().toLowerCase();
+    const entityName = hospitalName;
+    const entityContactNumber = toStoredPhoneNumber(form.hospitalHeadContactNumber);
     const leadContactNumber = toStoredPhoneNumber(form.leadContactNumber);
     const selectedLat = toCoordinateOrNull(form.latitude);
     const selectedLng = toCoordinateOrNull(form.longitude);
@@ -1354,10 +1395,10 @@ export default function PartnershipApplicationPage() {
       const existingUser = existingUserResponse.data || null;
       const existingRole = normalizeRole(existingUser?.role);
       const allowedExistingRole = !existingRole
-        || ['user', 'organization', 'partner', 'hospital', 'partnerhospital'].includes(existingRole);
+        || ['user', 'partner', 'hospital', 'partnerhospital', 'hrepresentative'].includes(existingRole);
 
       if (existingUser && !allowedExistingRole) {
-        throw new Error('This email is linked to a restricted account role. Use a different email for this application lead.');
+        throw new Error('This email is linked to a restricted account role. Use a different email for the H-Representative account.');
       }
 
       if (existingUser?.auth_user_id && otpVerifiedAuthUserId && existingUser.auth_user_id !== otpVerifiedAuthUserId) {
@@ -1419,38 +1460,6 @@ export default function PartnershipApplicationPage() {
         throw new Error('Unable to resolve local user profile for the applicant.');
       }
 
-      if (isOrganizationApplication) {
-        const existingMembersResult = await supabase
-          .from(ORGANIZATION_MEMBERS_TABLE)
-          .select('Organization_ID')
-          .eq('User_ID', userId);
-
-        if (existingMembersResult.error) {
-          throw new Error(existingMembersResult.error.message);
-        }
-
-        const linkedOrganizationIds = (existingMembersResult.data || [])
-          .map((row) => row.Organization_ID)
-          .filter(Boolean);
-
-        if (linkedOrganizationIds.length > 0) {
-          const activeOrganizationsResult = await supabase
-            .from(ORGANIZATIONS_TABLE)
-            .select('Organization_ID, Approval_Status')
-            .in('Organization_ID', linkedOrganizationIds)
-            .in('Approval_Status', ['Pending', 'Approved'])
-            .limit(1);
-
-          if (activeOrganizationsResult.error) {
-            throw new Error(activeOrganizationsResult.error.message);
-          }
-
-          if ((activeOrganizationsResult.data || []).length > 0) {
-            throw new Error('An active organization request already exists for this lead account.');
-          }
-        }
-      }
-
       const userDetailsPayload = {
         user_id: userId,
         first_name: firstName,
@@ -1502,128 +1511,49 @@ export default function PartnershipApplicationPage() {
         }
       }
 
-      let organizationLogoUrl = '';
+      let hospitalLogoUrl = '';
 
       if (logoFile) {
-        const logoBucketId = isHospitalApplication ? HOSPITAL_LOGOS_BUCKET : ORGANIZATION_LOGOS_BUCKET;
-        const uploadResult = await uploadApplicationLogo(logoFile, entityName, logoBucketId);
-        organizationLogoUrl = uploadResult.publicUrl;
+        const uploadResult = await uploadApplicationLogo(logoFile, entityName, HOSPITAL_LOGOS_BUCKET);
+        hospitalLogoUrl = uploadResult.publicUrl;
       }
 
-      if (isOrganizationApplication) {
-        const createOrganizationResult = await supabase
-          .from(ORGANIZATIONS_TABLE)
-          .insert({
-            Organization_Name: organizationName,
-            Organization_Type: form.organizationType.trim(),
-            Contact_Number: entityContactNumber,
-            Organization_Logo_URL: organizationLogoUrl || null,
-            Street: form.street.trim(),
-            Barangay: form.barangay.trim() || null,
-            City: form.city.trim(),
-            Province: form.province.trim(),
-            Region: form.region.trim(),
-            Country: form.country.trim(),
-            Latitude: selectedLat,
-            Longitude: selectedLng,
-            Status: 'Inactive',
-            Is_Approved: false,
-            Approval_Status: 'Pending',
-            Created_By: userId,
-            Updated_By: userId,
-            Created_At: nowIso,
-            Updated_At: nowIso,
-          })
-          .select('Organization_ID')
-          .maybeSingle();
-
-        if (createOrganizationResult.error) {
-          throw new Error(createOrganizationResult.error.message);
-        }
-
-        const organizationId = createOrganizationResult.data?.Organization_ID;
-
-        if (!organizationId) {
-          throw new Error('Organization record was not created. Please try again.');
-        }
-
-        const membershipPayload = {
-          Organization_ID: organizationId,
-          User_ID: userId,
-          Membership_Role: 'Leader',
-          Is_Primary: true,
-          Status: 'Inactive',
+      const createHospitalResult = await supabase
+        .from(HOSPITALS_TABLE)
+        .insert({
+          Hospital_Name: hospitalName,
+          Hospital_Logo: hospitalLogoUrl || null,
+          Hospital_Head_Name: hospitalHeadName || null,
+          Hospital_Head_Title: hospitalHeadTitle || null,
+          Hospital_Head_Contact_Number: hospitalHeadContactNumber || null,
+          Hospital_Head_Email: hospitalHeadEmail || null,
+          Contact_Number: entityContactNumber,
+          Street: form.street.trim(),
+          Barangay: form.barangay.trim() || null,
+          City: form.city.trim(),
+          Province: form.province.trim(),
+          Region: form.region.trim(),
+          Country: form.country.trim(),
+          Latitude: selectedLat,
+          Longitude: selectedLng,
+          Is_Approved: false,
+          Approval_Status: 'Pending',
+          Approved_By: null,
+          Approved_At: null,
+          Review_Notes: null,
           Created_By: userId,
+          Updated_By: userId,
           Created_At: nowIso,
           Updated_At: nowIso,
-        };
+        })
+        .select('Hospital_ID')
+        .maybeSingle();
 
-        const existingMembershipResult = await supabase
-          .from(ORGANIZATION_MEMBERS_TABLE)
-          .select('Member_ID')
-          .eq('Organization_ID', organizationId)
-          .eq('User_ID', userId)
-          .limit(1);
-
-        if (existingMembershipResult.error) {
-          throw new Error(existingMembershipResult.error.message);
-        }
-
-        const existingMemberId = existingMembershipResult.data?.[0]?.Member_ID || null;
-
-        if (existingMemberId) {
-          const updateMembershipResult = await supabase
-            .from(ORGANIZATION_MEMBERS_TABLE)
-            .update(membershipPayload)
-            .eq('Member_ID', existingMemberId);
-
-          if (updateMembershipResult.error) {
-            throw new Error(updateMembershipResult.error.message);
-          }
-        } else {
-          const insertMembershipResult = await supabase
-            .from(ORGANIZATION_MEMBERS_TABLE)
-            .insert(membershipPayload);
-
-          if (insertMembershipResult.error) {
-            throw new Error(insertMembershipResult.error.message);
-          }
-        }
-      } else {
-        const createHospitalResult = await supabase
-          .from(HOSPITALS_TABLE)
-          .insert({
-            Hospital_Name: hospitalName,
-            Hospital_Logo: organizationLogoUrl || null,
-            Contact_Number: entityContactNumber,
-            Street: form.street.trim(),
-            Barangay: form.barangay.trim() || null,
-            City: form.city.trim(),
-            Province: form.province.trim(),
-            Region: form.region.trim(),
-            Country: form.country.trim(),
-            Latitude: selectedLat,
-            Longitude: selectedLng,
-            Is_Approved: false,
-            Approval_Status: 'Pending',
-            Approved_By: null,
-            Approved_At: null,
-            Review_Notes: null,
-            Created_By: userId,
-            Updated_By: userId,
-            Created_At: nowIso,
-            Updated_At: nowIso,
-          })
-          .select('Hospital_ID')
-          .maybeSingle();
-
-        if (createHospitalResult.error) {
-          throw new Error(createHospitalResult.error.message);
-        }
+      if (createHospitalResult.error) {
+        throw new Error(createHospitalResult.error.message);
       }
 
       setForm(initialForm);
-      setUseCustomOrgType(false);
       setLogoFile(null);
       if (logoPreviewUrl) {
         URL.revokeObjectURL(logoPreviewUrl);
@@ -1641,17 +1571,12 @@ export default function PartnershipApplicationPage() {
       if (otpClientRef.current) {
         await otpClientRef.current.auth.signOut().catch(() => undefined);
       }
-      setSuccessMessage(
-        isHospitalApplication
-          ? 'Application submitted successfully. Your partner hospital application is now pending Super Admin review.'
-          : 'Application submitted successfully. Your organization is now pending Super Admin review.'
-      );
-      setSubmittedOrganizationName(entityName);
-      setSubmittedApplicationType(applicationType);
+      setSuccessMessage('Application submitted successfully. Your partner hospital application is now pending admin review.');
+      setSubmittedHospitalName(entityName);
       setIsSubmissionComplete(true);
     } catch (error) {
       setErrorMessage(
-        mapOrganizationSchemaError(error?.message)
+        mapApplicationSchemaError(error?.message)
         || 'Unable to submit application.'
       );
     } finally {
@@ -1674,17 +1599,16 @@ export default function PartnershipApplicationPage() {
   }, [incomingTransition]);
 
   const Wrapper = incomingTransition === 'apply' ? TransitionFlipEntrance : React.Fragment;
-  const entityDisplayName = isHospitalApplication ? 'Partner Hospital' : 'Organization';
-  const formTitle = isHospitalApplication
-    ? 'Submit Partner Hospital Application'
-    : isOrganizationApplication
-      ? 'Submit Organization Application'
-      : 'Apply for Partnership';
+  const entityDisplayName = 'Partner Hospital';
+  const formTitle = 'Submit Partner Hospital Application';
+  const currentStepNumber = activePage;
   const stepLabel = activePage === 1
-    ? 'Application Type'
+    ? `${entityDisplayName} Details`
     : activePage === 2
-      ? `${entityDisplayName} Information`
-      : 'Lead Account and Verification';
+      ? 'H-Representative Account Setup'
+      : activePage === 3
+        ? 'Review & Confirmation'
+        : 'Email Verification';
 
   if (isSubmissionComplete) {
     return (
@@ -1702,11 +1626,11 @@ export default function PartnershipApplicationPage() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: secondaryTextColor }}>Application Status</p>
                   <h1 className="mt-1 text-2xl font-extrabold tracking-tight md:text-3xl" style={{ color: primaryTextColor }}>
-                    {submittedApplicationType === 'partner_hospital' ? 'Partner Hospital Application Submitted' : 'Organization Application Submitted'}
+                    Partner Hospital Application Submitted
                   </h1>
-                  {submittedOrganizationName ? (
+                  {submittedHospitalName ? (
                     <p className="mt-2 text-sm md:text-base" style={{ color: secondaryTextColor }}>
-                      {submittedOrganizationName}
+                      {submittedHospitalName}
                     </p>
                   ) : null}
                 </div>
@@ -1722,9 +1646,7 @@ export default function PartnershipApplicationPage() {
             <div className="space-y-4 px-5 py-6 md:px-7 md:py-7">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                 <p className="inline-flex items-center gap-2 font-semibold"><CheckCircle2 size={16} /> Success</p>
-                <p className="mt-1">{successMessage || (submittedApplicationType === 'partner_hospital'
-                  ? 'Application submitted successfully. Your partner hospital application is now pending Super Admin review.'
-                  : 'Application submitted successfully. Your organization is now pending Super Admin review.')}</p>
+                <p className="mt-1">{successMessage || 'Application submitted successfully. Your partner hospital application is now pending admin review.'}</p>
               </div>
 
               <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm" style={{ borderColor: `${secondaryColor}33`, color: secondaryTextColor }}>
@@ -1776,7 +1698,7 @@ export default function PartnershipApplicationPage() {
                   {formTitle}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm md:text-base" style={{ color: secondaryTextColor }}>
-                  Step 1: choose application type. Step 2: complete details with map pin. Step 3: verify lead email with a 6-digit OTP before submitting.
+                  Step 1: complete hospital profile details. Step 2: set up who will use the H-Representative account. Step 3: review all details. Step 4: verify email with OTP and submit.
                 </p>
               </div>
               <div
@@ -1790,128 +1712,63 @@ export default function PartnershipApplicationPage() {
 
           <form onSubmit={onSubmit} className="space-y-6 px-5 py-6 md:px-7 md:py-7">
             <div className="flex items-center justify-between rounded-xl border bg-slate-50 px-4 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}33`, color: secondaryTextColor }}>
-              <span>Page {activePage} of 3</span>
+              <span>Page {currentStepNumber} of 4</span>
               <span>{stepLabel}</span>
             </div>
 
             {activePage === 1 ? (
               <fieldset className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
-                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Application Type</legend>
-                <div className="rounded-xl border bg-slate-50 px-3 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}22`, color: secondaryTextColor }}>
-                  Choose what you are applying for first. Fields in the next step will change based on this selection.
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  {APPLICATION_TYPE_OPTIONS.map((option) => {
-                    const isSelected = applicationType === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => onApplicationTypeChange({ target: { value: option.id } })}
-                        className="rounded-xl border bg-white px-4 py-4 text-left transition"
-                        style={{
-                          borderColor: isSelected ? primaryColor : `${secondaryColor}44`,
-                          backgroundColor: isSelected ? `${primaryColor}12` : '#ffffff',
-                        }}
-                      >
-                        <p className="text-sm font-bold" style={{ color: isSelected ? primaryColor : primaryTextColor }}>
-                          {option.label}
-                        </p>
-                        <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>
-                          {option.id === 'organization'
-                            ? 'Use this if you are applying as an organization.'
-                            : 'Use this if you are applying as a partner hospital.'}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ) : null}
-
-            {activePage === 2 ? (
-              <fieldset className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
                 <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>{entityDisplayName} Information</legend>
                 <div className="rounded-xl border bg-slate-50 px-3 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}22`, color: secondaryTextColor }}>
-                  {isHospitalApplication
-                    ? 'Provide partner hospital details, contact info, full address, and exact map pin.'
-                    : 'Provide organization details, contact info, full address, and exact map pin.'}
+                  Provide partner hospital details, contact info, full address, and exact map pin.
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {isHospitalApplication ? (
-                    <label className="space-y-1 text-sm md:col-span-2">
-                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Hospital Name *</span>
-                      <input
-                        value={form.hospitalName}
-                        onChange={updateField('hospitalName')}
-                        className={fieldClassName}
-                        style={fieldStyle}
-                        placeholder="Example: StrandShare Medical Center"
-                        required
-                      />
-                    </label>
-                  ) : (
-                    <>
-                      <label className="space-y-1 text-sm">
-                        <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Name *</span>
-                        <input
-                          value={form.organizationName}
-                          onChange={updateField('organizationName')}
-                          className={fieldClassName}
-                          style={fieldStyle}
-                          placeholder="Example: Hope Wig Foundation"
-                          required
-                        />
-                      </label>
-
-                      <label className="space-y-1 text-sm">
-                        <span className="font-semibold" style={{ color: secondaryTextColor }}>Organization Type *</span>
-                        <select
-                          value={useCustomOrgType ? 'Other' : form.organizationType}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            if (nextValue === 'Other') {
-                              setUseCustomOrgType(true);
-                              setForm((prev) => ({ ...prev, organizationType: '' }));
-                            } else {
-                              setUseCustomOrgType(false);
-                              setForm((prev) => ({ ...prev, organizationType: nextValue }));
-                            }
-                          }}
-                          className={fieldClassName}
-                          style={fieldStyle}
-                          required={!useCustomOrgType}
-                        >
-                          <option value="">Select organization type</option>
-                          {ORGANIZATION_TYPE_OPTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                        {useCustomOrgType ? (
-                          <input
-                            type="text"
-                            value={form.organizationType}
-                            onChange={updateField('organizationType')}
-                            placeholder="Type your organization type"
-                            className={`${fieldClassName} mt-2`}
-                            style={fieldStyle}
-                            maxLength={120}
-                            required
-                          />
-                        ) : null}
-                      </label>
-                    </>
-                  )}
+                  <label className="space-y-1 text-sm md:col-span-2">
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Hospital Name *</span>
+                    <input
+                      ref={setFieldRef('hospitalName')}
+                      value={form.hospitalName}
+                      onChange={updateField('hospitalName')}
+                      className={fieldClassName}
+                      style={fieldStyle}
+                      placeholder="Example: StrandShare Medical Center"
+                      required
+                    />
+                  </label>
 
                   <label className="space-y-1 text-sm">
-                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Contact Number *</span>
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Hospital Head / Owner Name *</span>
                     <input
+                      ref={setFieldRef('hospitalHeadName')}
+                      value={form.hospitalHeadName}
+                      onChange={updateField('hospitalHeadName')}
+                      className={fieldClassName}
+                      style={fieldStyle}
+                      placeholder="Full name of owner or hospital head"
+                      required
+                    />
+                  </label>
+
+                  <label className="space-y-1 text-sm">
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Head / Owner Position *</span>
+                    <input
+                      ref={setFieldRef('hospitalHeadTitle')}
+                      value={form.hospitalHeadTitle}
+                      onChange={updateField('hospitalHeadTitle')}
+                      className={fieldClassName}
+                      style={fieldStyle}
+                      placeholder="Example: Medical Director"
+                      required
+                    />
+                  </label>
+
+                  <label className="space-y-1 text-sm">
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Head / Owner Contact Number *</span>
+                    <input
+                      ref={setFieldRef('hospitalHeadContactNumber')}
                       type="tel"
-                      value={formatPhilippineMobileWithCountry(form.contactNumber)}
-                      onChange={onContactNumberChange('contactNumber')}
+                      value={form.hospitalHeadContactNumber}
+                      onChange={onContactNumberChange('hospitalHeadContactNumber')}
                       className={fieldClassName}
                       style={fieldStyle}
                       inputMode="numeric"
@@ -1921,9 +1778,23 @@ export default function PartnershipApplicationPage() {
                     <p className="text-[11px]" style={{ color: secondaryTextColor }}>Format only: +63 912 345 6789</p>
                   </label>
 
+                  <label className="space-y-1 text-sm">
+                    <span className="font-semibold" style={{ color: secondaryTextColor }}>Head / Owner Email *</span>
+                    <input
+                      ref={setFieldRef('hospitalHeadEmail')}
+                      type="email"
+                      value={form.hospitalHeadEmail}
+                      onChange={updateField('hospitalHeadEmail')}
+                      className={fieldClassName}
+                      style={fieldStyle}
+                      placeholder="head@example.com"
+                      required
+                    />
+                  </label>
+
                   <label className="space-y-2 text-sm md:col-span-2">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>
-                      {isHospitalApplication ? 'Hospital Logo (Upload Image)' : 'Organization Logo (Upload Image)'}
+                      Hospital Logo (Upload Image)
                     </span>
                     <div
                       className="rounded-xl border border-dashed p-4 transition"
@@ -1938,14 +1809,14 @@ export default function PartnershipApplicationPage() {
                     >
                       <div className="flex flex-wrap items-center gap-3">
                         <label
-                          htmlFor="organizationLogo"
+                          htmlFor="hospitalLogo"
                           className="inline-flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-semibold"
                           style={{ borderColor: `${secondaryColor}55`, color: secondaryTextColor }}
                         >
                           <UploadCloud size={14} /> Choose Logo
                         </label>
                         <input
-                          id="organizationLogo"
+                          id="hospitalLogo"
                           ref={logoInputRef}
                           type="file"
                           accept="image/png,image/jpeg,image/webp,image/jpg"
@@ -1954,7 +1825,7 @@ export default function PartnershipApplicationPage() {
                         />
                         <p className="text-xs" style={{ color: secondaryTextColor }}>
                           {isDraggingLogo
-                            ? 'Drop your image here…'
+                            ? 'Drop your image here...'
                             : 'Drag and drop an image here, or click Choose Logo. PNG, JPG, or WEBP up to 5MB.'}
                         </p>
                       </div>
@@ -1985,6 +1856,7 @@ export default function PartnershipApplicationPage() {
                   <label className="space-y-1 text-sm md:col-span-2">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>Street *</span>
                     <input
+                      ref={setFieldRef('street')}
                       value={form.street}
                       onChange={updateField('street')}
                       className={fieldClassName}
@@ -2010,6 +1882,7 @@ export default function PartnershipApplicationPage() {
                   <label className="space-y-1 text-sm">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>Region *</span>
                     <select
+                      ref={setFieldRef('region')}
                       value={form.region}
                       onChange={onRegionChange}
                       disabled={!form.country || regionOptions.length === 0}
@@ -2029,6 +1902,7 @@ export default function PartnershipApplicationPage() {
                   <label className="space-y-1 text-sm">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>Province *</span>
                     <select
+                      ref={setFieldRef('province')}
                       value={form.province}
                       onChange={onProvinceChange}
                       disabled={!form.region || provinceOptions.length === 0}
@@ -2048,6 +1922,7 @@ export default function PartnershipApplicationPage() {
                   <label className="space-y-1 text-sm">
                     <span className="font-semibold" style={{ color: secondaryTextColor }}>City / Municipality *</span>
                     <select
+                      ref={setFieldRef('city')}
                       value={form.city}
                       onChange={onCityChange}
                       disabled={!form.province || cityOptions.length === 0}
@@ -2104,6 +1979,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Latitude *</span>
                       <input
+                        ref={setFieldRef('latitude')}
                         value={form.latitude}
                         onChange={updateField('latitude')}
                         className={fieldClassName}
@@ -2126,22 +2002,33 @@ export default function PartnershipApplicationPage() {
                       />
                     </label>
                   </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={autoPinFromHospitalAddress}
+                      className="inline-flex items-center rounded-lg border bg-white px-3 py-2 text-xs font-semibold"
+                      style={{ borderColor: `${secondaryColor}55`, color: secondaryTextColor }}
+                    >
+                      Auto-pin from selected address
+                    </button>
+                  </div>
                 </div>
               </fieldset>
             ) : null}
 
-            {activePage === 3 ? (
+            {activePage === 2 ? (
               <>
                 <fieldset className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
-                  <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Lead Account Details</legend>
+                  <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>H-Representative Account Details</legend>
                   <div className="rounded-xl border bg-slate-50 px-3 py-2 text-xs font-semibold" style={{ borderColor: `${secondaryColor}22`, color: secondaryTextColor }}>
-                    Enter the lead representative details to be saved in user_details.
+                    Enter the person who will use the H-Representative account for this hospital.
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>First Name *</span>
                       <input
+                        ref={setFieldRef('firstName')}
                         value={form.firstName}
                         onChange={updateField('firstName')}
                         className={fieldClassName}
@@ -2163,6 +2050,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Last Name *</span>
                       <input
+                        ref={setFieldRef('lastName')}
                         value={form.lastName}
                         onChange={updateField('lastName')}
                         className={fieldClassName}
@@ -2211,10 +2099,11 @@ export default function PartnershipApplicationPage() {
                     </label>
 
                     <label className="space-y-1 text-sm">
-                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Lead Contact Number *</span>
+                      <span className="font-semibold" style={{ color: secondaryTextColor }}>H-Representative Contact Number *</span>
                       <input
+                        ref={setFieldRef('leadContactNumber')}
                         type="tel"
-                        value={formatPhilippineMobileWithCountry(form.leadContactNumber)}
+                        value={form.leadContactNumber}
                         onChange={onContactNumberChange('leadContactNumber')}
                         className={fieldClassName}
                         style={fieldStyle}
@@ -2226,8 +2115,9 @@ export default function PartnershipApplicationPage() {
                     </label>
 
                     <label className="space-y-1 text-sm md:col-span-2">
-                      <span className="font-semibold" style={{ color: secondaryTextColor }}>Email *</span>
+                      <span className="font-semibold" style={{ color: secondaryTextColor }}>H-Representative Email *</span>
                       <input
+                        ref={setFieldRef('email')}
                         type="email"
                         value={form.email}
                         onChange={updateField('email')}
@@ -2241,6 +2131,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm md:col-span-2">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Street *</span>
                       <input
+                        ref={setFieldRef('leadStreet')}
                         value={form.leadStreet}
                         onChange={updateField('leadStreet')}
                         className={fieldClassName}
@@ -2266,6 +2157,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Region *</span>
                       <select
+                        ref={setFieldRef('leadRegion')}
                         value={form.leadRegion}
                         onChange={onLeadRegionChange}
                         disabled={!form.leadCountry || leadRegionOptions.length === 0}
@@ -2285,6 +2177,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>Province *</span>
                       <select
+                        ref={setFieldRef('leadProvince')}
                         value={form.leadProvince}
                         onChange={onLeadProvinceChange}
                         disabled={!form.leadRegion || leadProvinceOptions.length === 0}
@@ -2304,6 +2197,7 @@ export default function PartnershipApplicationPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold" style={{ color: secondaryTextColor }}>City / Municipality *</span>
                       <select
+                        ref={setFieldRef('leadCity')}
                         value={form.leadCity}
                         onChange={onLeadCityChange}
                         disabled={!form.leadProvince || leadCityOptions.length === 0}
@@ -2350,79 +2244,104 @@ export default function PartnershipApplicationPage() {
                   </div>
                 </fieldset>
 
-                <fieldset className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
-                  <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Verify Lead Email</legend>
-                  <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: `${secondaryColor}33` }}>
-                    <p className="text-sm font-bold" style={{ color: primaryTextColor }}>Email Verification</p>
-                    <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>
-                      Send a code to the lead email, then enter the 6-digit OTP below. Submission unlocks only after verification.
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={sendEmailOtpCode}
-                        disabled={isSendingOtp || otpCooldownSeconds > 0 || !isValidEmail(normalizedEmail)}
-                        className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        style={{ backgroundColor: primaryColor }}
-                      >
-                        {isSendingOtp ? <Loader2 size={14} className="animate-spin" /> : <MailCheck size={14} />}
-                        {isSendingOtp ? 'Sending...' : otpCooldownSeconds > 0 ? `Resend in ${otpCooldownSeconds}s` : 'Send 6-digit Code'}
-                      </button>
-                      <span className="text-[11px]" style={{ color: secondaryTextColor }}>
-                        Codes expire quickly for security.
-                      </span>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
-                      <input
-                        value={otpCode}
-                        onChange={(event) => setOtpCode(String(event.target.value || '').replace(/\D/g, '').slice(0, 6))}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={6}
-                        placeholder="Enter 6-digit code"
-                        className={fieldClassName}
-                        style={fieldStyle}
-                      />
-                      <button
-                        type="button"
-                        onClick={verifyEmailOtpCode}
-                        disabled={isVerifyingOtp || otpCode.length !== 6 || !isValidEmail(normalizedEmail)}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                        style={{ borderColor: `${secondaryColor}55`, color: secondaryTextColor }}
-                      >
-                        {isVerifyingOtp ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                        {isVerifyingOtp ? 'Verifying...' : 'Verify Code'}
-                      </button>
-                    </div>
-
-                    {otpNotice.message ? (
-                      <p
-                        className={`mt-3 rounded-lg px-3 py-2 text-xs ${
-                          otpNotice.type === 'error'
-                            ? 'border border-rose-200 bg-rose-50 text-rose-800'
-                            : otpNotice.type === 'success'
-                              ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
-                              : 'border border-slate-200 bg-white text-slate-700'
-                        }`}
-                      >
-                        {otpNotice.message}
-                      </p>
-                    ) : null}
-
-                    {isEmailOtpVerified ? (
-                      <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                        <CheckCircle2 size={14} /> Email verified. You can now submit.
-                      </p>
-                    ) : (
-                      <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                        <ShieldCheck size={14} /> Verify email first to enable submission.
-                      </p>
-                    )}
-                  </div>
-                </fieldset>
               </>
+            ) : null}
+
+            {activePage === 3 ? (
+              <fieldset className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
+                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Review & Confirmation</legend>
+                <p className="text-sm" style={{ color: secondaryTextColor }}>Please confirm all details before proceeding to email verification.</p>
+                <div className="grid grid-cols-1 gap-2 text-sm text-slate-700 md:grid-cols-2">
+                  <div><span className="font-semibold">Hospital Name:</span> {form.hospitalName || 'N/A'}</div>
+                  <div><span className="font-semibold">Hospital Contact:</span> {form.hospitalHeadContactNumber || 'N/A'}</div>
+                  <div><span className="font-semibold">Head / Owner:</span> {form.hospitalHeadName || 'N/A'}</div>
+                  <div><span className="font-semibold">Head Position:</span> {form.hospitalHeadTitle || 'N/A'}</div>
+                  <div><span className="font-semibold">Head Contact:</span> {form.hospitalHeadContactNumber || 'N/A'}</div>
+                  <div><span className="font-semibold">Head Email:</span> {form.hospitalHeadEmail || 'N/A'}</div>
+                  <div className="md:col-span-2"><span className="font-semibold">Hospital Address:</span> {[form.street, form.barangay, form.city, form.province, form.region, form.country].filter(Boolean).join(', ') || 'N/A'}</div>
+                  <div className="md:col-span-2"><span className="font-semibold">Map Coordinates:</span> {form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : 'N/A'}</div>
+                  <div><span className="font-semibold">H-Representative:</span> {[form.firstName, form.middleName, form.lastName, form.suffix].filter(Boolean).join(' ') || 'N/A'}</div>
+                  <div><span className="font-semibold">H-Representative Contact:</span> {form.leadContactNumber || 'N/A'}</div>
+                  <div className="md:col-span-2"><span className="font-semibold">H-Representative Email:</span> {form.email || 'N/A'}</div>
+                  <div className="md:col-span-2"><span className="font-semibold">H-Representative Address:</span> {[form.leadStreet, form.leadBarangay, form.leadCity, form.leadProvince, form.leadRegion, form.leadCountry].filter(Boolean).join(', ') || 'N/A'}</div>
+                </div>
+              </fieldset>
+            ) : null}
+
+            {activePage === 4 ? (
+              <fieldset className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: `${secondaryColor}33` }}>
+                <legend className="px-2 text-sm font-bold" style={{ color: primaryTextColor }}>Verify H-Representative Email</legend>
+                <div className="rounded-xl border bg-slate-50 p-4" style={{ borderColor: `${secondaryColor}33` }}>
+                  <p className="text-sm font-bold" style={{ color: primaryTextColor }}>Email Verification</p>
+                  <p className="mt-1 text-xs" style={{ color: secondaryTextColor }}>
+                    Send a code to the H-Representative email, then enter the 6-digit OTP below. Submission unlocks only after verification.
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={sendEmailOtpCode}
+                      disabled={isSendingOtp || otpCooldownSeconds > 0 || !isValidEmail(normalizedEmail)}
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      {isSendingOtp ? <Loader2 size={14} className="animate-spin" /> : <MailCheck size={14} />}
+                      {isSendingOtp ? 'Sending...' : otpCooldownSeconds > 0 ? `Resend in ${otpCooldownSeconds}s` : 'Send 6-digit Code'}
+                    </button>
+                    <span className="text-[11px]" style={{ color: secondaryTextColor }}>
+                      Codes expire quickly for security.
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      ref={setFieldRef('otpCode')}
+                      value={otpCode}
+                      onChange={(event) => setOtpCode(String(event.target.value || '').replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="Enter 6-digit code"
+                      className={fieldClassName}
+                      style={fieldStyle}
+                    />
+                    <button
+                      type="button"
+                      onClick={verifyEmailOtpCode}
+                      disabled={isVerifyingOtp || otpCode.length !== 6 || !isValidEmail(normalizedEmail)}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ borderColor: `${secondaryColor}55`, color: secondaryTextColor }}
+                    >
+                      {isVerifyingOtp ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                      {isVerifyingOtp ? 'Verifying...' : 'Verify Code'}
+                    </button>
+                  </div>
+
+                  {otpNotice.message ? (
+                    <p
+                      className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                        otpNotice.type === 'error'
+                          ? 'border border-rose-200 bg-rose-50 text-rose-800'
+                          : otpNotice.type === 'success'
+                            ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border border-slate-200 bg-white text-slate-700'
+                      }`}
+                    >
+                      {otpNotice.message}
+                    </p>
+                  ) : null}
+
+                  {isEmailOtpVerified ? (
+                    <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                      <CheckCircle2 size={14} /> Email verified. You can now submit.
+                    </p>
+                  ) : (
+                    <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      <ShieldCheck size={14} /> Verify email first to enable submission.
+                    </p>
+                  )}
+                </div>
+              </fieldset>
             ) : null}
 
             {errorMessage ? (
@@ -2439,23 +2358,10 @@ export default function PartnershipApplicationPage() {
             ) : null}
 
             {activePage === 1 ? (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={goToDetailsPage}
-                  className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  Next: {applicationType ? `${entityDisplayName} Details` : 'Select Type'}
-                </button>
-              </div>
-            ) : null}
-
-            {activePage === 2 ? (
               <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={goToSelectionPage}
+                  onClick={goBack}
                   className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
                   style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
                 >
@@ -2467,20 +2373,72 @@ export default function PartnershipApplicationPage() {
                   className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
                   style={{ backgroundColor: primaryColor }}
                 >
-                  Next: Lead Account
+                  Next: H-Representative Account
                 </button>
+              </div>
+            ) : null}
+
+            {activePage === 2 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs" style={{ color: secondaryTextColor }}>
+                  Confirm account details for the H-Representative user.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goToDetailsFromLeadPage}
+                    className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
+                    style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToConfirmationPage}
+                    className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Next: Review & Confirmation
+                  </button>
+                </div>
               </div>
             ) : null}
 
             {activePage === 3 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs" style={{ color: secondaryTextColor }}>
-                  By submitting, you confirm your details are accurate. Your {isHospitalApplication ? 'partner hospital' : 'organization'} profile will remain pending until Super Admin review.
+                  By continuing, you confirm your details are accurate before email verification.
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={goToDetailsFromLeadPage}
+                    onClick={goToLeadPageFromConfirmation}
+                    className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
+                    style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToOtpPage}
+                    className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Next: Email Verification
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {activePage === 4 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs" style={{ color: secondaryTextColor }}>
+                  Submit once OTP verification is completed.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goBackToConfirmationFromOtp}
                     className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold"
                     style={{ borderColor: `${secondaryColor}44`, color: secondaryTextColor }}
                   >

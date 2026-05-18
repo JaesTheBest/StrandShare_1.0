@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Building2,
   CalendarClock,
   CheckCircle2,
-  Package,
   RefreshCw,
   Settings2,
   Users,
@@ -24,10 +24,9 @@ import {
 import { supabase, isSupabaseConfigured } from '../../../lib/supabaseClient';
 import { useTheme } from '../../../context/ThemeContext';
 
-const EVENT_APPLICATIONS_TABLE = 'Event_Applications';
 const EVENT_REQUESTS_TABLE = 'Event_Requests';
-const EVENT_ATTENDEES_TABLE = 'Event_Attendees';
-const WIG_REQUESTS_TABLE = 'Wig_Requests';
+const EVENT_APPLICATIONS_TABLE = 'Event_Applications';
+const HOSPITALS_TABLE = 'Hospitals';
 const USERS_TABLE = 'users';
 const WIG_REQUIREMENTS_TABLE = 'wig_requirements';
 const LOGISTICS_SETTINGS_TABLE = 'Logistics_Settings';
@@ -35,6 +34,32 @@ const LEGAL_DOCUMENTS_TABLE = 'legal_documents';
 
 function normalizeKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function toManilaParts(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return parts;
+}
+
+function toManilaDayKey(value) {
+  const parts = toManilaParts(value);
+  if (!parts) return '';
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function formatRelativeShort(value) {
@@ -61,61 +86,12 @@ function formatShortDate(value) {
   });
 }
 
-function toManilaDayKey(value) {
-  const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) return '';
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = formatter.formatToParts(date).reduce((acc, part) => {
-    if (part.type !== 'literal') acc[part.type] = part.value;
-    return acc;
-  }, {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function buildSevenDayWindow() {
-  const rows = [];
-  for (let offset = 0; offset < 7; offset += 1) {
-    const date = new Date();
-    date.setDate(date.getDate() + offset);
-    rows.push({
-      dayKey: toManilaDayKey(date),
-      label: formatShortDate(date),
-      assignedEvents: 0,
-    });
-  }
-  return rows;
-}
-
-function canonicalWigStatus(statusValue) {
-  const key = normalizeKey(statusValue);
-  if (['pending', 'pendingreview', 'pendingvalidation', 'pendingconfirmation'].includes(key)) return 'pending';
-  if (['acceptedallocatedwig', 'acceptedwithallocatedwig', 'acceptedwigallocated', 'allocated', 'allocatedwig'].includes(key)) return 'accepted_allocated';
-  if (['acceptednowigavailable', 'acceptedbutnowigavailable', 'nowigavailable', 'findingmatchingwig', 'matching'].includes(key)) return 'accepted_no_wig';
-  if (['inproduction', 'production', 'inprocess'].includes(key)) return 'in_production';
-  if (['toberelease', 'readyforrelease', 'readyforevent'].includes(key)) return 'to_be_release';
-  if (['releasing', 'forrelease'].includes(key)) return 'releasing';
-  if (['released', 'completed', 'done'].includes(key)) return 'released';
-  if (['rejected', 'declined', 'denied'].includes(key)) return 'rejected';
-  if (['cancelled', 'canceled', 'cancel'].includes(key)) return 'cancelled';
-  return 'pending';
-}
-
-function wigStatusLabel(statusKey) {
-  if (statusKey === 'pending') return 'Pending';
-  if (statusKey === 'accepted_allocated') return 'Allocated';
-  if (statusKey === 'accepted_no_wig') return 'No Wig';
-  if (statusKey === 'in_production') return 'Production';
-  if (statusKey === 'to_be_release') return 'Ready';
-  if (statusKey === 'releasing') return 'Releasing';
-  if (statusKey === 'released') return 'Released';
-  if (statusKey === 'rejected') return 'Rejected';
-  if (statusKey === 'cancelled') return 'Cancelled';
-  return 'Pending';
+function formatHospitalStatus(hospital) {
+  const key = normalizeKey(hospital?.Approval_Status);
+  if (key === 'approved') return 'approved';
+  if (key === 'rejected') return 'rejected';
+  if (key === 'pending') return 'pending';
+  return hospital?.Is_Approved ? 'approved' : 'pending';
 }
 
 function applicantName(row) {
@@ -127,6 +103,21 @@ function applicantName(row) {
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .join(' ') || 'Unknown applicant';
+}
+
+function buildSevenDaySeries() {
+  const rows = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const base = new Date();
+    base.setDate(base.getDate() - offset);
+    rows.push({
+      dayKey: toManilaDayKey(base),
+      label: formatShortDate(base),
+      applications: 0,
+      requests: 0,
+    });
+  }
+  return rows;
 }
 
 function safeNumber(value) {
@@ -176,9 +167,10 @@ function ProgressRow({ label, value, total, accentColor }) {
   );
 }
 
-export default function DashboardPage({ onNavigate, userProfile }) {
+export default function DashboardPage({ onNavigate }) {
   const { theme } = useTheme();
   const primaryColor = theme?.primaryColor || '#0f766e';
+  const secondaryColor = theme?.secondaryColor || '#64748b';
   const tertiaryColor = theme?.tertiaryColor || '#10b981';
   const primaryTextColor = theme?.primaryTextColor || '#0f172a';
   const secondaryTextColor = theme?.secondaryTextColor || '#475569';
@@ -189,25 +181,23 @@ export default function DashboardPage({ onNavigate, userProfile }) {
   const [notice, setNotice] = useState({ kind: '', text: '' });
   const [warnings, setWarnings] = useState([]);
   const [lastSyncedAt, setLastSyncedAt] = useState('');
-  const [staffUserId, setStaffUserId] = useState(userProfile?.user_id || null);
   const [dashboard, setDashboard] = useState({
     kpis: {
-      pendingStaffReview: 0,
-      appealedNeedsResubmit: 0,
       pendingAdminDecision: 0,
-      myAssignedEvents: 0,
-      myUpcomingWeekEvents: 0,
-      attendeesWithoutWaybill: 0,
-      wigReviewQueue: 0,
+      pendingHospitalApplications: 0,
+      approvedRequests: 0,
+      approvedWithoutAssignedStaff: 0,
+      pendingStaffReview: 0,
+      appealedApplications: 0,
       systemAlerts: 0,
+      adminUsers: 0,
+      staffUsers: 0,
     },
-    applicationStatusData: [],
-    upcomingAssignedTrend: buildSevenDayWindow(),
-    wigQueueData: [],
+    requestStatusData: [],
+    trendData: buildSevenDaySeries(),
     actionItems: [],
-    pendingStaffRows: [],
-    appealedRows: [],
-    assignedRows: [],
+    pendingAdminRows: [],
+    pendingHospitalRows: [],
     systemChecks: {
       wigRequirementsReady: false,
       logisticsReady: false,
@@ -215,25 +205,6 @@ export default function DashboardPage({ onNavigate, userProfile }) {
       legalVersion: '',
     },
   });
-
-  const resolveStaffUserId = useCallback(async () => {
-    if (staffUserId) return safeNumber(staffUserId) || null;
-    if (!supabase) return null;
-
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !sessionData?.session?.user?.id) return null;
-
-    const authUserId = sessionData.session.user.id;
-    const profileResult = await supabase
-      .from(USERS_TABLE)
-      .select('user_id')
-      .eq('auth_user_id', authUserId)
-      .maybeSingle();
-
-    const resolvedId = profileResult?.data?.user_id || null;
-    if (resolvedId) setStaffUserId(resolvedId);
-    return resolvedId;
-  }, [staffUserId]);
 
   const loadDashboard = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -246,22 +217,25 @@ export default function DashboardPage({ onNavigate, userProfile }) {
     setWarnings([]);
 
     try {
-      const resolvedStaffId = await resolveStaffUserId();
       const settled = await Promise.allSettled([
-        supabase
-          .from(EVENT_APPLICATIONS_TABLE)
-          .select('Event_Application_ID,Event_Name,Status,Created_At,Updated_At,Linked_Event_Request_ID,Applicant_First_Name,Applicant_Middle_Name,Applicant_Last_Name,Proposed_Start_At')
-          .order('Created_At', { ascending: false })
-          .limit(1000),
         supabase
           .from(EVENT_REQUESTS_TABLE)
           .select('Event_Request_ID,Event_Application_ID,Event_Name,Status,Created_At,Updated_At,Start_Date,End_Date,Assigned_Staff_User_ID,Event_Visibility')
           .order('Updated_At', { ascending: false })
           .limit(1000),
         supabase
-          .from(WIG_REQUESTS_TABLE)
-          .select('Req_ID,Status,Updated_At')
+          .from(EVENT_APPLICATIONS_TABLE)
+          .select('Event_Application_ID,Event_Name,Status,Created_At,Updated_At,Applicant_First_Name,Applicant_Middle_Name,Applicant_Last_Name,Proposed_Start_At')
+          .order('Created_At', { ascending: false })
+          .limit(1000),
+        supabase
+          .from(HOSPITALS_TABLE)
+          .select('Hospital_ID,Hospital_Name,Approval_Status,Is_Approved,Created_At,Updated_At,Hospital_Head_Name')
           .order('Updated_At', { ascending: false })
+          .limit(1000),
+        supabase
+          .from(USERS_TABLE)
+          .select('role,is_active')
           .limit(1000),
         supabase
           .from(WIG_REQUIREMENTS_TABLE)
@@ -275,174 +249,133 @@ export default function DashboardPage({ onNavigate, userProfile }) {
           .limit(1),
         supabase
           .from(LEGAL_DOCUMENTS_TABLE)
-          .select('legal_document_id,version,is_active,created_at')
+          .select('legal_document_id,version,is_active,effective_at,created_at')
           .order('created_at', { ascending: false })
           .limit(200),
       ]);
 
-      const applicationResult = extractQueryResult(settled[0]);
-      const requestResult = extractQueryResult(settled[1]);
-      const wigRequestResult = extractQueryResult(settled[2]);
-      const wigRequirementsResult = extractQueryResult(settled[3]);
-      const logisticsResult = extractQueryResult(settled[4]);
-      const legalResult = extractQueryResult(settled[5]);
+      const requestResult = extractQueryResult(settled[0]);
+      const applicationResult = extractQueryResult(settled[1]);
+      const hospitalResult = extractQueryResult(settled[2]);
+      const usersResult = extractQueryResult(settled[3]);
+      const wigResult = extractQueryResult(settled[4]);
+      const logisticsResult = extractQueryResult(settled[5]);
+      const legalResult = extractQueryResult(settled[6]);
 
       const nextWarnings = [];
-      if (wigRequestResult.error) nextWarnings.push(`Wig request queue: ${wigRequestResult.error.message}`);
-      if (wigRequirementsResult.error) nextWarnings.push(`Wig requirements: ${wigRequirementsResult.error.message}`);
+      if (hospitalResult.error) nextWarnings.push(`Hospital applications: ${hospitalResult.error.message}`);
+      if (usersResult.error) nextWarnings.push(`User roles: ${usersResult.error.message}`);
+      if (wigResult.error) nextWarnings.push(`Wig requirements: ${wigResult.error.message}`);
       if (logisticsResult.error) nextWarnings.push(`Logistics destination: ${logisticsResult.error.message}`);
       if (legalResult.error) nextWarnings.push(`Legal documents: ${legalResult.error.message}`);
       setWarnings(nextWarnings);
 
-      if (applicationResult.error || requestResult.error) {
-        const raw = applicationResult.error?.message || requestResult.error?.message || 'Unable to load staff dashboard data.';
-        setNotice({ kind: 'error', text: raw });
+      if (requestResult.error || applicationResult.error) {
+        const rawError = requestResult.error?.message || applicationResult.error?.message || 'Unable to load dashboard data.';
+        setNotice({ kind: 'error', text: rawError });
       }
 
-      const applicationRows = applicationResult.data;
       const requestRows = requestResult.data;
-      const wigRows = wigRequestResult.data;
+      const applicationRows = applicationResult.data;
+      const hospitalRows = hospitalResult.data;
+      const userRows = usersResult.data;
 
-      const pendingStaffRows = applicationRows
-        .filter((row) => normalizeKey(row.Status) === 'pendingstaffreview')
+      const applicationById = new Map(
+        applicationRows.map((row) => [safeNumber(row.Event_Application_ID), row]),
+      );
+
+      const pendingAdminRows = requestRows
+        .filter((row) => normalizeKey(row.Status) === 'pendingadminapproval')
         .slice()
         .sort((a, b) => new Date(a.Created_At || 0).getTime() - new Date(b.Created_At || 0).getTime());
 
-      const appealedRows = applicationRows
-        .filter((row) => normalizeKey(row.Status) === 'appealed')
-        .slice()
-        .sort((a, b) => new Date(a.Updated_At || 0).getTime() - new Date(b.Updated_At || 0).getTime());
-
-      const pendingAdminDecisionRows = applicationRows.filter(
-        (row) => normalizeKey(row.Status) === 'pendingadmindecision',
+      const approvedWithoutAssignedStaff = requestRows.filter(
+        (row) => normalizeKey(row.Status) === 'approved' && !safeNumber(row.Assigned_Staff_User_ID),
       );
 
-      const myAssignedRows = requestRows
-        .filter((row) => {
-          if (!resolvedStaffId) return false;
-          return safeNumber(row.Assigned_Staff_User_ID) === safeNumber(resolvedStaffId)
-            && normalizeKey(row.Status) === 'approved';
-        })
+      const pendingStaffReviewRows = applicationRows.filter(
+        (row) => normalizeKey(row.Status) === 'pendingstaffreview',
+      );
+
+      const appealedRows = applicationRows.filter(
+        (row) => normalizeKey(row.Status) === 'appealed',
+      );
+
+      const pendingHospitalRows = hospitalRows
+        .filter((row) => formatHospitalStatus(row) === 'pending')
         .slice()
-        .sort((a, b) => new Date(a.Start_Date || a.Created_At || 0).getTime() - new Date(b.Start_Date || b.Created_At || 0).getTime());
+        .sort((a, b) => new Date(a.Created_At || 0).getTime() - new Date(b.Created_At || 0).getTime());
 
-      const upcomingWindowData = buildSevenDayWindow();
-      const upcomingMap = new Map(upcomingWindowData.map((row) => [row.dayKey, row]));
-      let myUpcomingWeekEvents = 0;
-      myAssignedRows.forEach((row) => {
-        const key = toManilaDayKey(row.Start_Date || row.Created_At);
-        if (upcomingMap.has(key)) {
-          upcomingMap.get(key).assignedEvents += 1;
-          myUpcomingWeekEvents += 1;
-        }
-      });
-
-      const assignedApplicationIds = [...new Set(
-        myAssignedRows.map((row) => safeNumber(row.Event_Application_ID)).filter((value) => value > 0),
-      )];
-
-      let attendeeRows = [];
-      if (assignedApplicationIds.length > 0) {
-        const attendeeResult = await supabase
-          .from(EVENT_ATTENDEES_TABLE)
-          .select('Event_Attendee_ID,Event_Application_ID,Waybill_Printed_At,Attendance_Status')
-          .in('Event_Application_ID', assignedApplicationIds)
-          .limit(2000);
-        if (attendeeResult.error) {
-          nextWarnings.push(`Assigned attendees: ${attendeeResult.error.message}`);
-          setWarnings([...nextWarnings]);
-        } else {
-          attendeeRows = attendeeResult.data || [];
-        }
-      }
-
-      const attendeeCountByApplicationId = attendeeRows.reduce((acc, row) => {
-        const key = safeNumber(row.Event_Application_ID);
-        acc[key] = (acc[key] || 0) + 1;
+      const roleCounts = userRows.reduce((acc, row) => {
+        if (row?.is_active === false) return acc;
+        const key = normalizeKey(row.role);
+        if (key === 'admin') acc.admin += 1;
+        if (key === 'staff') acc.staff += 1;
         return acc;
-      }, {});
+      }, { admin: 0, staff: 0 });
 
-      const attendeesWithoutWaybill = attendeeRows.filter((row) => !row.Waybill_Printed_At).length;
-
-      const wigQueueCounts = {
-        pending: 0,
-        accepted_allocated: 0,
-        accepted_no_wig: 0,
-        in_production: 0,
-        to_be_release: 0,
-        releasing: 0,
-      };
-      wigRows.forEach((row) => {
-        const key = canonicalWigStatus(row.Status);
-        if (key in wigQueueCounts) wigQueueCounts[key] += 1;
-      });
-
-      const wigQueueData = Object.entries(wigQueueCounts).map(([statusKey, value]) => ({
-        name: wigStatusLabel(statusKey),
-        value,
-      }));
-
-      const reviewQueueSet = new Set(['pending', 'accepted_allocated', 'accepted_no_wig', 'in_production']);
-      const wigReviewQueue = Object.entries(wigQueueCounts).reduce((sum, [key, value]) => (
-        reviewQueueSet.has(key) ? sum + value : sum
-      ), 0);
-
-      const appStatusCounts = {
-        pendingstaffreview: 0,
-        pendingadmindecision: 0,
-        appealed: 0,
+      const statusBreakdown = {
+        pendingadminapproval: 0,
+        approved: 0,
         rejected: 0,
+        cancelled: 0,
       };
-      applicationRows.forEach((row) => {
+      requestRows.forEach((row) => {
         const key = normalizeKey(row.Status);
-        if (key in appStatusCounts) appStatusCounts[key] += 1;
+        if (key in statusBreakdown) statusBreakdown[key] += 1;
       });
-      const applicationStatusData = [
-        { name: 'Pending Staff', value: appStatusCounts.pendingstaffreview, color: '#f59e0b' },
-        { name: 'Pending Admin', value: appStatusCounts.pendingadmindecision, color: '#0ea5e9' },
-        { name: 'Appealed', value: appStatusCounts.appealed, color: '#8b5cf6' },
-        { name: 'Rejected', value: appStatusCounts.rejected, color: '#e11d48' },
+
+      const requestStatusData = [
+        { name: 'Pending Admin', value: statusBreakdown.pendingadminapproval, color: '#f59e0b' },
+        { name: 'Approved', value: statusBreakdown.approved, color: tertiaryColor },
+        { name: 'Rejected', value: statusBreakdown.rejected, color: '#e11d48' },
+        { name: 'Cancelled', value: statusBreakdown.cancelled, color: secondaryColor },
       ];
 
-      const activeLegal = legalResult.data.find((row) => Boolean(row.is_active)) || null;
+      const trendData = buildSevenDaySeries();
+      const trendByDay = new Map(trendData.map((row) => [row.dayKey, row]));
+      applicationRows.forEach((row) => {
+        const key = toManilaDayKey(row.Created_At);
+        if (!trendByDay.has(key)) return;
+        trendByDay.get(key).applications += 1;
+      });
+      requestRows.forEach((row) => {
+        const key = toManilaDayKey(row.Created_At);
+        if (!trendByDay.has(key)) return;
+        trendByDay.get(key).requests += 1;
+      });
+
+      const activeLegalRow = legalResult.data.find((row) => Boolean(row.is_active)) || null;
       const systemChecks = {
-        wigRequirementsReady: wigRequirementsResult.data.length > 0,
+        wigRequirementsReady: wigResult.data.length > 0,
         logisticsReady: logisticsResult.data.length > 0,
-        legalReady: Boolean(activeLegal),
-        legalVersion: String(activeLegal?.version || ''),
+        legalReady: Boolean(activeLegalRow),
+        legalVersion: String(activeLegalRow?.version || ''),
       };
 
       const actionItems = [];
-      if (pendingStaffRows.length > 0) {
+      if (pendingAdminRows.length > 0) {
         actionItems.push({
-          title: 'Pending event applications to review',
-          count: pendingStaffRows.length,
-          detail: 'Contact requestors and validate details.',
-          page: 'event-application-intake',
+          title: 'Event requests waiting for admin decision',
+          count: pendingAdminRows.length,
+          detail: 'Approve or reject pending event requests.',
+          page: 'manage-event-applications',
         });
       }
-      if (appealedRows.length > 0) {
+      if (pendingHospitalRows.length > 0) {
         actionItems.push({
-          title: 'Appealed applications to resubmit',
-          count: appealedRows.length,
-          detail: 'Update details and resubmit to admin.',
-          page: 'event-application-intake',
+          title: 'Hospital applications pending review',
+          count: pendingHospitalRows.length,
+          detail: 'Approve or reject hospital partnership applications.',
+          page: 'manage-hospital-accounts',
         });
       }
-      if (attendeesWithoutWaybill > 0) {
+      if (approvedWithoutAssignedStaff.length > 0) {
         actionItems.push({
-          title: 'Attendees without waybill',
-          count: attendeesWithoutWaybill,
-          detail: 'Print waybills before event operations.',
-          page: 'assigned-event-operations',
-        });
-      }
-      if (wigReviewQueue > 0) {
-        actionItems.push({
-          title: 'Wig requests need action',
-          count: wigReviewQueue,
-          detail: 'Move wig requests through workflow.',
-          page: 'update-wig-request-status',
+          title: 'Approved events without assigned staff',
+          count: approvedWithoutAssignedStaff.length,
+          detail: 'Assign one staff per approved event request.',
+          page: 'manage-event-applications',
         });
       }
       if (!systemChecks.wigRequirementsReady || !systemChecks.logisticsReady || !systemChecks.legalReady) {
@@ -454,44 +387,51 @@ export default function DashboardPage({ onNavigate, userProfile }) {
         actionItems.push({
           title: 'Requirement configuration missing',
           count: 1,
-          detail: `Setup: ${missing}.`,
+          detail: `Review setup for: ${missing}.`,
           page: 'manage-requirements',
+        });
+      }
+      if (appealedRows.length > 0) {
+        actionItems.push({
+          title: 'Appealed applications in pipeline',
+          count: appealedRows.length,
+          detail: 'Track staff resubmissions after admin rejection.',
+          page: 'manage-event-applications',
         });
       }
 
       setDashboard({
         kpis: {
-          pendingStaffReview: pendingStaffRows.length,
-          appealedNeedsResubmit: appealedRows.length,
-          pendingAdminDecision: pendingAdminDecisionRows.length,
-          myAssignedEvents: myAssignedRows.length,
-          myUpcomingWeekEvents,
-          attendeesWithoutWaybill,
-          wigReviewQueue,
+          pendingAdminDecision: pendingAdminRows.length,
+          pendingHospitalApplications: pendingHospitalRows.length,
+          approvedRequests: statusBreakdown.approved,
+          approvedWithoutAssignedStaff: approvedWithoutAssignedStaff.length,
+          pendingStaffReview: pendingStaffReviewRows.length,
+          appealedApplications: appealedRows.length,
           systemAlerts: (!systemChecks.wigRequirementsReady ? 1 : 0)
             + (!systemChecks.logisticsReady ? 1 : 0)
             + (!systemChecks.legalReady ? 1 : 0),
+          adminUsers: roleCounts.admin,
+          staffUsers: roleCounts.staff,
         },
-        applicationStatusData,
-        upcomingAssignedTrend: upcomingWindowData,
-        wigQueueData,
+        requestStatusData,
+        trendData,
         actionItems,
-        pendingStaffRows: pendingStaffRows.slice(0, 5),
-        appealedRows: appealedRows.slice(0, 5),
-        assignedRows: myAssignedRows.slice(0, 5).map((row) => ({
+        pendingAdminRows: pendingAdminRows.slice(0, 5).map((row) => ({
           ...row,
-          attendeeCount: attendeeCountByApplicationId[safeNumber(row.Event_Application_ID)] || 0,
+          application: applicationById.get(safeNumber(row.Event_Application_ID)) || null,
         })),
+        pendingHospitalRows: pendingHospitalRows.slice(0, 5),
         systemChecks,
       });
 
       setLastSyncedAt(new Date().toISOString());
     } catch (error) {
-      setNotice({ kind: 'error', text: error.message || 'Unable to load staff dashboard data.' });
+      setNotice({ kind: 'error', text: error.message || 'Unable to load dashboard data.' });
     } finally {
       setIsLoading(false);
     }
-  }, [resolveStaffUserId]);
+  }, [tertiaryColor, secondaryColor]);
 
   useEffect(() => {
     loadDashboard();
@@ -499,42 +439,42 @@ export default function DashboardPage({ onNavigate, userProfile }) {
 
   const topMetrics = useMemo(() => ([
     {
-      key: 'staffReview',
-      label: 'Pending Staff Review',
-      value: dashboard.kpis.pendingStaffReview,
+      key: 'pendingAdmin',
+      label: 'Pending Admin',
+      value: dashboard.kpis.pendingAdminDecision,
       accentColor: '#f59e0b',
-      helper: 'Applications awaiting your intake',
-      page: 'event-application-intake',
+      helper: 'Event requests waiting for your decision',
+      page: 'manage-event-applications',
     },
     {
-      key: 'myEvents',
-      label: 'My Assigned Events',
-      value: dashboard.kpis.myAssignedEvents,
+      key: 'approved',
+      label: 'Approved Events',
+      value: dashboard.kpis.approvedRequests,
       accentColor: tertiaryColor,
-      helper: 'Approved events assigned to you',
-      page: 'assigned-event-operations',
+      helper: 'Live approved event requests',
+      page: 'manage-event-applications',
     },
     {
-      key: 'wigQueue',
-      label: 'Wig Queue',
-      value: dashboard.kpis.wigReviewQueue,
+      key: 'hospitals',
+      label: 'Hospital Apps',
+      value: dashboard.kpis.pendingHospitalApplications,
       accentColor: primaryColor,
-      helper: 'Wig requests needing workflow action',
-      page: 'update-wig-request-status',
+      helper: 'Partnership applications pending review',
+      page: 'manage-hospital-accounts',
     },
     {
-      key: 'noWaybill',
-      label: 'No Waybill',
-      value: dashboard.kpis.attendeesWithoutWaybill,
+      key: 'alerts',
+      label: 'System Alerts',
+      value: dashboard.kpis.systemAlerts,
       accentColor: '#e11d48',
-      helper: 'Attendees still needing waybill printed',
-      page: 'assigned-event-operations',
+      helper: 'Configuration items needing attention',
+      page: 'manage-requirements',
     },
-  ]), [dashboard.kpis, primaryColor, tertiaryColor]);
+  ]), [dashboard.kpis, tertiaryColor, primaryColor]);
 
-  const totalApplications = useMemo(
-    () => dashboard.applicationStatusData.reduce((sum, entry) => sum + safeNumber(entry.value), 0),
-    [dashboard.applicationStatusData],
+  const totalRequests = useMemo(
+    () => dashboard.requestStatusData.reduce((sum, entry) => sum + safeNumber(entry.value), 0),
+    [dashboard.requestStatusData],
   );
 
   return (
@@ -549,10 +489,10 @@ export default function DashboardPage({ onNavigate, userProfile }) {
             className="text-2xl font-bold"
             style={{ fontFamily: `${headingFontFamily}, sans-serif`, color: primaryTextColor }}
           >
-            Staff Dashboard
+            Admin Dashboard
           </h1>
           <p className="text-sm" style={{ color: secondaryTextColor }}>
-            Intake workload, assigned operations, and wig workflow at a glance.
+            One-look view of approvals, backlogs, and configuration health.
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -585,7 +525,7 @@ export default function DashboardPage({ onNavigate, userProfile }) {
         </div>
       )}
 
-      {/* Top metric tiles */}
+      {/* Top metric tiles — 4 tiles, equal weight */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {topMetrics.map((metric) => (
           <MetricTile
@@ -599,16 +539,17 @@ export default function DashboardPage({ onNavigate, userProfile }) {
         ))}
       </section>
 
-      {/* Row: Donut + Bar + Progress bars */}
+      {/* Row: Donut (with center total) + Bar chart + Progress-bar breakdown */}
       <section className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+        {/* Donut with big center number */}
         <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-4">
-          <h3 className="text-sm font-bold text-slate-800">Application Status Mix</h3>
+          <h3 className="text-sm font-bold text-slate-800">Event Request Status</h3>
           <p className="text-xs text-slate-500">Lifetime distribution</p>
           <div className="relative mt-2 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={dashboard.applicationStatusData}
+                  data={dashboard.requestStatusData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
@@ -618,7 +559,7 @@ export default function DashboardPage({ onNavigate, userProfile }) {
                   paddingAngle={2}
                   stroke="none"
                 >
-                  {dashboard.applicationStatusData.map((entry) => (
+                  {dashboard.requestStatusData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
@@ -626,12 +567,12 @@ export default function DashboardPage({ onNavigate, userProfile }) {
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <p className="text-4xl font-bold leading-none text-slate-900">{totalApplications}</p>
+              <p className="text-4xl font-bold leading-none text-slate-900">{totalRequests}</p>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Total</p>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-            {dashboard.applicationStatusData.map((entry) => (
+            {dashboard.requestStatusData.map((entry) => (
               <div key={entry.name} className="flex items-center gap-1.5">
                 <span className="h-2 w-2 flex-none rounded-full" style={{ backgroundColor: entry.color }} />
                 <span className="flex-1 truncate text-slate-600">{entry.name}</span>
@@ -641,40 +582,43 @@ export default function DashboardPage({ onNavigate, userProfile }) {
           </div>
         </article>
 
+        {/* 7-day pipeline */}
         <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">Wig Workflow Queue</h3>
-              <p className="text-xs text-slate-500">Requests grouped by stage</p>
+              <h3 className="text-sm font-bold text-slate-800">7-Day Pipeline</h3>
+              <p className="text-xs text-slate-500">Applications vs. Requests created daily</p>
             </div>
-            <span className="inline-flex items-center gap-1.5 text-[11px]">
-              <Package size={11} style={{ color: primaryColor }} />
-              <span className="text-slate-600">Requests</span>
-            </span>
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} />Apps</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: primaryColor }} />Requests</span>
+            </div>
           </div>
           <div className="mt-2 h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dashboard.wigQueueData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <BarChart data={dashboard.trendData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={48} tickLine={false} axisLine={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <Tooltip />
-                <Bar dataKey="value" name="Requests" fill={primaryColor} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="applications" name="Applications" fill={secondaryColor} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="requests" name="Requests" fill={primaryColor} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </article>
 
+        {/* Horizontal progress bars */}
         <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
           <h3 className="text-sm font-bold text-slate-800">Status Breakdown</h3>
-          <p className="text-xs text-slate-500">Share of all applications</p>
+          <p className="text-xs text-slate-500">Share of all event requests</p>
           <div className="mt-4 space-y-3">
-            {dashboard.applicationStatusData.map((entry) => (
+            {dashboard.requestStatusData.map((entry) => (
               <ProgressRow
                 key={entry.name}
                 label={entry.name}
                 value={entry.value}
-                total={totalApplications}
+                total={totalRequests}
                 accentColor={entry.color}
               />
             ))}
@@ -682,7 +626,7 @@ export default function DashboardPage({ onNavigate, userProfile }) {
         </article>
       </section>
 
-      {/* Row: Action items + intake (left); assigned + system (right) */}
+      {/* Row: Action items + Pending queue (left) + Hospital list + Health + Roles (right) */}
       <section className="grid grid-cols-1 gap-3 xl:grid-cols-12">
         <div className="space-y-3 xl:col-span-7">
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -696,7 +640,7 @@ export default function DashboardPage({ onNavigate, userProfile }) {
             {dashboard.actionItems.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                 <CheckCircle2 size={13} />
-                No immediate staff blockers right now.
+                No high-priority blockers right now.
               </div>
             ) : (
               <ul className="space-y-1.5">
@@ -728,30 +672,30 @@ export default function DashboardPage({ onNavigate, userProfile }) {
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-800">Oldest Pending Intake</h3>
-                <p className="text-xs text-slate-500">First-in-first-out review</p>
+                <h3 className="text-sm font-bold text-slate-800">Oldest Pending Admin Decisions</h3>
+                <p className="text-xs text-slate-500">First-in-first-out review queue</p>
               </div>
               <button
                 type="button"
-                onClick={() => typeof onNavigate === 'function' && onNavigate('event-application-intake')}
+                onClick={() => typeof onNavigate === 'function' && onNavigate('manage-event-applications')}
                 className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline"
                 style={{ color: primaryColor }}
               >
-                Open intake <ArrowRight size={11} />
+                Open queue <ArrowRight size={11} />
               </button>
             </div>
-            {dashboard.pendingStaffRows.length === 0 ? (
+            {dashboard.pendingAdminRows.length === 0 ? (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                No pending staff intake applications.
+                No pending admin requests.
               </p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {dashboard.pendingStaffRows.map((row) => (
-                  <li key={row.Event_Application_ID} className="flex items-center justify-between gap-2 py-2 text-xs">
+                {dashboard.pendingAdminRows.map((row) => (
+                  <li key={row.Event_Request_ID} className="flex items-center justify-between gap-2 py-2 text-xs">
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold text-slate-900">{row.Event_Name || 'Untitled Event'}</p>
                       <p className="truncate text-[11px] text-slate-500">
-                        EA-{row.Event_Application_ID} · {applicantName(row)}
+                        ER-{row.Event_Request_ID} · {applicantName(row.application)}
                       </p>
                     </div>
                     <span className="flex-none rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
@@ -768,40 +712,36 @@ export default function DashboardPage({ onNavigate, userProfile }) {
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-800">My Assigned Events</h3>
-                <p className="text-xs text-slate-500">Approved + assigned to you</p>
+                <h3 className="text-sm font-bold text-slate-800">Pending Hospital Apps</h3>
+                <p className="text-xs text-slate-500">Awaiting your approval</p>
               </div>
               <button
                 type="button"
-                onClick={() => typeof onNavigate === 'function' && onNavigate('assigned-event-operations')}
+                onClick={() => typeof onNavigate === 'function' && onNavigate('manage-hospital-accounts')}
                 className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline"
                 style={{ color: primaryColor }}
               >
                 Open <ArrowRight size={11} />
               </button>
             </div>
-            {dashboard.assignedRows.length === 0 ? (
+            {dashboard.pendingHospitalRows.length === 0 ? (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                No assigned events yet.
+                No pending hospital applications.
               </p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {dashboard.assignedRows.map((row) => (
-                  <li key={row.Event_Request_ID} className="flex items-center justify-between gap-2 py-2 text-xs">
+                {dashboard.pendingHospitalRows.map((row) => (
+                  <li key={row.Hospital_ID} className="flex items-center justify-between gap-2 py-2 text-xs">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
-                        <Users size={13} />
+                      <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-sky-100 text-sky-700">
+                        <Building2 size={13} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold text-slate-900">{row.Event_Name || 'Untitled Event'}</p>
-                        <p className="truncate text-[11px] text-slate-500">
-                          ER-{row.Event_Request_ID} · {formatShortDate(row.Start_Date)}
-                        </p>
+                        <p className="truncate font-semibold text-slate-900">{row.Hospital_Name || `Hospital #${row.Hospital_ID}`}</p>
+                        <p className="truncate text-[11px] text-slate-500">{row.Hospital_Head_Name || 'No head info'}</p>
                       </div>
                     </div>
-                    <span className="flex-none rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                      {row.attendeeCount} att.
-                    </span>
+                    <span className="flex-none text-[11px] text-slate-500">{formatShortDate(row.Created_At)}</span>
                   </li>
                 ))}
               </ul>
@@ -817,8 +757,8 @@ export default function DashboardPage({ onNavigate, userProfile }) {
               <div className="space-y-1.5">
                 {[
                   { label: 'Wig Requirements', ready: dashboard.systemChecks.wigRequirementsReady },
-                  { label: 'Logistics', ready: dashboard.systemChecks.logisticsReady },
-                  { label: 'Legal PDF', ready: dashboard.systemChecks.legalReady, detail: dashboard.systemChecks.legalVersion ? `v${dashboard.systemChecks.legalVersion}` : undefined },
+                  { label: 'Logistics Destination', ready: dashboard.systemChecks.logisticsReady },
+                  { label: 'Legal Consent PDF', ready: dashboard.systemChecks.legalReady, detail: dashboard.systemChecks.legalVersion ? `v${dashboard.systemChecks.legalVersion}` : undefined },
                 ].map((item) => (
                   <div
                     key={item.label}
@@ -839,20 +779,24 @@ export default function DashboardPage({ onNavigate, userProfile }) {
             </article>
 
             <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="mb-3 text-sm font-bold text-slate-800">My Workload</h3>
-              <div className="space-y-2">
+              <div className="mb-3 flex items-center gap-1.5">
+                <Users size={13} style={{ color: primaryColor }} />
+                <h3 className="text-sm font-bold text-slate-800">Active Roles</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Upcoming 7 Days</p>
-                  <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.myUpcomingWeekEvents}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Admins</p>
+                  <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.adminUsers}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">With Admin</p>
-                  <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.pendingAdminDecision}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Staff</p>
+                  <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.staffUsers}</p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Appealed</p>
-                  <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.appealedNeedsResubmit}</p>
-                </div>
+              </div>
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Needs Staff</p>
+                <p className="text-xl font-bold leading-tight text-slate-900">{dashboard.kpis.approvedWithoutAssignedStaff}</p>
+                <p className="text-[10px] text-slate-500">Approved events unassigned</p>
               </div>
             </article>
           </div>

@@ -93,7 +93,7 @@ function mapLoadError(rawMessage) {
   const message = String(rawMessage || 'Unable to load legal documents.');
   const lower = message.toLowerCase();
   if (lower.includes('row-level security')) {
-    return 'Viewing legal documents is blocked by database policy. Check legal_documents read policies for Staff and Super Admin.';
+    return 'Viewing legal documents is blocked by database policy. Check legal_documents read policies for staff and admin.';
   }
   return message;
 }
@@ -102,7 +102,7 @@ function mapSaveError(rawMessage) {
   const message = String(rawMessage || 'Unable to save legal document.');
   const lower = message.toLowerCase();
   if (lower.includes('row-level security')) {
-    return 'Saving legal documents is blocked by database policy. Make sure legal_documents has INSERT + UPDATE policies for Staff/Super Admin and the legal-documents bucket has INSERT policy.';
+    return 'Saving legal documents is blocked by database policy. Make sure legal_documents has INSERT + UPDATE policies for staff/admin and the legal-documents bucket has INSERT policy.';
   }
   if (lower.includes('mime type') || lower.includes('content type')) {
     return 'Only PDF files are allowed for consent documents.';
@@ -246,7 +246,7 @@ export default function LegalDocumentsPage({ userProfile }) {
 
   const handlePublish = async () => {
     if (!canManage) {
-      setNotice({ kind: 'error', text: 'Only Super Admin and Staff can publish consent documents.' });
+      setNotice({ kind: 'error', text: 'Only admin and staff can publish consent documents.' });
       return;
     }
 

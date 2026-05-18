@@ -5,62 +5,37 @@ import LoginPage from './pages/shared/auth/LoginPage';
 import CompleteAccountPage from './pages/shared/auth/CompleteAccountPage';
 import ResetPasswordPage from './pages/shared/auth/ResetPasswordPage';
 import ConfirmationCompletePage from './pages/shared/auth/ConfirmationCompletePage';
-import SuperAdminRole from './pages/roles/super-admin/SuperAdminRole';
-import HospitalRole from './pages/roles/hospital/HospitalRole';
-import OrganizationRole from './pages/roles/organization/OrganizationRole';
+import AdminRole from './pages/roles/admin/AdminRole';
+import HRepresentativeRole from './pages/roles/h-representative/HRepresentativeRole';
+import EventApplicationPage from './pages/public/EventApplicationPage';
+import EventApplicationSuccessPage from './pages/public/EventApplicationSuccessPage';
 import PartnershipApplicationPage from './pages/public/PartnershipApplicationPage';
 import StaffRole from './pages/roles/staff/StaffRole';
-import QAStylistRole from './pages/roles/qa-stylist/QAStylistRole';
+import SpecialistRole from './pages/roles/specialist/SpecialistRole';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 import { logAuditAction } from './lib/auditLogger';
+import { toCanonicalRole } from './lib/roleUtils';
 
 const USER_PROFILE_STORAGE_KEY = 'strandshare_user_profile';
 const USER_PROFILE_READY_EVENT = 'strandshare-profile-ready';
 
-function normalizeRole(roleValue) {
-  return String(roleValue || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, ' ');
-}
-
 function resolveDashboardByRole(roleValue) {
-  const normalizedRole = normalizeRole(roleValue);
+  const normalizedRole = toCanonicalRole(roleValue);
 
-  if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {
-    return SuperAdminRole;
+  if (normalizedRole === 'admin') {
+    return AdminRole;
   }
 
-  if (
-    normalizedRole === 'hospital'
-    || normalizedRole === 'h staff'
-    || normalizedRole === 'hstaff'
-    || normalizedRole === 'h representative'
-    || normalizedRole === 'hrepresentative'
-  ) {
-    return HospitalRole;
-  }
-
-  if (
-    normalizedRole === 'organization'
-    || normalizedRole === 'organizations'
-    || normalizedRole === 'partner'
-    || normalizedRole === 'partners'
-  ) {
-    return OrganizationRole;
+  if (normalizedRole === 'h_representative') {
+    return HRepresentativeRole;
   }
 
   if (normalizedRole === 'staff') {
     return StaffRole;
   }
 
-  if (
-    normalizedRole === 'qa stylist'
-    || normalizedRole === 'qastylist'
-    || normalizedRole === 'q a stylist'
-  ) {
-    return QAStylistRole;
+  if (normalizedRole === 'specialist') {
+    return SpecialistRole;
   }
 
   return StaffRole;
@@ -303,14 +278,17 @@ export default function App() {
   const ActiveDashboard = resolveDashboardByRole(activeRole);
   const currentPath = window.location.pathname;
   const isLandingRoute = currentPath === '/';
-  const isPartnershipApplicationRoute =
-    currentPath === '/apply-partnership' || currentPath === '/apply-organization';
+  const isPartnershipApplicationRoute = currentPath === '/apply-partnership';
+  const isEventApplicationRoute = currentPath === '/apply-event';
+  const isEventApplicationSuccessRoute = currentPath === '/apply-event/success';
   const isCompleteAccountRoute = currentPath === '/complete-account';
   const isResetPasswordRoute = currentPath === '/reset-password';
   const isConfirmationCompleteRoute = currentPath === '/confirmation-complete';
   const showLandingPage = !isLoadingAuth && !session && isLandingRoute;
   const showPartnershipApplicationPage = !isLoadingAuth && !session && isPartnershipApplicationRoute;
-  const showLoginPage = !isLoadingAuth && !session && !isLandingRoute && !isPartnershipApplicationRoute;
+  const showEventApplicationPage = !isLoadingAuth && !session && isEventApplicationRoute;
+  const showEventApplicationSuccessPage = !isLoadingAuth && !session && isEventApplicationSuccessRoute;
+  const showLoginPage = !isLoadingAuth && !session && !isLandingRoute && !isPartnershipApplicationRoute && !isEventApplicationRoute && !isEventApplicationSuccessRoute;
   const showDashboard = !isLoadingAuth && Boolean(session) && Boolean(activeRole);
   const showHydratingScreen =
     !isLoadingAuth && Boolean(session) && !showDashboard && isHydratingProfile;
@@ -328,6 +306,14 @@ export default function App() {
 
         {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showPartnershipApplicationPage && (
           <PartnershipApplicationPage />
+        )}
+
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showEventApplicationPage && (
+          <EventApplicationPage />
+        )}
+
+        {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showEventApplicationSuccessPage && (
+          <EventApplicationSuccessPage />
         )}
 
         {!isCompleteAccountRoute && !isResetPasswordRoute && !isConfirmationCompleteRoute && showLoginPage && (

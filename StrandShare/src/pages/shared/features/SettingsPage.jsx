@@ -57,8 +57,9 @@ function formatRoleLabel(value) {
     .trim();
 }
 
-function isSuperAdminRole(value) {
-  return lowerCaseRoleKey(value) === 'superadmin';
+function isAdminRole(value) {
+  const roleKey = lowerCaseRoleKey(value);
+  return roleKey === 'admin' || roleKey === 'superadmin';
 }
 
 function lowerCaseRoleKey(value) {
@@ -564,7 +565,7 @@ export default function SettingsPage() {
     [tempColors],
   );
 
-  const canManageBranding = useMemo(() => isSuperAdminRole(profile.role), [profile.role]);
+  const canManageBranding = useMemo(() => isAdminRole(profile.role), [profile.role]);
 
   useEffect(() => {
     if (!canManageBranding) {

@@ -49,14 +49,6 @@ function withAlpha(colorValue, alpha) {
   return input;
 }
 
-function normalizeRole(roleValue) {
-  return String(roleValue || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, ' ');
-}
-
 export default function LoginPage({ authNotice, onClearNotice }) {
   const { theme, isThemeReady } = useTheme();
   const [mode, setMode] = useState('login');
@@ -119,49 +111,6 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     setEmailOtpTarget('');
     setEmailOtpRequested(false);
     setEmailOtpCooldown(0);
-  };
-
-  const getLatestOrganizationReview = async (userId) => {
-    if (!userId) {
-      return null;
-    }
-
-    const membershipResult = await supabase
-      .from('Organization_Members')
-      .select('Organization_ID, Membership_Role, Is_Primary, Status, Created_At')
-      .eq('User_ID', userId)
-      .order('Created_At', { ascending: false });
-
-    if (membershipResult.error || !(membershipResult.data || []).length) {
-      return null;
-    }
-
-    const membershipRows = membershipResult.data || [];
-    const preferredMembership = membershipRows.find((row) => row.Is_Primary)
-      || membershipRows.find((row) => normalizeRole(row.Membership_Role) === 'leader')
-      || membershipRows[0];
-
-    if (!preferredMembership?.Organization_ID) {
-      return null;
-    }
-
-    const organizationResult = await supabase
-      .from('Organizations')
-      .select('Organization_ID, Organization_Name, Approval_Status, Status')
-      .eq('Organization_ID', preferredMembership.Organization_ID)
-      .maybeSingle();
-
-    if (organizationResult.error || !organizationResult.data) {
-      return null;
-    }
-
-    return {
-      organizationId: organizationResult.data.Organization_ID,
-      organizationName: organizationResult.data.Organization_Name,
-      approvalStatus: normalizeRole(organizationResult.data.Approval_Status || 'pending'),
-      organizationStatus: normalizeRole(organizationResult.data.Status || ''),
-      memberStatus: normalizeRole(preferredMembership.Status || 'inactive'),
-    };
   };
 
   const recoverProfileByEmail = async (authUserId) => {
@@ -241,12 +190,7 @@ export default function LoginPage({ authNotice, onClearNotice }) {
       throw new Error('Your account profile could not be found. Please contact an administrator.');
     }
 
-    const organizationReview = await getLatestOrganizationReview(resolvedProfile.user_id);
-    const hasApprovedOrganizationAccess =
-      organizationReview?.approvalStatus === 'approved'
-      && organizationReview?.memberStatus === 'active';
-
-    if (!resolvedProfile?.role && !hasApprovedOrganizationAccess) {
+    if (!resolvedProfile?.role) {
       throw new Error('Your account does not have a role yet. Please contact an administrator.');
     }
 
@@ -255,33 +199,11 @@ export default function LoginPage({ authNotice, onClearNotice }) {
     const withinEnd = !resolvedProfile.access_end || new Date(resolvedProfile.access_end) >= now;
 
     if (resolvedProfile.is_active === false) {
-      if (organizationReview) {
-        if (organizationReview.approvalStatus === 'pending') {
-          throw new Error('Your organization application is pending Super Admin approval. You can log in once approved.');
-        }
-
-        if (organizationReview.approvalStatus === 'rejected') {
-          throw new Error('Your organization application was rejected. Please submit a new application.');
-        }
-
-        throw new Error('Your organization account is inactive until Super Admin approval is completed.');
-      }
-
       throw new Error('Your account is currently inactive. Please contact an administrator.');
     }
 
     if (!withinStart || !withinEnd) {
       throw new Error('Your account is outside the allowed access schedule. Please contact an administrator.');
-    }
-
-    const normalizedRole = normalizeRole(resolvedProfile.role);
-    const shouldResolveAsOrganization = hasApprovedOrganizationAccess && (!normalizedRole || normalizedRole === 'user');
-
-    if (shouldResolveAsOrganization) {
-      return enrichProfileWithDetails({
-        ...resolvedProfile,
-        role: 'organization',
-      });
     }
 
     return enrichProfileWithDetails(resolvedProfile);

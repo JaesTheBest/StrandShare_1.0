@@ -1,41 +1,39 @@
 import React from 'react';
 import {
+  BarChart3,
   LayoutDashboard,
   CheckCircle,
   FileText,
   Package,
+  SlidersHorizontal,
   Settings,
-  MapPin,
 } from 'lucide-react';
 import RoleDashboardShell from '../../shared/RoleDashboardShell';
 import DashboardPage from './DashboardPage';
-import UpdateDonationStatusPage from './UpdateDonationStatusPage';
-import AssignedDonationReportsPage from './AssignedDonationReportsPage';
+import EventApplicationIntakePage from './EventApplicationIntakePage';
+import AssignedEventOperationsPage from './AssignedEventOperationsPage';
 import UpdateWigRequestStatusPage from './UpdateWigRequestStatusPage';
 import SettingsPage from './SettingsPage';
-import ManageDonationRequirementsPage from './ManageDonationRequirementsPage';
-import LegalDocumentsPage from '../../shared/features/LegalDocumentsPage';
-import LogisticsDestinationSettingsPage from '../../shared/features/LogisticsDestinationSettingsPage';
+import ManageRequirementsPage from '../../shared/features/ManageRequirementsPage';
+import RoleReportsPage from '../../shared/features/RoleReportsPage';
 
 const staffNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'update-donation-status', label: 'Review Donation Drive', icon: CheckCircle },
-  { id: 'assigned-donation-reports', label: 'Assigned Donation Drive', icon: FileText },
+  { id: 'event-application-intake', label: 'Manage Event Application', icon: CheckCircle },
+  { id: 'assigned-event-operations', label: 'Assigned Event Operations', icon: FileText },
   { id: 'update-wig-request-status', label: 'Update Wig Request Status', icon: Package },
-  { id: 'manage-donation-requirements', label: 'Manage Donation Requirements', icon: CheckCircle },
-  { id: 'logistics-destination-settings', label: 'Logistics Destination Settings', icon: MapPin },
-  { id: 'legal-documents', label: 'Legal Documents', icon: FileText },
+  { id: 'manage-requirements', label: 'Manage Requirements', icon: SlidersHorizontal },
+  { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 const staffPageComponents = {
   dashboard: DashboardPage,
-  'update-donation-status': UpdateDonationStatusPage,
-  'assigned-donation-reports': AssignedDonationReportsPage,
+  'event-application-intake': EventApplicationIntakePage,
+  'assigned-event-operations': AssignedEventOperationsPage,
   'update-wig-request-status': UpdateWigRequestStatusPage,
-  'manage-donation-requirements': ManageDonationRequirementsPage,
-  'logistics-destination-settings': LogisticsDestinationSettingsPage,
-  'legal-documents': LegalDocumentsPage,
+  'manage-requirements': ManageRequirementsPage,
+  reports: RoleReportsPage,
   settings: SettingsPage,
 };
 

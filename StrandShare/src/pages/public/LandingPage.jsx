@@ -1,109 +1,100 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Building2, HeartPulse, Mail, MapPin, Phone } from 'lucide-react';
+import { ArrowRight, ChevronUp, HeartPulse, Mail, MapPin, Phone } from 'lucide-react';
 import { motion, useAnimation, useScroll, useSpring, useTransform } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
 import { TransitionFlipExit } from '../../components/transitions/TransitionFlip';
 import './landing-scroll.css';
 
-/* ─── static content ─────────────────────────────────────────── */
+/*  static content  */
 const aboutHighlights = [
   {
-    title: 'Who We Are',
-    body: 'A care-focused platform that brings hospitals, support organizations, and volunteers together around dignified wig support for people experiencing hair loss.',
-    icon: '✦',
+    title: 'Hospital-First Partnership',
+    body: 'StrandShare focuses on partnered hospitals that run community events to support patients experiencing hair loss.',
+    icon: '*',
   },
   {
-    title: 'What We Do',
-    body: 'We streamline requests, referrals, approvals, and program coordination so partner organizations and hospitals spend less time on paperwork and more time helping people.',
-    icon: '⊕',
+    title: 'Event-Driven Process',
+    body: 'Every request follows one process: hospital application, staff coordination, admin decision, and event execution readiness.',
+    icon: '+',
   },
   {
-    title: 'Why It Matters',
-    body: 'Each successful handoff restores confidence. StrandShare creates accountable workflows that help communities sustain long-term care and real impact.',
-    icon: '◈',
+    title: 'Patient-Centered Impact',
+    body: 'Hospital events strengthen continuity of care by improving outreach planning, scheduling, and measurable support delivery.',
+    icon: 'o',
   },
 ];
 
 const impactAreas = [
   {
-    title: 'Healthcare Coordination',
-    body: 'Partnered hospitals and care teams can coordinate patient referrals and track release workflows with clarity and accountability.',
+    title: 'Why Apply as Partner Hospitals',
+    body: 'Event applications give hospitals a structured path to align staff support, venue planning, timeline readiness, and operational requirements.',
   },
   {
-    title: 'Organization Enablement',
-    body: 'Verified organizations can manage donation activity, community outreach, and support programs in one place.',
+    title: 'How Events Help Hospitals',
+    body: 'Hospitals gain clearer collaboration, predictable preparation, and stronger patient outreach through a managed event workflow.',
   },
   {
-    title: 'Transparent Giving',
-    body: 'Donors and support groups can trust that every contribution follows a visible and accountable process.',
+    title: 'How Events Help StrandShare',
+    body: 'Events create traceable operations and consistent impact data, helping StrandShare scale support with quality and accountability.',
   },
 ];
 
 const partnerTracks = [
   {
-    id: 'organization',
-    eyebrow: 'Track 01',
-    title: 'Partner Organization',
-    icon: 'building',
-    body: 'For NGOs, foundations, support groups, and community partners that run donation drives and outreach for people experiencing hair loss.',
-    points: [
-      'Run and document donation events',
-      'Manage your organization members and roles',
-      'Issue certificates and track contribution history',
-    ],
-  },
-  {
     id: 'hospital',
-    eyebrow: 'Track 02',
-    title: 'Partnered Hospital',
+    eyebrow: 'Hospital Track',
+    title: 'Partner Hospital',
     icon: 'hospital',
-    body: 'For hospitals and care centers that refer patients, request wigs on their behalf, and coordinate releases with the StrandShare network.',
+    body: 'For hospitals and care centers that plan and run approved community events through StrandShare.',
     points: [
-      'Refer and manage patient records',
-      'Request wigs and track release approvals',
-      'Generate hospital reports for your team',
+      'Submit hospital event partnership applications',
+      'Coordinate event requirements with assigned staff',
+      'Run approved events with better structure and accountability',
     ],
   },
 ];
 
 const journeySteps = [
-  { num: 'I',   title: 'Choose Your Track',     detail: 'Apply as a Partner Organization or as a Partnered Hospital — one form, two tracks.' },
-  { num: 'II',  title: 'Confirm Email',         detail: 'Verify the representative email with a one-time code to secure ownership.' },
-  { num: 'III', title: 'Admin Verification',    detail: 'Super Admin reviews your profile, address, and supporting details.' },
-  { num: 'IV',  title: 'Activation',            detail: 'Approved partners gain full access and receive a confirmation email to log in.' },
+  { num: 'I', title: 'Apply as Partner Hospital', detail: 'Submit your hospital partnership and event request through one application flow.' },
+  { num: 'II', title: 'Staff Coordination', detail: 'Staff contacts your team through your preferred channel to align full event details.' },
+  { num: 'III', title: 'Admin Decision', detail: 'Admin reviews the staff-endorsed request and issues approval or rejection.' },
+  { num: 'IV', title: 'Event Activation', detail: 'Approved hospitals proceed with an organized event workflow and operational support.' },
 ];
 
 const applicationChecklist = [
-  { group: 'For Both Tracks', items: [
-    'Primary Contact Number',
-    'Complete Address (Street, Barangay, City, Province, Region)',
-    'Representative First and Last Name',
-    'Representative Email for Account Confirmation',
-  ]},
-  { group: 'Organization Track', items: [
-    'Organization Name and Organization Type',
-    'Optional Organization Logo',
-  ]},
-  { group: 'Hospital Track', items: [
+  { group: 'Hospital Partnership Essentials', items: [
     'Hospital Name and Facility Details',
-    'Optional Hospital Logo',
+    'Primary Contact Number and Preferred Contact Method',
+    'Authorized Representative Full Name and Email',
+    'Complete Address (Street, Barangay, City, Province, Region)',
+  ]},
+  { group: 'Event Planning Requirements', items: [
+    'Event Title and Overview',
+    'Proposed Event Schedule Window',
+    'Venue and Location Information',
+    'Expected Attendee Volume',
   ]},
 ];
 
 const faqs = [
-  { q: 'Who can apply for partnership?',           a: 'StrandShare currently accepts two partner types: support Organizations (NGOs, foundations, community groups) and Partnered Hospitals. You will pick your track inside the application form.' },
-  { q: 'Do partners need admin approval?',         a: 'Yes. Every applicant must confirm email first, then wait for Super Admin approval before account access is activated.' },
-  { q: 'Can I log in immediately after email confirmation?', a: 'No. Login is blocked until your partnership application is approved by Super Admin.' },
-  { q: 'Who becomes the account representative?',  a: 'The applicant account is set as the organization or hospital representative once the partnership is approved.' },
-  { q: 'Will I get notified when approved?',       a: 'Yes. The system sends an email notification after Super Admin approval, so you know exactly when to log in.' },
+  { q: 'Who can apply for partnership?', a: 'Only hospitals and care centers can apply in this partnership flow.' },
+  { q: 'Who can apply for event?', a: 'Any user can submit an event application. Staff will contact the requester using the selected preferred contact method.' },
+  { q: 'Why is this partnership event-focused?', a: 'Events are the operating unit for planning, review, approval, and impact tracking across the hospital workflow.' },
+  { q: 'What happens after we submit?', a: 'Staff receives your request, contacts your team, and prepares the case for admin decision.' },
+  { q: 'Can we proceed immediately after applying?', a: 'No. Event requests require admin approval before event execution.' },
+  { q: 'Will we receive updates?', a: 'Yes. Your team will receive status updates during staff coordination and after admin decision.' },
 ];
 
 const marqueeItems = [
-  'Hair Donation', 'Restore Confidence', 'Real Hair Wigs',
-  'Cancer Support', 'Alopecia Warriors', 'Dignity Restored',
+  'Hospital Events',
+  'Patient Support',
+  'Community Outreach',
+  'Staff Coordination',
+  'Admin Approval',
+  'Measured Impact',
 ];
 
-/* ─── helpers ────────────────────────────────────────────────── */
+/*  helpers  */
 function parseRgbChannels(hex, fallback = [184, 149, 90]) {
   const m = String(hex || '').trim().match(/^#([0-9a-f]{6})$/i);
   if (m) return [parseInt(m[1].slice(0,2),16), parseInt(m[1].slice(2,4),16), parseInt(m[1].slice(4,6),16)];
@@ -112,7 +103,7 @@ function parseRgbChannels(hex, fallback = [184, 149, 90]) {
 
 function goToHard(path) { window.location.assign(path); }
 
-/* ─── canvas helpers ─────────────────────────────────────────── */
+/*  canvas helpers  */
 function setupHeroCanvas(canvas, getThemeRgb) {
   if (!canvas) return () => {};
   const ctx = canvas.getContext('2d');
@@ -224,7 +215,7 @@ function setupCtaCanvas(canvas, getThemeRgb) {
   return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
 }
 
-/* ─── component ──────────────────────────────────────────────── */
+/*  component  */
 export default function LandingPage() {
   const { theme } = useTheme();
 
@@ -275,7 +266,11 @@ export default function LandingPage() {
   /* state */
   const [heroVis,    setHeroVis]    = useState(false);
   const [navScrolled, setNavScrolled] = useState(false);
+  const [navMinimized, setNavMinimized] = useState(false);
+  const [topHoverActive, setTopHoverActive] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [openFaq,    setOpenFaq]    = useState(-1);
+  const topHoverStateRef = useRef(false);
 
   /* transitions */
   const [exitTransition, setExitTransition] = useState(null); // 'login' | 'apply' | null
@@ -316,7 +311,7 @@ export default function LandingPage() {
         sessionStorage.setItem('strandshare:incoming-transition', 'login');
         goToHard(path);
       });
-    } else if (path === '/apply-partnership') {
+    } else if (path === '/apply-partnership' || path === '/apply-event') {
       pendingPathRef.current = path;
       setExitTransition('apply');
     } else {
@@ -346,10 +341,23 @@ export default function LandingPage() {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
+  const jumpToTop = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
 
   /* nav scroll */
   useEffect(() => {
-    const onScroll = () => setNavScrolled(window.scrollY > 40);
+    const onScroll = () => {
+      const currentY = window.scrollY || 0;
+      const canHoverReveal = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+      setNavScrolled(currentY > 40);
+      setShowBackToTop(currentY > 420);
+
+      setNavMinimized(canHoverReveal && currentY >= 100);
+
+    };
+
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -361,6 +369,39 @@ export default function LandingPage() {
     return () => clearTimeout(t);
   }, []);
 
+  /* reveal minimized nav when cursor reaches top edge */
+  useEffect(() => {
+    const canHoverReveal = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!canHoverReveal) {
+      topHoverStateRef.current = false;
+      setTopHoverActive(false);
+      return () => {};
+    }
+
+    const onMouseMove = (event) => {
+      const shouldReveal = event.clientY <= 24;
+      if (shouldReveal !== topHoverStateRef.current) {
+        topHoverStateRef.current = shouldReveal;
+        setTopHoverActive(shouldReveal);
+      }
+    };
+
+    const onLeaveWindow = (event) => {
+      if (event.relatedTarget !== null) return;
+      if (topHoverStateRef.current) {
+        topHoverStateRef.current = false;
+        setTopHoverActive(false);
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    window.addEventListener('mouseout', onLeaveWindow);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseout', onLeaveWindow);
+    };
+  }, []);
+
   /* canvas animations */
   useEffect(() => {
     const getThemeRgb = () => themeRgbRef.current;
@@ -369,7 +410,7 @@ export default function LandingPage() {
     return () => { c1(); c2(); };
   }, []);
 
-  /* intersection observer — scroll reveals */
+  /* intersection observer - scroll reveals */
   useEffect(() => {
     if (!rootRef.current || typeof IntersectionObserver === 'undefined') return;
     const selector = '.eyebrow,.section-title,.section-lead,.about-card,.stat-item,.impact-card,.step,.req-item,.faq-item,.cta-title,.cta-sub,.cta-btns';
@@ -411,10 +452,7 @@ export default function LandingPage() {
   const marqueeDouble = [...marqueeItems, ...marqueeItems];
 
   return (
-    <TransitionFlipExit
-      trigger={exitTransition === 'apply'}
-      onComplete={handleTransitionDone}
-    >
+    <div className="landing-scroll-root" style={cssVars} ref={rootRef}>
       <motion.div
         style={{
           position: 'fixed',
@@ -430,15 +468,16 @@ export default function LandingPage() {
         }}
         aria-hidden="true"
       />
-    <motion.div
-      initial={isReturningFromLogin ? { opacity: 0, scale: 1.04 } : { opacity: 1, scale: 1 }}
-      animate={fadeControls}
-      style={{ transformOrigin: 'center center', willChange: 'transform, opacity' }}
-    >
-    <div className="landing-scroll-root" style={cssVars} ref={rootRef}>
 
-      {/* ── NAV ─────────────────────────────────────── */}
-      <nav id="topnav" className={navScrolled ? 'scrolled' : ''}>
+      {/*  NAV  */}
+      <nav
+        id="topnav"
+        className={[
+          navScrolled ? 'scrolled' : '',
+          navMinimized ? 'minimized' : '',
+          navMinimized && topHoverActive ? 'peek' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <button type="button" className={`nav-brand${heroVis ? ' vis' : ''}`} onClick={() => smoothTo('hero')}>
           {theme?.logoImage
             ? <img src={theme.logoImage} alt={`${brandName} logo`} className="nav-brand-image" />
@@ -457,11 +496,31 @@ export default function LandingPage() {
 
         <div className={`nav-actions${heroVis ? ' vis' : ''}`}>
           <button type="button" className="nav-login" onClick={() => handleNavigate('/login')}>Login</button>
-          <button type="button" className="nav-cta"   onClick={() => handleNavigate('/apply-partnership')}>Apply for Partnership</button>
+          <button type="button" className="nav-cta event-apply-cta" onClick={() => handleNavigate('/apply-event')}>Apply for Event</button>
         </div>
       </nav>
 
-      {/* ── HERO ────────────────────────────────────── */}
+      <button
+        type="button"
+        className={`back-to-top${showBackToTop ? ' show' : ''}`}
+        onClick={jumpToTop}
+        aria-label="Back to top"
+        title="Back to top"
+      >
+        <ChevronUp size={18} />
+      </button>
+
+    <TransitionFlipExit
+      trigger={exitTransition === 'apply'}
+      onComplete={handleTransitionDone}
+    >
+    <motion.div
+      initial={isReturningFromLogin ? { opacity: 0, scale: 1.04 } : { opacity: 1, scale: 1 }}
+      animate={fadeControls}
+      style={{ transformOrigin: 'center center', willChange: 'transform, opacity' }}
+    >
+
+      {/*  HERO  */}
       <section id="hero">
         <motion.canvas
           ref={heroCanvasRef}
@@ -489,16 +548,17 @@ export default function LandingPage() {
           </h1>
 
           <p className={`hero-sub${heroVis ? ' vis' : ''}`}>
-            {brandName} connects partnered hospitals, support organizations, and communities
-            around one shared goal — dignified wig support for people experiencing hair loss.
+            {brandName} connects partnered hospitals, hospital teams and communities
+            around one shared goal - dignified wig support for people experiencing hair loss.
+            Any user can apply for event requests, while partner hospital applications are for hospitals only.
           </p>
 
           <div className={`hero-ctas${heroVis ? ' vis' : ''}`}>
-            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
-              Apply for Partnership <ArrowRight size={15} />
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply as Partner Hospital <ArrowRight size={15} />
             </button>
-            <button type="button" className="btn-outline" onClick={() => smoothTo('tracks')}>
-              See Partnership Tracks
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-event')}>
+              Apply for Event <ArrowRight size={15} />
             </button>
           </div>
         </motion.div>
@@ -506,7 +566,7 @@ export default function LandingPage() {
         <div className="scroll-hint">Scroll</div>
       </section>
 
-      {/* ── MARQUEE ─────────────────────────────────── */}
+      {/*  MARQUEE  */}
       <div className="marquee-band" aria-hidden="true">
         <div className="m-track">
           {marqueeDouble.map((item, i) => (
@@ -520,14 +580,14 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ── ABOUT ───────────────────────────────────── */}
+      {/*  ABOUT  */}
       <section id="about">
         <div className="container">
           <p className="eyebrow">About {brandName}</p>
           <h2 className="section-title">Everything You Need<br />To Know About <em>Us</em></h2>
           <p className="section-lead">
             A care-focused platform that turns fragmented tasks into a trusted, transparent
-            workflow — from request to release.
+            workflow - from request to release.
           </p>
           <div className="about-grid">
             {aboutHighlights.map(item => (
@@ -541,27 +601,27 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── STATS ───────────────────────────────────── */}
+      {/*  STATS  */}
       <section id="stats">
         <div className="container">
           <div className="stats-grid" id="stat-anchor">
             <div className="stat-item">
               <div className="stat-num"><span id="sn0">0</span><small>+</small></div>
-              <div className="stat-label">Organizations Served</div>
+              <div className="stat-label">Hospital Partnerships</div>
             </div>
             <div className="stat-item">
               <div className="stat-num"><span id="sn1">0</span><small>+</small></div>
-              <div className="stat-label">Wigs Distributed</div>
+              <div className="stat-label">Events Coordinated</div>
             </div>
             <div className="stat-item">
               <div className="stat-num"><span id="sn2">0</span><small>+</small></div>
-              <div className="stat-label">Hospitals Connected</div>
+              <div className="stat-label">Patients Supported</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── IMPACT ──────────────────────────────────── */}
+      {/*  IMPACT  */}
       <section id="impact">
         <div className="container">
           <p className="eyebrow">Impact Areas</p>
@@ -569,7 +629,7 @@ export default function LandingPage() {
           <div className="impact-grid">
             {impactAreas.map((item, i) => (
               <article className="impact-card" key={item.title}>
-                <div className="impact-num">{String(i + 1).padStart(2, '0')} — {item.title}</div>
+                <div className="impact-num">{String(i + 1).padStart(2, '0')} - {item.title}</div>
                 <h3 className="impact-title">{item.title}</h3>
                 <p className="impact-body">{item.body}</p>
               </article>
@@ -578,26 +638,23 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── PARTNERSHIP TRACKS ──────────────────────── */}
+      {/*  Hospital Partnership  */}
       <section id="tracks">
         <div className="container">
-          <p className="eyebrow">Partnership Tracks</p>
-          <h2 className="section-title">Two Tracks.<br /><em>One Mission.</em></h2>
+          <p className="eyebrow">Hospital Partnership</p>
+          <h2 className="section-title">One Track.<br /><em>Hospital Partnership Mission.</em></h2>
           <p className="section-lead">
-            Choose the track that matches your team. Both go through the same approval flow and
-            unlock features tailored to how you serve the community.
+            Hospital partnership is focused on event execution. Submit your request, align details with staff, and move to admin decision.
           </p>
-          <div className="impact-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+          <div className="impact-grid" style={{ gridTemplateColumns: 'repeat(1, 1fr)' }}>
             {partnerTracks.map((track) => (
               <article className="impact-card" key={track.id}>
                 <div
                   className="impact-num"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
                 >
-                  {track.icon === 'building'
-                    ? <Building2 size={14} />
-                    : <HeartPulse size={14} />}
-                  {track.eyebrow} — {track.title}
+                  <HeartPulse size={14} />
+                  {track.eyebrow} - {track.title}
                 </div>
                 <h3 className="impact-title">{track.title}</h3>
                 <p className="impact-body">{track.body}</p>
@@ -633,17 +690,17 @@ export default function LandingPage() {
             ))}
           </div>
           <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
-            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
-              Apply for Partnership <ArrowRight size={15} />
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply as Partner Hospital <ArrowRight size={15} />
             </button>
           </div>
         </div>
       </section>
 
-      {/* ── JOURNEY ─────────────────────────────────── */}
+      {/*  JOURNEY  */}
       <section id="journey">
         <div className="container">
-          <p className="eyebrow">Partnership Journey</p>
+          <p className="eyebrow">Hospital Event Journey</p>
           <h2 className="section-title">
             Four Steps to<br /><em>Change a Life</em>
           </h2>
@@ -659,15 +716,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── REQUIREMENTS ────────────────────────────── */}
+      {/*  REQUIREMENTS  */}
       <section id="apply">
         <div className="container">
           <p className="eyebrow">What You'll Need</p>
-          <h2 className="section-title">Partnership Application<br /><em>Checklist</em></h2>
+          <h2 className="section-title">Hospital Event Partnership<br /><em>Checklist</em></h2>
           <p className="section-lead">
-            Prepare the following details so your Super Admin review can move quickly.
-            Some items apply to both tracks, others depend on whether you apply as an
-            organization or a hospital.
+            Prepare the required hospital and event details so staff coordination and admin review can move faster.
           </p>
           {applicationChecklist.map((group, idx) => (
             <div
@@ -698,13 +753,18 @@ export default function LandingPage() {
               </div>
             </div>
           ))}
-          <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
-            Open Application Form <ArrowRight size={15} />
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-partnership')}>
+              Open Partner Hospital Application Form <ArrowRight size={15} />
+            </button>
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-event')}>
+              Apply for Event <ArrowRight size={15} />
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* ── FAQ ─────────────────────────────────────── */}
+      {/*  FAQ  */}
       <section id="faq">
         <div className="container">
           <p className="eyebrow">FAQ</p>
@@ -725,18 +785,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA ─────────────────────────────────────── */}
+      {/*  CTA  */}
       <section id="cta">
         <canvas ref={ctaCanvasRef} className="landing-stars" aria-hidden="true" />
         <div className="cta-inner container">
           <h2 className="cta-title">Ready to Make a<br /><em>Difference?</em></h2>
           <p className="cta-sub">
-            Join the growing network of hospitals and organizations<br />
-            building a better support system for those who need it most.
+            Join the hospital partnership network and run better-coordinated community events for patient support.
           </p>
           <div className="cta-btns">
-            <button type="button" className="btn-primary" onClick={() => handleNavigate('/apply-partnership')}>
-              Apply for Partnership <ArrowRight size={15} />
+            <button type="button" className="btn-primary event-apply-cta" onClick={() => handleNavigate('/apply-partnership')}>
+              Apply as Partner Hospital <ArrowRight size={15} />
             </button>
             <button type="button" className="btn-outline" onClick={() => handleNavigate('/login')}>
               Login to Dashboard
@@ -745,7 +804,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── FOOTER ──────────────────────────────────── */}
+      {/*  FOOTER  */}
       <footer id="contact">
         <div className="footer-inner">
           <div>
@@ -769,8 +828,10 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-    </div>
     </motion.div>
     </TransitionFlipExit>
+    </div>
   );
 }
+
+

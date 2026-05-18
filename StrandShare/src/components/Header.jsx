@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { Search, Bell, MessageSquare, LogOut, ChevronDown, Settings } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
+import { toRoleLabel } from '../lib/roleUtils';
 
 const DEFAULT_PROFILE_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(
   "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='64' fill='#f1f5f9'/><circle cx='64' cy='46' r='20' fill='#374151'/><path d='M18 116c4-22 21-35 46-35s42 13 46 35' fill='#374151'/></svg>",
@@ -48,52 +49,7 @@ function resolveDisplayName(userProfile) {
 }
 
 function resolveDisplayRole(roleValue) {
-  const normalizedRole = String(roleValue || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, ' ');
-
-  if (!normalizedRole) {
-    return 'User';
-  }
-
-  if (
-    normalizedRole === 'hospital'
-    || normalizedRole === 'h staff'
-    || normalizedRole === 'hstaff'
-    || normalizedRole === 'h representative'
-    || normalizedRole === 'hrepresentative'
-  ) {
-    return 'H-Representative';
-  }
-
-  if (normalizedRole === 'super admin' || normalizedRole === 'superadmin') {
-    return 'Super Admin';
-  }
-
-  if (
-    normalizedRole === 'organization'
-    || normalizedRole === 'organizations'
-    || normalizedRole === 'partner'
-    || normalizedRole === 'partners'
-  ) {
-    return 'Organization';
-  }
-
-  if (normalizedRole === 'staff') {
-    return 'Staff';
-  }
-
-  if (
-    normalizedRole === 'qa stylist'
-    || normalizedRole === 'qastylist'
-    || normalizedRole === 'q a stylist'
-  ) {
-    return 'QA Stylist';
-  }
-
-  return roleValue;
+  return toRoleLabel(roleValue);
 }
 
 function toOpaqueColor(value, fallback = '#ffffff') {

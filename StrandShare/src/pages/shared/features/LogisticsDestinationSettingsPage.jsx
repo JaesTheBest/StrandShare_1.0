@@ -4,15 +4,15 @@ import maplibregl from 'maplibre-gl';
 import { useTheme } from '../../../context/ThemeContext';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient';
 import { logAuditAction } from '../../../lib/auditLogger';
-import organizationAddressOptions from '../../../data/organizationAddressOptions.json';
+import philippineAddressOptions from '../../../data/philippineAddressOptions.json';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const UI_SETTINGS_TABLE = 'UI_Settings';
 const LOGISTICS_SETTINGS_TABLE = 'Logistics_Settings';
 const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
 const DEFAULT_COUNTRY = 'Philippines';
-const PHILIPPINE_ADDRESS_TREE = organizationAddressOptions && typeof organizationAddressOptions === 'object'
-  ? organizationAddressOptions
+const PHILIPPINE_ADDRESS_TREE = philippineAddressOptions && typeof philippineAddressOptions === 'object'
+  ? philippineAddressOptions
   : {};
 const MAP_SATELLITE_STYLE = {
   version: 8,
@@ -219,7 +219,7 @@ function mapSaveError(rawMessage) {
   }
 
   if (lowerMessage.includes('row-level security')) {
-    return 'Saving logistics destination settings is blocked by database policy. Only Super Admin and Staff can modify this page.';
+    return 'Saving logistics destination settings is blocked by database policy. Only admin and staff can modify this page.';
   }
 
   if (lowerMessage.includes('relation') && lowerMessage.includes('logistics_settings') && lowerMessage.includes('does not exist')) {
@@ -681,7 +681,7 @@ export default function LogisticsDestinationSettingsPage({ userProfile }) {
 
   const handleSave = async () => {
     if (!canManage) {
-      setNotice({ kind: 'error', text: 'Only Super Admin and Staff can update logistics destination settings.' });
+      setNotice({ kind: 'error', text: 'Only admin and staff can update logistics destination settings.' });
       return;
     }
 
